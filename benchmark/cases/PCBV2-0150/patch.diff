@@ -1,0 +1,534 @@
+PCBV2-0150 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: # Fix: 77e81f1e5944d98b3acf887d3aa443b252752e94
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0150/
+
+diff --git a/codec-http/src/main/java/io/netty/handler/codec/http/DefaultFullHttpRequest.java b/codec-http/src/main/java/io/netty/handler/codec/http/DefaultFullHttpRequest.java
+index 3cd8d0c..a476251 100644
+--- a/codec-http/src/main/java/io/netty/handler/codec/http/DefaultFullHttpRequest.java
++++ b/codec-http/src/main/java/io/netty/handler/codec/http/DefaultFullHttpRequest.java
+@@ -92,7 +92,15 @@ public class DefaultFullHttpRequest extends DefaultHttpRequest implements FullHt
+      */
+     public DefaultFullHttpRequest(HttpVersion httpVersion, HttpMethod method, String uri,
+             ByteBuf content, HttpHeaders headers, HttpHeaders trailingHeader) {
+-        super(httpVersion, method, uri, headers);
++        this(httpVersion, method, uri, content, headers, trailingHeader, true);
++    }
++
++    /**
++     * Create a full HTTP response with the given HTTP version, method, URI, contents, and header and trailer objects.
++     */
++    public DefaultFullHttpRequest(HttpVersion httpVersion, HttpMethod method, String uri,
++            ByteBuf content, HttpHeaders headers, HttpHeaders trailingHeader, boolean validateRequestLine) {
++        super(httpVersion, method, uri, headers, validateRequestLine);
+         this.content = checkNotNull(content, "content");
+         this.trailingHeader = checkNotNull(trailingHeader, "trailingHeader");
+     }
+diff --git a/codec-http/src/main/java/io/netty/handler/codec/http/DefaultHttpRequest.java b/codec-http/src/main/java/io/netty/handler/codec/http/DefaultHttpRequest.java
+index 271b606..d77ecec 100644
+--- a/codec-http/src/main/java/io/netty/handler/codec/http/DefaultHttpRequest.java
++++ b/codec-http/src/main/java/io/netty/handler/codec/http/DefaultHttpRequest.java
+@@ -75,9 +75,25 @@ public class DefaultHttpRequest extends DefaultHttpMessage implements HttpReques
+      * @param headers           the Headers for this Request
+      */
+     public DefaultHttpRequest(HttpVersion httpVersion, HttpMethod method, String uri, HttpHeaders headers) {
++        this(httpVersion, method, uri, headers, true);
++    }
++
++    /**
++     * Creates a new instance.
++     *
++     * @param httpVersion       the HTTP version of the request
++     * @param method            the HTTP method of the request
++     * @param uri               the URI or path of the request
++     * @param headers           the Headers for this Request
++     */
++    public DefaultHttpRequest(HttpVersion httpVersion, HttpMethod method, String uri, HttpHeaders headers,
++                              boolean validateRequestLine) {
+         super(httpVersion, headers);
+         this.method = checkNotNull(method, "method");
+         this.uri = checkNotNull(uri, "uri");
++        if (validateRequestLine) {
++            HttpUtil.validateRequestLineTokens(httpVersion, method, uri);
++        }
+     }
+ 
+     @Override
+diff --git a/codec-http/src/main/java/io/netty/handler/codec/http/HttpUtil.java b/codec-http/src/main/java/io/netty/handler/codec/http/HttpUtil.java
+index 4097186..b8c7490 100644
+--- a/codec-http/src/main/java/io/netty/handler/codec/http/HttpUtil.java
++++ b/codec-http/src/main/java/io/netty/handler/codec/http/HttpUtil.java
+@@ -40,12 +40,13 @@ public final class HttpUtil {
+     private static final AsciiString CHARSET_EQUALS = AsciiString.of(HttpHeaderValues.CHARSET + "=");
+     private static final AsciiString SEMICOLON = AsciiString.cached(";");
+     private static final String COMMA_STRING = String.valueOf(COMMA);
++    private static final long ILLEGAL_REQUEST_LINE_TOKEN_OCTET_MASK = 1L << '\n' | 1L << '\r' | 1L << ' ';
+ 
+     private HttpUtil() { }
+ 
+     /**
+      * Determine if a uri is in origin-form according to
+-     * <a href="https://tools.ietf.org/html/rfc7230#section-5.3">rfc7230, 5.3</a>.
++     * <a href="https://datatracker.ietf.org/doc/html/rfc9112#section-3.2.1">RFC 9112, 3.2.1</a>.
+      */
+     public static boolean isOriginForm(URI uri) {
+         return isOriginForm(uri.toString());
+@@ -53,7 +54,7 @@ public final class HttpUtil {
+ 
+     /**
+      * Determine if a string uri is in origin-form according to
+-     * <a href="https://tools.ietf.org/html/rfc7230#section-5.3">rfc7230, 5.3</a>.
++     * <a href="https://datatracker.ietf.org/doc/html/rfc9112#section-3.2.1">RFC 9112, 3.2.1</a>.
+      */
+     public static boolean isOriginForm(String uri) {
+         return uri.startsWith("/");
+@@ -61,7 +62,7 @@ public final class HttpUtil {
+ 
+     /**
+      * Determine if a uri is in asterisk-form according to
+-     * <a href="https://tools.ietf.org/html/rfc7230#section-5.3">rfc7230, 5.3</a>.
++     * <a href="https://datatracker.ietf.org/doc/html/rfc9112#section-3.2.4">RFC 9112, 3.2.4</a>.
+      */
+     public static boolean isAsteriskForm(URI uri) {
+         return isAsteriskForm(uri.toString());
+@@ -69,12 +70,62 @@ public final class HttpUtil {
+ 
+     /**
+      * Determine if a string uri is in asterisk-form according to
+-     * <a href="https://tools.ietf.org/html/rfc7230#section-5.3">rfc7230, 5.3</a>.
++     * <a href="https://datatracker.ietf.org/doc/html/rfc9112#section-3.2.4">RFC 9112, 3.2.4</a>.
+      */
+     public static boolean isAsteriskForm(String uri) {
+         return "*".equals(uri);
+     }
+ 
++    static void validateRequestLineTokens(HttpVersion httpVersion, HttpMethod method, String uri) {
++        // The HttpVersion class does its own validation, and it's not possible for subclasses to circumvent it.
++        // The HttpMethod class does its own validation, but subclasses might circumvent it.
++        if (method.getClass() != HttpMethod.class) {
++            if (!isEncodingSafeStartLineToken(method.asciiName())) {
++                throw new IllegalArgumentException(
++                        "The HTTP method name contain illegal characters: " + method.asciiName());
++            }
++        }
++
++        if (!isEncodingSafeStartLineToken(uri)) {
++            throw new IllegalArgumentException("The URI contain illegal characters: " + uri);
++        }
++    }
++
++    /**
++     * Validate that the given request line token is safe for verbatim encoding to the network.
++     * This does not fully check that the token – HTTP method, version, or URI – is valid and formatted correctly.
++     * Only that the token does not contain characters that would break or
++     * desynchronize HTTP message parsing of the start line wherein the token would be included.
++     * <p>
++     * See <a href="https://datatracker.ietf.org/doc/html/rfc9112#name-request-line">RFC 9112, 3.</a>
++     *
++     * @param token The token to check.
++     * @return {@code true} if the token is safe to encode verbatim into the HTTP message output stream,
++     * otherwise {@code false}.
++     */
++    public static boolean isEncodingSafeStartLineToken(CharSequence token) {
++        int i = 0;
++        int lenBytes = token.length();
++        int modulo = lenBytes % 4;
++        int lenInts = modulo == 0 ? lenBytes : lenBytes - modulo;
++        for (; i < lenInts; i += 4) {
++            long chars = 1L << token.charAt(i) |
++                    1L << token.charAt(i + 1) |
++                    1L << token.charAt(i + 2) |
++                    1L << token.charAt(i + 3);
++            if ((chars & ILLEGAL_REQUEST_LINE_TOKEN_OCTET_MASK) != 0) {
++                return false;
++            }
++        }
++        for (; i < lenBytes; i++) {
++            long ch = 1L << token.charAt(i);
++            if ((ch & ILLEGAL_REQUEST_LINE_TOKEN_OCTET_MASK) != 0) {
++                return false;
++            }
++        }
++        return true;
++    }
++
+     /**
+      * Returns {@code true} if and only if the connection can remain open and
+      * thus 'kept alive'.  This methods respects the value of the.
+@@ -761,7 +812,7 @@ public final class HttpUtil {
+     //        .bits('-', '.', '_', '~') // Unreserved characters.
+     //        .bits('!', '#', '$', '%', '&', '\'', '*', '+', '^', '`', '|'); // Token special characters.
+ 
+-    //this constants calculated by the above code
++    // This constants calculated by the above code
+     private static final long TOKEN_CHARS_HIGH = 0x57ffffffc7fffffeL;
+     private static final long TOKEN_CHARS_LOW = 0x3ff6cfa00000000L;
+ 
+@@ -774,5 +825,4 @@ public final class HttpUtil {
+         }
+         return 0 != (TOKEN_CHARS_HIGH & 1L << bit - 64);
+     }
+-
+ }
+diff --git a/codec-http/src/test/java/io/netty/handler/codec/http/DefaultHttpRequestTest.java b/codec-http/src/test/java/io/netty/handler/codec/http/DefaultHttpRequestTest.java
+index 9ddb597..2666445 100644
+--- a/codec-http/src/test/java/io/netty/handler/codec/http/DefaultHttpRequestTest.java
++++ b/codec-http/src/test/java/io/netty/handler/codec/http/DefaultHttpRequestTest.java
+@@ -17,12 +17,88 @@ package io.netty.handler.codec.http;
+ 
+ import io.netty.util.AsciiString;
+ import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
+ 
+ import static io.netty.handler.codec.http.HttpHeadersTestUtils.of;
+ import static org.junit.jupiter.api.Assertions.assertNull;
++import static org.junit.jupiter.api.Assertions.assertThrows;
+ import static org.junit.jupiter.api.Assertions.assertTrue;
+ 
+ public class DefaultHttpRequestTest {
++    @ParameterizedTest
++    @ValueSource(strings = {
++            "http://localhost/\r\n",
++            "/r\r\n?q=1",
++            "http://localhost/\r\n?q=1",
++            "/r\r\n/?q=1",
++            "http://localhost/\r\n/?q=1",
++            "/r\r\n",
++            "http://localhost/ HTTP/1.1\r\n\r\nPOST /p HTTP/1.1\r\n\r\n",
++            "/r HTTP/1.1\r\n\r\nPOST /p HTTP/1.1\r\n\r\n",
++            "/ path",
++            "/path ",
++            " /path",
++            "http://localhost/ ",
++            " http://localhost/",
++            "http://local host/",
++    })
++    void constructorMustRejectIllegalUrisByDefault(String uri) {
++        assertThrows(IllegalArgumentException.class, () ->
++                new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, uri));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {
++            "GET ",
++            " GET",
++            "G ET",
++            " GET ",
++            "GET\r",
++            "GET\n",
++            "GET\r\n",
++            "GE\rT",
++            "GE\nT",
++            "GE\r\nT",
++            "\rGET",
++            "\nGET",
++            "\r\nGET",
++            " \r\nGET",
++            "\r \nGET",
++            "\r\n GET",
++            "\r\nGET ",
++            "\nGET ",
++            "\rGET ",
++            "\r GET",
++            " \rGET",
++            "\nGET ",
++            "\n GET",
++            " \nGET",
++            "GET \n",
++            "GET \r",
++            " GET\r",
++            " GET\r",
++            "GET \n",
++            " GET\n",
++            " GET\n",
++            "GE\nT ",
++            "GE\rT ",
++            " GE\rT",
++            " GE\rT",
++            "GE\nT ",
++            " GE\nT",
++            " GE\nT",
++    })
++    void constructorMustRejectIllegalHttpMethodByDefault(String method) {
++        assertThrows(IllegalArgumentException.class, () -> {
++            new DefaultHttpRequest(HttpVersion.HTTP_1_0, new HttpMethod("GET") {
++                @Override
++                public AsciiString asciiName() {
++                    return new AsciiString(method);
++                }
++            }, "/");
++        });
++    }
+ 
+     @Test
+     public void testHeaderRemoval() {
+diff --git a/codec-http/src/test/java/io/netty/handler/codec/http/HttpRequestEncoderTest.java b/codec-http/src/test/java/io/netty/handler/codec/http/HttpRequestEncoderTest.java
+index 2c0ffd7..cd82206 100644
+--- a/codec-http/src/test/java/io/netty/handler/codec/http/HttpRequestEncoderTest.java
++++ b/codec-http/src/test/java/io/netty/handler/codec/http/HttpRequestEncoderTest.java
+@@ -37,8 +37,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
+ import static org.junit.jupiter.api.Assertions.assertThrows;
+ import static org.junit.jupiter.api.Assertions.assertTrue;
+ 
+-/**
+- */
+ public class HttpRequestEncoderTest {
+ 
+     @SuppressWarnings("deprecation")
+diff --git a/codec-http/src/test/java/io/netty/handler/codec/http/HttpUtilTest.java b/codec-http/src/test/java/io/netty/handler/codec/http/HttpUtilTest.java
+index 05dd678..14de26f 100644
+--- a/codec-http/src/test/java/io/netty/handler/codec/http/HttpUtilTest.java
++++ b/codec-http/src/test/java/io/netty/handler/codec/http/HttpUtilTest.java
+@@ -56,7 +56,8 @@ public class HttpUtilTest {
+         assertFalse(HttpUtil.isOriginForm(URI.create("*")));
+     }
+ 
+-    @Test public void testRecognizesAsteriskForm() {
++    @Test
++    public void testRecognizesAsteriskForm() {
+         // Asterisk form: https://tools.ietf.org/html/rfc7230#section-5.3.4
+         assertTrue(HttpUtil.isAsteriskForm(URI.create("*")));
+         // Origin form: https://tools.ietf.org/html/rfc7230#section-5.3.1
+@@ -67,6 +68,26 @@ public class HttpUtilTest {
+         assertFalse(HttpUtil.isAsteriskForm(URI.create("www.example.com:80")));
+     }
+ 
++    @ParameterizedTest
++    @ValueSource(strings = {
++            "http://localhost/\r\n",
++            "/r\r\n?q=1",
++            "http://localhost/\r\n?q=1",
++            "/r\r\n/?q=1",
++            "http://localhost/\r\n/?q=1",
++            "/r\r\n",
++            "http://localhost/ HTTP/1.1\r\n\r\nPOST /p HTTP/1.1\r\n\r\n",
++            "/r HTTP/1.1\r\n\r\nPOST /p HTTP/1.1\r\n\r\n",
++            "GET ",
++            " GET",
++            "HTTP/ 1.1",
++            "HTTP/\r0.9",
++            "HTTP/\n1.1",
++    })
++    public void requestLineTokenValidationMustRejectInvalidTokens(String token) throws Exception {
++        assertFalse(HttpUtil.isEncodingSafeStartLineToken(token));
++    }
++
+     @Test
+     public void testRemoveTransferEncodingIgnoreCase() {
+         HttpMessage message = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+diff --git a/codec-http/src/test/java/io/netty/handler/codec/http/HttpVersionParsingTest.java b/codec-http/src/test/java/io/netty/handler/codec/http/HttpVersionParsingTest.java
+new file mode 100644
+index 0000000..9c6392d
+--- /dev/null
++++ b/codec-http/src/test/java/io/netty/handler/codec/http/HttpVersionParsingTest.java
+@@ -0,0 +1,162 @@
++/*
++ * Copyright 2025 The Netty Project
++ *
++ * The Netty Project licenses this file to you under the Apache License,
++ * version 2.0 (the "License"); you may not use this file except in compliance
++ * with the License. You may obtain a copy of the License at:
++ *
++ *   https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++ * License for the specific language governing permissions and limitations
++ * under the License.
++ */
++package io.netty.handler.codec.http;
++
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertSame;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++public class HttpVersionParsingTest {
++
++    @Test
++    void testStandardVersions() {
++        HttpVersion v10 = HttpVersion.valueOf("HTTP/1.0");
++        HttpVersion v11 = HttpVersion.valueOf("HTTP/1.1");
++
++        assertSame(HttpVersion.HTTP_1_0, v10);
++        assertSame(HttpVersion.HTTP_1_1, v11);
++
++        assertEquals("HTTP", v10.protocolName());
++        assertEquals(1, v10.majorVersion());
++        assertEquals(0, v10.minorVersion());
++
++        assertEquals("HTTP", v11.protocolName());
++        assertEquals(1, v11.majorVersion());
++        assertEquals(1, v11.minorVersion());
++    }
++
++    @Test
++    void testLowerCaseProtocolNameNonStrict() {
++        HttpVersion version = HttpVersion.valueOf("http/1.1");
++        assertEquals("HTTP", version.protocolName());
++        assertEquals(1, version.majorVersion());
++        assertEquals(1, version.minorVersion());
++        assertEquals("HTTP/1.1", version.text());
++    }
++
++    @Test
++    void testMixedCaseProtocolNameNonStrict() {
++        HttpVersion version = HttpVersion.valueOf("hTtP/1.0");
++        assertEquals("HTTP", version.protocolName());
++        assertEquals(1, version.majorVersion());
++        assertEquals(0, version.minorVersion());
++        assertEquals("HTTP/1.0", version.text());
++    }
++
++    @Test
++    void testCustomLowerCaseProtocolNonStrict() {
++        HttpVersion version = HttpVersion.valueOf("mqtt/5.0");
++        assertEquals("MQTT", version.protocolName());
++        assertEquals(5, version.majorVersion());
++        assertEquals(0, version.minorVersion());
++        assertEquals("MQTT/5.0", version.text());
++    }
++
++    @Test
++    void testCustomVersionNonStrict() {
++        HttpVersion version = HttpVersion.valueOf("MyProto/2.3");
++        assertEquals("MYPROTO", version.protocolName()); // uppercased
++        assertEquals(2, version.majorVersion());
++        assertEquals(3, version.minorVersion());
++        assertEquals("MYPROTO/2.3", version.text());
++    }
++
++    @Test
++    void testCustomVersionStrict() {
++        HttpVersion version = new HttpVersion("HTTP/1.1", true, true);
++        assertEquals("HTTP", version.protocolName());
++        assertEquals(1, version.majorVersion());
++        assertEquals(1, version.minorVersion());
++    }
++
++    @Test
++    void testCustomVersionStrictFailsOnLongVersion() {
++        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
++                new HttpVersion("HTTP/10.1", true, true)
++        );
++        assertTrue(ex.getMessage().contains("invalid version format"));
++    }
++
++    @Test
++    void testInvalidFormatMissingSlash() {
++        assertThrows(IllegalArgumentException.class, () ->
++                HttpVersion.valueOf("HTTP1.1")
++        );
++    }
++
++    @Test
++    void testInvalidFormatWhitespaceInProtocol() {
++        assertThrows(IllegalArgumentException.class, () ->
++                HttpVersion.valueOf("HT TP/1.1")
++        );
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {
++            "HTTP ",
++            " HTTP",
++            "H TTP",
++            " HTTP ",
++            "HTTP\r",
++            "HTTP\n",
++            "HTTP\r\n",
++            "HTT\rP",
++            "HTT\nP",
++            "HTT\r\nP",
++            "\rHTTP",
++            "\nHTTP",
++            "\r\nHTTP",
++            " \r\nHTTP",
++            "\r \nHTTP",
++            "\r\n HTTP",
++            "\r\nHTTP ",
++            "\nHTTP ",
++            "\rHTTP ",
++            "\r HTTP",
++            " \rHTTP",
++            "\nHTTP ",
++            "\n HTTP",
++            " \nHTTP",
++            "HTTP \n",
++            "HTTP \r",
++            " HTTP\r",
++            " HTTP\r",
++            "HTTP \n",
++            " HTTP\n",
++            " HTTP\n",
++            "HTT\nTP",
++            "HTT\rTP",
++            " HTT\rP",
++            " HTT\rP",
++            "HTT\nTP",
++            " HTT\nP",
++            " HTT\nP",
++    })
++    void httpVersionMustRejectIllegalTokens(String protocol) {
++        try {
++            HttpVersion httpVersion = new HttpVersion(protocol, 1, 0, true);
++            // If no exception is thrown, then the version must have been sanitized and made safe.
++            assertTrue(HttpUtil.isEncodingSafeStartLineToken(httpVersion.text()));
++        } catch (IllegalArgumentException ignore) {
++            // Throwing is good.
++        }
++    }
++}
+diff --git a/microbench/src/main/java/io/netty/microbench/http/HttpUtilBenchmark.java b/microbench/src/main/java/io/netty/microbench/http/HttpUtilBenchmark.java
+new file mode 100644
+index 0000000..80b2f1e
+--- /dev/null
++++ b/microbench/src/main/java/io/netty/microbench/http/HttpUtilBenchmark.java
+@@ -0,0 +1,41 @@
++/*
++ * Copyright 2025 The Netty Project
++ *
++ * The Netty Project licenses this file to you under the Apache License,
++ * version 2.0 (the "License"); you may not use this file except in compliance
++ * with the License. You may obtain a copy of the License at:
++ *
++ *   https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++ * License for the specific language governing permissions and limitations
++ * under the License.
++ */
++package io.netty.microbench.http;
++
++import io.netty.handler.codec.http.HttpUtil;
++import io.netty.microbench.util.AbstractMicrobenchmark;
++import org.openjdk.jmh.annotations.Benchmark;
++import org.openjdk.jmh.annotations.BenchmarkMode;
++import org.openjdk.jmh.annotations.Measurement;
++import org.openjdk.jmh.annotations.Mode;
++import org.openjdk.jmh.annotations.OutputTimeUnit;
++import org.openjdk.jmh.annotations.Warmup;
++
++import java.util.concurrent.TimeUnit;
++
++@OutputTimeUnit(TimeUnit.NANOSECONDS)
++@BenchmarkMode(Mode.AverageTime)
++@Warmup(iterations = 10, time = 1)
++@Measurement(iterations = 10, time = 1)
++public class HttpUtilBenchmark extends AbstractMicrobenchmark {
++    private static final String uri = "https://github.com/netty/netty/blob/893508ce62a7f90464f8e4bf2ac28ecc73ce6608/" +
++            "handler/src/main/java/io/netty/handler/ssl/util/BouncyCastleSelfSignedCertGenerator.java";
++
++    @Benchmark
++    public boolean checkIsEncodingSafeUri() {
++        return HttpUtil.isEncodingSafeStartLineToken(uri);
++    }
++}

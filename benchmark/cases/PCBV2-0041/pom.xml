@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Faithful-core recipe: pull the EXACT published com.alibaba:fastjson:${fastjson.version}
+     (V0=1.2.24 / V1=1.2.25 / V2=1.2.48) from Maven Central at build time. No vendored jars. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>fastjson-deser</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <properties>
+    <fastjson.version>1.2.25</fastjson.version>
+    <maven.compiler.source>8</maven.compiler.source>
+    <maven.compiler.target>8</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>com.alibaba</groupId>
+      <artifactId>fastjson</artifactId>
+      <version>${fastjson.version}</version>
+    </dependency>
+  </dependencies>
+</project>

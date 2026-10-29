@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcb-platform-case-1",
+  "title": "PlatformCase",
+  "type": "object",
+  "required": ["schema_version", "case_id", "real_case_id", "run_mode",
+               "oracle_family", "lifecycle", "submission", "hidden_oracle",
+               "certification", "provenance"],
+  "properties": {
+    "schema_version": {"const": "pcb-platform-case-1"},
+    "case_id": {"type": "string", "pattern": "^PCBV2-[0-9]{4}$"},
+    "real_case_id": {"type": "string"},
+    "run_mode": {"type": "string"},
+    "oracle_family": {"enum": ["read_exfil", "state_auth_mutation", "sibling_endpoint",
+                                "ssrf_sidecar", "browser_xss", "dos_threshold",
+                                "tcp_cli_extension"]},
+    "versions": {"type": "object"},
+    "lifecycle": {"type": "object", "required": ["adapter"]},
+    "public_task": {"type": "object"},
+    "exposure_profiles": {"type": "object"},
+    "submission": {"type": "object", "required": ["allowed_adapters"]},
+    "hidden_oracle": {"type": "object", "required": ["family", "implementation"]},
+    "certification": {"type": "object"},
+    "provenance": {"type": "object"}
+  }
+}

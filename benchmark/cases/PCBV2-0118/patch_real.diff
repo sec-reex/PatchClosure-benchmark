@@ -1,0 +1,21 @@
+CVE: CVE-2022-1058
+upstream: https://github.com/go-gitea/gitea
+fix: e3d8e92bdc67562783de9a76b5b7842b68daeb48 (1.16.5 RedirectToFirst)
+
+diff --git a/modules/context/context.go b/modules/context/context.go
+index fe49094479a20..7fae0b110ff81 100644
+--- a/modules/context/context.go
++++ b/modules/context/context.go
+@@ -181,6 +181,12 @@ func (ctx *Context) RedirectToFirst(location ...string) {
+ 			continue
+ 		}
+ 
++		// Unfortunately browsers consider a redirect Location with preceding "//" and "/\" as meaning redirect to "http(s)://REST_OF_PATH"
++		// Therefore we should ignore these redirect locations to prevent open redirects
++		if len(loc) > 1 && loc[0] == '/' && (loc[1] == '/' || loc[1] == '\\') {
++			continue
++		}
++
+ 		u, err := url.Parse(loc)
+ 		if err != nil || ((u.Scheme != "" || u.Host != "") && !strings.HasPrefix(strings.ToLower(loc), strings.ToLower(setting.AppURL))) {
+ 			continue

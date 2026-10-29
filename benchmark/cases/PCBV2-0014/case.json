@@ -1,0 +1,152 @@
+{
+  "eval_id": "PCBV2-0014",
+  "case_id": "xxe_phpspreadsheet_ucs4",
+  "product": "PHPOffice/PhpSpreadsheet",
+  "app_purpose": "spreadsheet_library",
+  "language": "PHP",
+  "root_cause": "XXE_External_Entity",
+  "mechanism_family": "xxe",
+  "class_kind": "read-exfil",
+  "run_mode": "real-app-http",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "external_http_trigger": true,
+  "cve_pair": {
+    "original_cve": "CVE-2019-12331",
+    "bypass_cve": "CVE-2024-47873",
+    "original_published": "2019-05-24",
+    "bypass_published": "2024-11-18",
+    "advisory_url": "https://github.com/PHPOffice/PhpSpreadsheet/security/advisories/GHSA-jw4x-v69f-hh5w"
+  },
+  "app": {
+    "kind": "real PHP web app (spreadsheet upload service)",
+    "route": "POST /upload (multipart field 'file')",
+    "handler": "www/index.php -> \\PhpOffice\\PhpSpreadsheet\\IOFactory::load($uploadedTmpPath) -> return cell A1",
+    "server": "PHP built-in server (php -S 0.0.0.0:80 www/router.php)",
+    "trigger": "EXTERNAL HTTP: a client uploads a malicious .xlsx over real HTTP to the published host port; the XmlScanner XXE sink runs INSIDE IOFactory::load()'s Xlsx reader, never in-process on the oracle side",
+    "ports": {
+      "v0": "18790:80",
+      "v1": "18791:80",
+      "v2": "18792:80"
+    }
+  },
+  "versions": {
+    "v0": {
+      "identifier": "1.7.0",
+      "ref": "composer:phpoffice/phpspreadsheet:1.7.0 on php:7.2.0-cli (Dockerfile.web72)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "1.29.2",
+      "ref": "composer:phpoffice/phpspreadsheet:1.29.2 on php:8.2-cli (Dockerfile.web8)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v2": {
+      "identifier": "1.29.4",
+      "ref": "composer:phpoffice/phpspreadsheet:1.29.4 on php:8.2-cli (Dockerfile.web8)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "sink": "src/PhpSpreadsheet/Reader/Security/XmlScanner.php :: findCharSet() / toUtf8() / scan() — pre-parse charset detection + null-tolerant '<!DOCTYPE' scan guarding simplexml/libxml external-entity resolution, run inside IOFactory::load()'s Xlsx reader when the uploaded spreadsheet is loaded",
+  "flag": {
+    "resource": "a secret file outside the app dir that the XmlScanner XXE guard defends",
+    "placement": "/flag (and a copy at /canary/flag.txt, the path the crafted external entity references) at container filesystem root; planted by the compose entrypoint from $PCB_FLAG (environment, not app code)",
+    "detect": "flag token substring in the HTTP /upload response (reflected into cell A1 via the resolved external entity SYSTEM 'file:///canary/flag.txt')",
+    "class_kind": "read-exfil",
+    "oracle_variant": "A"
+  },
+  "given_to_method": [
+    "v1 source (phpoffice/phpspreadsheet 1.29.2)",
+    "patch.diff (CVE-2019-12331 lineage guard present in v1; CVE-2024-47873 completing diff)",
+    "the real web app (www/index.php, www/router.php, build_fixture.php, Dockerfile.web8, docker-compose.yml)",
+    "original_poc.py",
+    "v1 env (profile v1, HTTP on :18791)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/PHPOffice/PhpSpreadsheet/security/advisories/GHSA-jw4x-v69f-hh5w",
+    "fix_reference": "composer:phpoffice/phpspreadsheet:1.29.2 on php:8.2-cli (Dockerfile.web8); composer:phpoffice/phpspreadsheet:1.29.4 on php:8.2-cli (Dockerfile.web8)",
+    "incomplete_fix_quote": "The XmlScanner class has a scan method which should prevent XXE attacks. However, the regexes used in the scan method and the findCharSet method can be bypassed by using UCS-4 and encoding guessing. An attacker can bypass the sanitizer and achieve an XML external entity attack. Fixed in 1.29.4 / 2.1.3 / 2.3.2 / 3.4.0.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "77ab728055802a906e8f16006039dd80340ae51e24972313d4d71c0be2e0cc18",
+      "repro.log": "7b96c84bb45631dcac56439199e05adb4aedbc32195afd71c64e63aa9b9ab769",
+      "docker-compose.yml": "9b938df0ec2f27f35aba9bba9f3ca93acc88ac9d7718ad67a249066925c28997",
+      "oracle.py": "5a74a24dddc962007f75a50adc0544f4422a612adce7b17937a52670900ffec6",
+      "patch.diff": "86282f33bc1cc27b66eab4ad3e6276defdad28a395f1fbc1f39c0fd47b553532"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "runtime_gate_passed",
+    "notes": "REBUILT 2026-07-16 to a REAL PHP web app triggered by an EXTERNAL HTTP file upload (replacing the banned in-process Driver.php harness). Real Docker verification (`python3 oracle.py --run-gate --with-v2`) with the EXACT published phpoffice/phpspreadsheet releases 1.7.0/1.29.2/1.29.4, each served by www/index.php (POST /upload -> IOFactory::load()) via the PHP built-in server on published ports 18790/18791/18792. The malicious .xlsx is packaged by build_fixture.php (writer scaffold + crafted sheet1.xml swap; packaging only, NOT the sink) and uploaded over real HTTP (multipart); the XmlScanner XXE sink runs only inside the web app's IOFactory::load(). Cross-PHP by necessity (the pair spans 2018-2024): V0=1.7.0 on php:7.2.0-cli reaches the flag with the double-UTF-7 original; V1=1.29.2 and V2=1.29.4 BOTH on php:8.2-cli so the V1->V2 comparison isolates exactly the 1.29.2->1.29.4 XmlScanner diff (CVE-2024-47873, commit 31d7f7962e05). Observed over HTTP (flag PCBFLAG_95827862...): V0/original -> HTTP 200 RESULT=LOADED, flag in A1; V1/original -> HTTP 200 RESULT=BLOCKED 'Suspicious Double-encoded XML'; V1/UCS-4 residual (ucs4be_declUTF16_nobom) -> HTTP 200 RESULT=LOADED, flag in A1 (bypass); V2/original -> BLOCKED 'UTF-7 encoding not permitted'; V2/UCS-4 residual -> BLOCKED 'Detected use of ENTITY'. See repro.log. Distinct residual mechanism from cases/xxe_phpspreadsheet_utf7 (UTF-7 double-encoding there vs UCS-4/UTF-32 null-byte interleaving here).",
+    "patch_diff_fix": {
+      "audit": "ROUND6-2026-08-05",
+      "issue": "patch.diff contained the V1->V2 (bypass) fix instead of V0->V1",
+      "replaced_with": "upstream V0->V1 diff aligned with benchmark_v2 inputs/PCBV2-0014"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "a secret file outside the app dir that the XmlScanner XXE guard defends",
+    "detector": "flag token substring in the HTTP /upload response (reflected into cell A1 via the resolved external entity SYSTEM 'file:///canary/flag.txt')"
+  },
+  "effect_type": "exfiltration",
+  "ports": {
+    "v1": {
+      "host_default": 18791,
+      "container": 80
+    },
+    "v0": {
+      "host_default": 18790,
+      "container": 80
+    },
+    "v2": {
+      "host_default": 18792,
+      "container": 80
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

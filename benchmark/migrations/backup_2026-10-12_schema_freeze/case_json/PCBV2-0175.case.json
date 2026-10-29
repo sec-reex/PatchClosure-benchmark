@@ -1,0 +1,134 @@
+{
+  "eval_id": "PCBV2-0175",
+  "case_id": "pp2-deep-get-set",
+  "product": "deep-get-set",
+  "app_purpose": "Tiny JavaScript deep get/set utility library (npm `deep-get-set`, by acstll/Gitii; github.com/acstll/deep-get-set). `deep(obj, path, value)` (3-arg form) walks a dotted-string or array key path and assigns the leaf value (nested set-by-path); the 2-arg form gets. A real web app assigns user-supplied JSON into fresh state via deep-get-set; this case stands the REAL library up inside a REAL Express service (POST /set -> deep({}, path, value)) reached over EXTERNAL HTTP.",
+  "language": "JavaScript",
+  "root_cause": "prototype-pollution",
+  "root_cause_note": "CWE-1321 prototype pollution in deep-get-set's set() key-walk. The walk dereferences each segment natively (`obj = obj[key]`), so a crafted `__proto__` segment makes the walk step OUT of the fresh target and ONTO the shared Object.prototype, and the leaf write ADDS/modifies a property on it. The incomplete fix is a string-only `isSafeKey` guard (`key !== '__proto__' && key !== 'prototype' && key !== 'constructor'`) bypassed by a NON-string (nested-array) key of the dangerous name = CWE-843 type confusion (CVE-2022-21231).",
+  "mechanism_family": "prototype-pollution",
+  "class_kind": "flag",
+  "run_mode": "real-app-http",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "external_http_trigger": true,
+  "cve_pair": {
+    "original_cve": "CVE-2020-7715",
+    "bypass_cve": "CVE-2022-21231",
+    "original_published": "2020-09-01",
+    "bypass_published": "2022-06-24"
+  },
+  "source_verified_caveat": "SOURCE-LEVEL VERIFICATION (against the real npm packages deep-get-set@1.1.0/1.1.1/1.1.2, index.js / index.cjs set()): 1.1.0 has NO magic-property guard in set(). The CVE-2020-7715 fix (1.1.1) ADDED `function isSafeKey (key) { return key !== '__proto__' && key !== 'prototype' && key !== 'constructor'; }` and `if (!isSafeKey(key)) return;` in the set() loop — a strict `!==` STRING comparison of the RAW key with NO type coercion. The CVE-2022-21231 fix (1.1.2) REPLACED it with `function isUnsafeKey (key) { return (Array.isArray(key) && key[0] === '__proto__') || key === '__proto__' || key === 'constructor' || key === 'prototype'; }` (array-key handling matched FIRST). So V1 (1.1.1) is the guard WITHOUT array-key handling = the incomplete fix / TARGET; the residual `[[\"__proto__\"],\"isAdmin\"]` (a segment that is itself an array) has `[\"__proto__\"] !== '__proto__'` so it slips the V1 guard, yet `obj[key]` stringifies the array back to '__proto__' and still pollutes; V2 (1.1.2) matches the nested array and blocks it. V0 (1.1.0) has no guard so the plain-string seed genuinely pollutes and is genuinely blocked on V1 (a real same-sink differential). deep.p left falsy so the walk reads the real obj['__proto__'] (Object.prototype). 1.1.2 is a dual ESM/CJS package; require() resolves index.cjs. Confirmed empirically on real Docker over EXTERNAL HTTP (see repro.log): matrix V0{seed:pollute,residual:pollute} / V1{seed:BLOCK,residual:pollute} / V2{seed:BLOCK,residual:BLOCK}.",
+  "versions": {
+    "v0": {
+      "identifier": "1.1.0",
+      "ref": "npm:deep-get-set@1.1.0",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39861"
+    },
+    "v1": {
+      "identifier": "1.1.1",
+      "ref": "npm:deep-get-set@1.1.1",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39862"
+    },
+    "v2": {
+      "identifier": "1.1.2",
+      "ref": "npm:deep-get-set@1.1.2",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39863"
+    }
+  },
+  "service": {
+    "kind": "real-express-http",
+    "description": "Per profile, `npm install deep-get-set@<DGS_VER> express@4.21.2` on node:18-slim, then app/server.js boots a REAL Express service. POST /set {path,value} calls the REAL published deep({}, path, value) set form on attacker JSON (the sink); prototype pollution persists PROCESS-WIDE. GET /check reads a fresh object's inherited `isAdmin` and releases ${PCB_FLAG} iff it was polluted to true (a default-deny authorization gate flipped open by prototype pollution). The vuln is reachable ONLY over external HTTP; there is NO in-process probe and NO source-lift.",
+    "routes": {
+      "POST /set": "deep({}, req.body.path, req.body.value) -> {ok|blocked}",
+      "GET /check": "{ polluted: ({}).isAdmin === true ? PCB_FLAG : null }"
+    },
+    "isolation": "Prototype pollution persists for the life of the node process, so the oracle RESTARTS the target container (fresh process => clean Object.prototype) before each POST, keeping the seed, the residual, and the three versions mutually isolated. Genuine HTTP flow throughout (curl POST /set then curl GET /check)."
+  },
+  "flag": {
+    "resource": "default-deny authorization gate (`Object.prototype.isAdmin` is ABSENT on a fresh process) that DENIES by default; GET /check releases the planted secret only if a prior POST /set caused the real deep() to ADD a truthy `isAdmin` onto Object.prototype (prototype pollution by addition)",
+    "placement": "PCB_FLAG env -> GET /check flag-gate (returned as `polluted` iff deep() wrote onto Object.prototype rather than a normal own slot on the fresh target)",
+    "detect": "flag token substring in the GET /check response body",
+    "class_kind": "prototype-pollution-authz-bypass",
+    "oracle_variant": "default"
+  },
+  "sink": "deep-get-set index.js / index.cjs — the set() key-walk magic-property guard on path segments (`var key = keys[i]`), driven by POST /set -> deep({}, path, value). The walk dereferences each segment (`obj = obj[key]`) and the leaf assigns; a `__proto__` segment, as a STRING (seed) or as a NON-string nested-array element (residual), makes the leaf write land on Object.prototype.",
+  "residual": "The string-comparison guard (V1 = deep-get-set@1.1.1) compares the RAW key with strict `!==` against the STRINGS '__proto__'/'prototype'/'constructor' (no coercion). A path whose first segment is itself an array — `[[\"__proto__\"],\"isAdmin\"]` — makes the dangerous key the array `[\"__proto__\"]`; `[\"__proto__\"] !== '__proto__'` is TRUE so isSafeKey returns true and the guard passes it, then `obj[key]` coerces the array to the string '__proto__' and the walk steps onto Object.prototype = CVE-2022-21231. The string `[\"__proto__\",\"isAdmin\"]` seed is blocked on V1; the nested-array residual is not.",
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/advisories/GHSA-85cp-p426-42f5",
+    "fix_reference": "npm:deep-get-set@1.1.1; npm:deep-get-set@1.1.2",
+    "incomplete_fix_quote": "SNYK-JS-DEEPGETSET-2342655 / CVE-2022-21231: 'All versions of package deep-get-set are vulnerable to Prototype Pollution via the deep function ... This vulnerability derives from an incomplete fix of CVE-2020-7715.' PoC: deep({}, [[\"__proto__\"], 'polluted'], 'success') — a nested-array key of the dangerous name slips the string-only `!== '__proto__'` guard added in 1.1.1. Fixed in 1.1.2.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "3a463ebad65fbf69aae9f842ef7d884c262c83bb6e15fc5ebd1ba1de6796cb93",
+      "repro.log": "c953c5d4adb9c03a86cefbdd132eddf1456275f783d1361db0c8faa535ad0c11",
+      "docker-compose.yml": "be2b9b7480bb38f3f623b1e6d105cf3af387ebeb50a9a75723d90d64d2394892",
+      "oracle.py": "b5055e74c7d8febd07551f93d72ff9f0303deaaa136c6ef5a7bd880990591240",
+      "patch.diff": "3276a3bb6bca75f02a819e7ab399049e6c23e19128314991acbdf0c5551e7dce"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {
+      "same_sink": true,
+      "incomplete_fix_lineage": true,
+      "not_same_release": true,
+      "benign_canary": true
+    }
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "real-docker-gate-passed",
+    "notes": "REBUILT to run_mode=real-app-http (2026-07-15): the REAL published deep-get-set library is installed per version via `npm i deep-get-set@<DGS_VER>` on node:18-slim and stood up inside a REAL Express HTTP service (app/server.js). The prototype-pollution vuln is triggered by an EXTERNAL HTTP request — POST /set {path,value} calls the real deep({}, path, value) on attacker JSON — and OBSERVED by a subsequent EXTERNAL GET /check that reflects ${PCB_FLAG} iff Object.prototype was polluted. NO in-process probe, NO source-lift. Same-sink Variant A incomplete-fix at the CORE set() key-walk: V1 (1.1.1) guards path segments with a strict `!==` STRING guard (isSafeKey) and no array-key handling; the residual `[[\"__proto__\"],\"isAdmin\"]` reaches Object.prototype because the array key is `!== '__proto__'` yet coerces back to '__proto__' when used as obj[key] (CWE-843 type confusion); V2 (1.1.2) matches `(Array.isArray(key) && key[0] === '__proto__')` first (isUnsafeKey) and blocks it. V0 (1.1.0) has NO guard so the plain-string seed pollutes and is genuinely blocked on V1. Pollution is GLOBAL and persists process-wide (that IS the vuln); the oracle RESTARTS the target container (fresh node process => clean Object.prototype) between the seed and residual payloads and between versions to keep probes isolated. Gate passed on real Docker over external HTTP 2026-07-15 (flag PCBFLAG_687576b418cc27381b7be24afb54c7aa): original@v0 reaches (set ok -> /check FLAG), original@v1 blocked (set ok, silent guard return -> /check null), bypass@v1 reaches (set ok -> /check FLAG); residual blocked on v2 (/check null) AND original blocked on v2 (/check null) — clean negative controls. deep.p left falsy so the walk reads the real obj['__proto__']."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "default-deny authorization gate (`Object.prototype.isAdmin` is ABSENT on a fresh process) that DENIES by default; GET /check releases the planted secret only if a prior POST /set caused the real deep() to ADD a truthy `isAdmin` onto Object.prototype (prototype pollution by addition)",
+    "detector": "flag token substring in the GET /check response body"
+  }
+}

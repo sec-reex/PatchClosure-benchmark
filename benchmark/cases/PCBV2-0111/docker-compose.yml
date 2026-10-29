@@ -1,0 +1,56 @@
+# docker-compose recipe for fastxmlparser_entityname_regex_injection
+# (CVE-2023-34104 [fast-xml-parser DOCTYPE entity-name -> RegExp injection in
+#  src/xmlparser/DocTypeReader.js: the entity NAME is interpolated UNESCAPED into
+#  RegExp(`&${entityName};`,"g") and applied to element text BEFORE the built-in XML
+#  entities decode, so a regex metachar in the NAME MATCHES and OVERWRITES a built-in
+#  entity reference], fixed 4.2.4 = TARGET  ->  CVE-2026-25896 [the 4.2.4 blocklist
+#  widening is an INCOMPLETE fix: it added '|' and '+' but MISSED '.', a valid XML Name
+#  char AND regex wildcard, so a period entity name still shadows &lt;; 5.3.5 escapes
+#  /[.\-+*:]/ before building the RegExp], CWE-185). Genuine incomplete fix.
+#
+# Recipe-only (NO vendored source/images): each service npm-installs the EXACT published
+# fast-xml-parser at a pinned version from the npm registry and stands up a REAL Express
+# HTTP service (server.js) whose POST /parse endpoint runs the REAL, unmodified
+# `new XMLParser({processEntities:true}).parse(req.body)` over the raw attacker-supplied
+# request body -- exactly how a real app parses user-supplied XML. EXTERNAL HTTP is the
+# trigger: the oracle/PoCs (on the host) POST the XML to the host-published port; the
+# per-run ${PCB_FLAG} rides IN the malicious DOCTYPE entity value and comes back in the
+# parsed <r> field of the JSON response iff the entity-name regex injection shadowed &lt;.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = fast-xml-parser 4.2.4. CVE-2023-34104 FIXED: the
+#        DocTypeReader entity-name blocklist widened to add '|' and '+' -> the original
+#        'lt+' vector now THROWS "Invalid character + in entity name". But INCOMPLETELY:
+#        '.' is still allowed, so the residual 'l.' period-wildcard vector still shadows
+#        &lt; -> CVE-2026-25896 residual stays open.
+#   v0 (gate)     = fast-xml-parser 4.2.3. Pre-CVE-2023-34104: blocklist lacks '|','+','.'
+#        -> BOTH the 'lt+' and 'l.' vectors shadow &lt; -> flag surfaces.
+#   v2 (negative) = fast-xml-parser 5.3.5. CVE-2026-25896 FIXED: entity names are validated
+#        as XML Names AND their regex metacharacters (/[.\-+*:]/) are ESCAPED before the
+#        RegExp is built -> 'l.' becomes literal /&l\.;/ -> &lt; decodes normally -> flag absent.
+#
+# Canary = content-injection: the per-run random ${PCB_FLAG} is the attacker's DOCTYPE entity
+# VALUE (in the payload, NOT app code); it appears in the parsed output ONLY when the entity-name
+# regex shadowed the built-in &lt;. No shell / no subprocess / no network / no persistence; each
+# parse is a tiny bounded XML (<100 bytes, <1ms) -- content injection, NOT DoS.
+services:
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {FXP_VERSION: "4.2.4"}}
+    image: "pcb-fxp-entityname:4.2.4"
+    ports: ["${PORT_V1_0:-34911}:80"]
+    mem_limit: 512m
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {FXP_VERSION: "4.2.3"}}
+    image: "pcb-fxp-entityname:4.2.3"
+    ports: ["${PORT_V0_0:-34910}:80"]
+    mem_limit: 512m
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {FXP_VERSION: "5.3.5"}}
+    image: "pcb-fxp-entityname:5.3.5"
+    ports: ["${PORT_V2_0:-34912}:80"]
+    mem_limit: 512m

@@ -1,0 +1,25 @@
+case_id: PCBV2-0214
+public_name: xwiki-cve-2026-23734
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: xwiki
+  v0: "16.10.6"
+  v1: "16.10.16"
+service:
+  # Compose publishes ${PORT_V*_0}:8080. Platform HTTP on :8080 would miss.
+  # start.sh waits until the published port AND /bin/ssx actually answers.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

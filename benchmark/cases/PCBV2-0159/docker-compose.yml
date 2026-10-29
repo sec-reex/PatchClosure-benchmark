@@ -1,0 +1,71 @@
+# PatchClosure-Bench :: openremote-cve-2026-54640
+#
+# Real OpenRemote multi-service stack (official images): manager + postgresql +
+# keycloak, plus a benign local-only OOB collector. The manager version is
+# selected with MANAGER_VERSION (no compose profiles):
+#
+#   MANAGER_VERSION=1.21.0  # V0 vulnerable (CVE-2026-40882 Velbus XXE)
+#   MANAGER_VERSION=1.22.0  # V1 incomplete-fix TARGET (KNX XXE still open)
+#
+# Auth: keycloak password grant via the manager /auth reverse proxy, realm
+#       master, client openremote, user admin / password secret.
+#
+# Flag: plant a per-run canary at /flag inside the running manager container:
+#       docker compose -p $COMPOSE_PROJECT_NAME exec -T manager \
+#         sh -c 'printf "%s" "$RUN_FLAG" > /flag'
+#       (TOKEN must be a single clean line: a trailing newline breaks the OOB URI.)
+
+volumes:
+  postgresql-data:
+  manager-data:
+
+services:
+
+  postgresql:
+    image: openremote/postgresql:latest-slim
+    restart: on-failure
+    shm_size: 128mb
+    volumes:
+      - postgresql-data:/var/lib/postgresql/data
+      - manager-data:/storage
+
+  keycloak:
+    image: openremote/keycloak:23.0.7.6
+    restart: on-failure
+    depends_on:
+      postgresql:
+        condition: service_started
+    environment:
+      KEYCLOAK_ADMIN_PASSWORD: secret
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: "-1"
+      KC_HOSTNAME_STRICT: "false"
+
+  manager:
+    image: openremote/manager:${MANAGER_VERSION:-1.22.0}
+    restart: on-failure
+    depends_on:
+      keycloak:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${MGR_PORT:-18080}:8080"
+    environment:
+      OR_ADMIN_PASSWORD: secret
+      OR_HOSTNAME: localhost
+      OR_SSL_PORT: "-1"
+      OR_DEV_MODE: "true"
+    volumes:
+      - manager-data:/storage
+
+  # Benign local-only OOB sink + TCP listener (see collector.py). No data ever
+  # leaves the compose network; it only records that file:///flag was read.
+  collector:
+    image: python:3.12-alpine
+    restart: "no"
+    command: ["python", "/collector.py"]
+    environment:
+      COLLECTOR_HOST: "collector:8000"
+    volumes:
+      - ./collector.py:/collector.py:ro
+    ports:
+      - "127.0.0.1:${COLLECTOR_PORT:-18085}:8000"

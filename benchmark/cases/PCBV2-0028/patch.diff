@@ -1,0 +1,40 @@
+PCBV2-0028 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 0e3e907990f40483c0cd850744bc995011826799 (2019-11-30 SECURITY / CWE-79)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0028/
+
+diff --git a/index.php b/index.php
+index 555905166c..fc8e7aed92 100644
+--- a/index.php
++++ b/index.php
+@@ -80,7 +80,29 @@ function initEnv() {
+   
+   $args = new stdClass();
+   $args->ssodisable = getSSODisable();
+-  $args->reqURI = ($pParams["reqURI"] != '') ? $pParams["reqURI"] : 'lib/general/mainPage.php';
++
++  // CWE-79: 
++  // Improper Neutralization of Input 
++  // During Web Page Generation ('Cross-site Scripting')
++  // 
++  // https://cxsecurity.com/issue/WLB-2019110139
++  $args->reqURI = '';
++  if ($pParams["reqURI"] != '') {
++    $args->reqURI = $pParams["reqURI"];
++
++    // some sanity checks
++    // strpos ( string $haystack , mixed $needle
++    if (strpos($args->reqURI,'javascript') !== false) {
++      $args->reqURI = null; 
++    }
++  }
++  if (null == $args->reqURI) {
++    $args->reqURI = 'lib/general/mainPage.php';
++  }
++  $args->reqURI = $_SESSION['basehref'] . $args->reqURI;
++
++
++
+   $args->tproject_id = isset($_REQUEST['tproject_id']) ? intval($_REQUEST['tproject_id']) : 0;
+   $args->tplan_id = isset($_REQUEST['tplan_id']) ? intval($_REQUEST['tplan_id']) : 0;
+ 

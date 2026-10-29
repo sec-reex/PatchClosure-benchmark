@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PatchClosure-Bench faithful-core harness POM (recipe-only, NO vendored jars).
+     A dummy project whose single dependency is the PUBLISHED Plexus Archiver artifact
+     org.codehaus.plexus:plexus-archiver at the pinned version. `mvn dependency:copy-dependencies`
+     pulls it + its full transitive dep set (plexus-utils, plexus-io, commons-compress, snappy,
+     plexus-container-default for the Logger, ...) at build time so the tiny Driver.java can
+     construct/drive the REAL, unmodified org.codehaus.plexus.archiver.tar.TarUnArchiver (whose base
+     class AbstractUnArchiver.extractFile is the EXACT sink the two CVE fixes touch). -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>plexus-archiver-zipslip</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <properties>
+    <plexus.archiver.version>3.6.0</plexus.archiver.version>
+    <maven.compiler.source>1.8</maven.compiler.source>
+    <maven.compiler.target>1.8</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.codehaus.plexus</groupId>
+      <artifactId>plexus-archiver</artifactId>
+      <version>${plexus.archiver.version}</version>
+    </dependency>
+    <!-- Provides org.codehaus.plexus.logging.console.ConsoleLogger so the Driver can give the real
+         UnArchiver a Logger (AbstractLogEnabled.getLogger() would otherwise NPE on warn paths). -->
+    <dependency>
+      <groupId>org.codehaus.plexus</groupId>
+      <artifactId>plexus-container-default</artifactId>
+      <version>2.1.0</version>
+    </dependency>
+  </dependencies>
+</project>

@@ -1,0 +1,53 @@
+# PatchClosure-Bench recipe for spring-uricomponentsbuilder-openredirect-cve-2024-22259
+# (CVE-2024-22243 -> CVE-2024-22259). Canary kind = redirect-canary. The per-run ${PCB_FLAG} rides
+# in the redirect target's query string (url=http://trusted.internal[@attacker.test/?<FLAG> or
+# url=http://@trusted.internal[@attacker.test/?<FLAG>); a successful open redirect emits a Location
+# steering off-origin to attacker.test carrying that query, so the flag appears in the Location header.
+# A blocked request returns 403 with no Location, so the flag never appears. Nothing is planted in app
+# code (the ${PCB_FLAG:?} guard just enforces the uniform per-run lifecycle).
+#
+# The SAME app (Harness.java) runs on all three services; ONLY the spring-web JAR differs:
+#   v0 = spring-web 5.3.31 (pre CVE-2024-22243): getHost() mis-extracts trusted.internal for BOTH inputs.
+#   v1 = spring-web 5.3.32 (CVE-2024-22243 fix, TARGET): original blocked, RESIDUAL still mis-extracts.
+#   v2 = spring-web 5.3.33 (CVE-2024-22259 fix): both blocked.
+services:
+  v1:
+    build:
+      context: .
+      args: { SPRING_VER: "5.3.32" }
+    image: "pcb-spring-uri-openredirect:5.3.32"
+    profiles: ["v1"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - ': "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"; exec java -cp /app/out:/app/libs/* Harness'
+    ports: ["${PORT_V1_0:-42431}:8080"]
+
+  v0:
+    build:
+      context: .
+      args: { SPRING_VER: "5.3.31" }
+    image: "pcb-spring-uri-openredirect:5.3.31"
+    profiles: ["v0"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - ': "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"; exec java -cp /app/out:/app/libs/* Harness'
+    ports: ["${PORT_V0_0:-42430}:8080"]
+
+  v2:
+    build:
+      context: .
+      args: { SPRING_VER: "5.3.33" }
+    image: "pcb-spring-uri-openredirect:5.3.33"
+    profiles: ["v2"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - ': "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"; exec java -cp /app/out:/app/libs/* Harness'
+    ports: ["${PORT_V2_0:-42432}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.199.0/24

@@ -1,0 +1,18 @@
+PCBV2-0115 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: as first shipped in v1.2.10  server/api/command/index.js
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0115/
+
+diff --git a/server/api/command/index.js b/server/api/command/index.js
+--- a/server/api/command/index.js
++++ b/server/api/command/index.js
+@@ -53,8 +53,9 @@ module.exports = {
+                 if (req.query.cmd === CommanTypeEnum.reportDownload) {
+                     try {
+-                        var reportPath = path.join(runtime.settings.reportsDir, req.query.name);
++                        const fileName = req.query.name.replace(new RegExp('../', 'g'), '');
++                        var reportPath = path.join(runtime.settings.reportsDir, fileName);
+                         if (!fs.existsSync(reportPath)) {
+-                            reportPath = path.join(process.cwd(), runtime.settings.reportsDir, req.query.name);
++                            reportPath = path.join(process.cwd(), runtime.settings.reportsDir, fileName);
+                         }

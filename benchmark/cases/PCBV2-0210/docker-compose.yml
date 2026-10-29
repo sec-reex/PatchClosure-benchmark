@@ -1,0 +1,44 @@
+# PatchClosure-Bench recipe for uptime-kuma-cve-2023-49804
+# (Insufficient Session Expiration after password change, CWE-613).
+#
+# REAL published Uptime Kuma images (louislam/uptime-kuma:<ver>) — NO custom build, NO lifted
+# harness. The oracle (poc/seed_exec.py) drives these over a REAL socket.io connection: it
+# completes the real setup wizard, seeds a private ${PCB_FLAG} monitor, and tests session
+# persistence after a real password change.
+#
+# Lineage: CVE-2023-44400 (fixed v1.23.3) bound the JWT to the password hash
+# (createJWT: h = shake256(user.password); loginByToken rejects on decoded.h mismatch), so an OLD
+# token replayed on a NEW connection after a password change is refused. The fix was INCOMPLETE
+# (CVE-2023-49804): a socket authenticated BEFORE the change is never torn down. The residual is
+# only truly closed once changePassword calls server.disconnectAllSocketClients(user.id, socket.id)
+# AND that call actually executes.
+#
+#   v0 = 1.23.2  (pre-CVE-2023-44400): no JWT password binding -> new-connection old-token replay
+#        reaches the flag (SEED / CVE-2023-44400).
+#   v1 = 1.23.3  (CVE-2023-44400-patched; CVE-2023-49804 TARGET): token binding blocks the SEED,
+#        but the pre-change live socket still reaches the flag (RESIDUAL / CVE-2023-49804).
+#   v2 = 1.23.10 (CVE-2023-49804 actually fixed): changePassword calls the CORRECT
+#        server.disconnectAllSocketClients(...) -> the pre-change live socket is dropped -> residual
+#        blocked.
+#
+# NOTE: the NVD-listed fix version 1.23.9 is INERT — its changePassword calls
+# server.disconnectAllSocketClient (SINGULAR, non-existent); the throw is caught and nothing is
+# disconnected, so the residual persists through 1.23.9 exactly as on 1.23.3. The typo is corrected
+# in 1.23.10, which is why V2 = 1.23.10.
+#
+# No pinned subnet (IPAM collisions are not part of the vuln). No container_name. No compose name:.
+services:
+  v0:
+    image: "louislam/uptime-kuma:1.23.2"
+    profiles: ["v0"]
+    ports: ["${PORT_V0_0:-40740}:3001"]
+
+  v1:
+    image: "louislam/uptime-kuma:1.23.3"
+    profiles: ["v1"]
+    ports: ["${PORT_V1_0:-40741}:3001"]
+
+  v2:
+    image: "louislam/uptime-kuma:1.23.10"
+    profiles: ["v2"]
+    ports: ["${PORT_V2_0:-40742}:3001"]

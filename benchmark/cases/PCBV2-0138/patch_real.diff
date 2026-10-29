@@ -1,0 +1,85 @@
+# CVE: CVE-2026-25521
+# Upstream: https://github.com/locutusjs/locutus.git
+# Fix: 042af9ca7fde2ff599120783e720a17f335bb01c
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 00d15a4..d628de5 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -64,6 +64,9 @@ Ideas that will be planned and find their way into a release at one point
+ 
+ Released: TBA. [Diff](https://github.com/locutusjs/locutus/compare/v2.0.38...main).
+ 
++### Security
++- Fix prototype pollution bypass in `parse_str` where overriding `String.prototype.includes` could defeat the guard ([GHSA-rxrv-835q-v5mh](https://github.com/locutusjs/locutus/security/advisories/GHSA-rxrv-835q-v5mh))
++
+ ## v2.0.38
+ 
+ Released: 2026-01-19. [Diff](https://github.com/locutusjs/locutus/compare/v2.0.37...v2.0.38).
+diff --git a/src/php/strings/parse_str.js b/src/php/strings/parse_str.js
+index f93478f..d0d63b5 100644
+--- a/src/php/strings/parse_str.js
++++ b/src/php/strings/parse_str.js
+@@ -74,7 +74,7 @@ module.exports = function parse_str(str, array) {
+     key = _fixStr(tmp[0])
+     value = tmp.length < 2 ? '' : _fixStr(tmp[1])
+ 
+-    if (key.includes('__proto__') || key.includes('constructor') || key.includes('prototype')) {
++    if (/__proto__|constructor|prototype/.test(key)) {
+       break
+     }
+ 
+diff --git a/test/custom/parse_str-prototype-pollution.vitest.ts b/test/custom/parse_str-prototype-pollution.vitest.ts
+new file mode 100644
+index 0000000..bdbd477
+--- /dev/null
++++ b/test/custom/parse_str-prototype-pollution.vitest.ts
+@@ -0,0 +1,48 @@
++/**
++ * Tests that parse_str resists prototype pollution even when
++ * String.prototype.includes has been tampered with.
++ *
++ * See: https://github.com/locutusjs/locutus/issues/...
++ */
++
++import { afterEach, describe, expect, it } from 'vitest'
++// @ts-expect-error - CJS module
++import parse_str from '../../src/php/strings/parse_str.js'
++
++describe('parse_str prototype pollution resistance', () => {
++  const originalIncludes = String.prototype.includes
++
++  afterEach(() => {
++    // Restore includes so other tests aren't affected
++    String.prototype.includes = originalIncludes
++    // Clean up any pollution that occurred
++    // @ts-expect-error - cleaning up pollution
++    delete Object.prototype.polluted
++  })
++
++  it('should block __proto__ pollution even when String.prototype.includes is overridden', () => {
++    String.prototype.includes = () => false
++    const arr = {} as Record<string, unknown>
++    parse_str('__proto__[polluted]=yes', arr)
++    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
++  })
++
++  it('should block constructor.prototype pollution even when String.prototype.includes is overridden', () => {
++    String.prototype.includes = () => false
++    const arr = {} as Record<string, unknown>
++    parse_str('constructor[prototype][polluted]=yes', arr)
++    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
++  })
++
++  it('should still block __proto__ pollution with native includes intact', () => {
++    const arr = {} as Record<string, unknown>
++    parse_str('__proto__[polluted]=yes', arr)
++    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
++  })
++
++  it('should still block constructor.prototype pollution with native includes intact', () => {
++    const arr = {} as Record<string, unknown>
++    parse_str('constructor[prototype][polluted]=yes', arr)
++    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
++  })
++})

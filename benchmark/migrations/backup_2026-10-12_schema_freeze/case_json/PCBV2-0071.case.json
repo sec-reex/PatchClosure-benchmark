@@ -1,0 +1,124 @@
+{
+  "eval_id": "PCBV2-0071",
+  "case_id": "open-webui-cve-2026-54019",
+  "run_mode": "real-app-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "real-app-rebuild",
+    "date": "2026-07-17",
+    "lift_kind": "real-app",
+    "evidence": "Rebuilt off the BANNED lifted FastAPI harness (core/) to boot the REAL official Open WebUI image (ghcr.io/open-webui/open-webui:0.8.12/0.9.0/0.9.6) + a REAL Milvus standalone (v2.4.13, ENABLE_MILVUS_MULTITENANCY_MODE=true) + Open WebUI's built-in LOCAL sentence-transformers all-MiniLM-L6-v2 embedding (offline, no external LLM/embedding API). Open WebUI's OWN retrieval/utils.py::filter_accessible_collections + vector/dbs/milvus_multitenancy.py sink run inside the container; the missing-authz RAG read is triggered by an EXTERNAL HTTP POST /api/v1/retrieval/query/collection from a real non-admin attacker (real JWT). 8GB Docker RAM -> versions run sequentially (run_gate.sh) with fresh Milvus between. 4-way gate on real software: original (direct victim-KB uuid) reads flag@V0 (200), blocked@V1 (403); bypass (Milvus tautology name \"x' or resource_id != '' or resource_id == 'x\") reads flag@V1 (200, cross-tenant leak of victim's private KNOWLEDGE_COLLECTION chunk), blocked@V2 (403; _is_safe_collection_name rejects). passed=true. STALE lifted harness left in place per NO-rm: core/, Dockerfile, oracle.py, original_poc.py, _heldout/bypass_poc.py."
+  },
+  "product": "Open WebUI",
+  "app_purpose": "self-hosted AI/LLM platform (RAG chat)",
+  "language": "Python",
+  "root_cause": "Missing authorization + Milvus query-logic injection (CWE-862/943)",
+  "mechanism_family": "authz",
+  "cve_pair": {
+    "original_cve": "CVE-2026-44560",
+    "bypass_cve": "CVE-2026-54019",
+    "original_published": "2026-05-05T00:00:00",
+    "bypass_published": "2026-06-23T18:18:07.230"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "0.8.12",
+      "ref": "backend/open_webui/retrieval/utils.py@v0.8.12 get_sources_from_items -> query_collection with NO ACL on the RAG query path (missing authz; vuln commit 6fdd19bf1)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "0.9.0",
+      "ref": "backend/open_webui/retrieval/utils.py@v0.9.0 filter_accessible_collections (44560 fix) else-branch allows unknown non-KB names as legacy/ephemeral; backend/open_webui/retrieval/vector/dbs/milvus_multitenancy.py@v0.9.0 search expr=f\"resource_id == '{resource_id}'\" UNESCAPED",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39581"
+    },
+    "v2": {
+      "identifier": "0.9.6",
+      "ref": "utils.py@v0.9.6 adds _is_safe_collection_name regex ^[A-Za-z0-9_-]{1,255}$ + gates unknown names behind ENABLE_RETRIEVAL_UNSCOPED_COLLECTIONS (default False); milvus_multitenancy.py@v0.9.6 adds _validate_resource_id + _escape_milvus_string (54019 fix; tested-vuln at v0.9.5 commit 3660bc00f)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "flag": {
+    "resource": "a victim-owned knowledge-base chunk (resource_id=victim-kb-...privatefinance) in the shared Milvus multitenancy KNOWLEDGE_COLLECTION; readable only by the victim under the 0.9.0 ACL",
+    "placement": "orchestrate.py provisions a real non-admin VICTIM over the Open WebUI API, creates a private knowledge base, uploads a doc whose embedded chunk carries ${PCB_FLAG} (stored in real Milvus under resource_id=KB-id); the attacker is a distinct non-admin user with a real JWT",
+    "detect": "flag token substring in candidate result (returned RAG documents)",
+    "class_kind": "authz-seeded",
+    "oracle_variant": "standard"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch_real.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/open-webui/open-webui/security/advisories/GHSA-p5cp-r7rg-qpxc",
+    "fix_reference": "backend/open_webui/retrieval/utils.py@v0.9.0 filter_accessible_collections (44560 fix) else-branch allows unknown non-KB names as legacy/ephemeral; backend/open_webui/retrieval/vector/dbs/milvus_multitenancy.py@v0.9.0 search expr=f\"resource_id == '{resource_id}'\" UNESCAPED; utils.py@v0.9.6 adds _is_safe_collection_name regex ^[A-Za-z0-9_-]{1,255}$ + gates unknown names behind ENABLE_RETRIEVAL_UNSCOPED_COLLECTIONS (default False); milvus_multitenancy.py@v0.9.6 adds _validate_resource_id + _escape_milvus_string (54019 fix; tested-vuln at v0.9.5 commit 3660bc00f)",
+    "incomplete_fix_quote": "This is a bypass of the earlier fix for GHSA-h36f-rqpx-j5wx / CVE-2026-44560. The prior patch added collection-level ACL checks, but the patch can still be bypassed when Milvus multitenancy mode is enabled. The ACL allows unknown non-KB collection names as legacy/ephemeral collections; that user-controlled collection name becomes a resource_id and is interpolated into a Milvus expression without escaping, returning private knowledge-base chunks belonging to other users.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "68d7f5c2b7debe66576ef628c87862b12e56618ad2e4bd8cbe7b9bc3f34c59c1",
+      "repro.log": "32d95767ca1ffd9ea8ec9b9bde8fb8e65100d93b742fe735f96bce71dd603997",
+      "docker-compose.yml": "01fd5f45f2b053e494b584a6e79a3161e46f4c7cbcdc471acb003d1fe03758fc",
+      "oracle.py": "08c149ca529603d71d5c6ab4e713857da412400bded5b14647088d7e831f83a2",
+      "patch.diff": "7544648d0ea3f705fe1da27ee8738ed09727dda317b7ba2b7395a0a38c540868"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "A",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "target recipe explicitly identifies an official/published image"
+  },
+  "provenance": {
+    "source": "agent:real-app-rebuild",
+    "verified": "real-app-http-gate 2026-07-17 (Docker Engine 29.4.0, Compose v5.1.2; official ghcr.io/open-webui/open-webui images + real Milvus v2.4.13 standalone)",
+    "notes": [
+      "REAL-APP rebuild off the prior BANNED lifted FastAPI harness (core/). Runs the unmodified official Open WebUI images (0.8.12 V0 / 0.9.0 V1 / 0.9.6 V2) against a REAL Milvus standalone in multitenancy mode; Open WebUI's own filter_accessible_collections ACL and milvus_multitenancy sink execute inside the container. Embedding = built-in local sentence-transformers all-MiniLM-L6-v2 (offline). All seeding + the attack go over EXTERNAL HTTP via the real REST API with real JWTs (orchestrate.py). 8GB Docker RAM forces sequential per-version runs (run_gate.sh) with fresh Milvus between. 4-way gate + V2 negative control all pass on real software; results/{v0,v1,v2}.json hold the raw HTTP transcripts. STALE (NO-rm): lifted harness core/, Dockerfile, oracle.py, original_poc.py, _heldout/bypass_poc.py remain but are unused by this build.",
+      "2026-10-11: patch.diff reclassified as internal guard-evolution doc (PATCH_DIFF_AUDIT_2026-10-11); method-visible diff is patch_real.diff only; patch.diff excluded from method input packages."
+    ]
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_image",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "a victim-owned knowledge-base chunk (resource_id=victim-kb-...privatefinance) in the shared Milvus multitenancy KNOWLEDGE_COLLECTION; readable only by the victim under the 0.9.0 ACL",
+    "detector": "flag token substring in candidate result (returned RAG documents)"
+  }
+}

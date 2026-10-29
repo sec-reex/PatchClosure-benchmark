@@ -1,0 +1,25 @@
+case_id: PCBV2-0207
+public_name: twiki-cve-2009-4898
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: url_tgz
+  repo: https://sourceforge.net/projects/twiki/files/TWiki%20for%20all%20Platforms/
+  v0: "4.3.0"
+  v1: "4.3.1"
+service:
+  # compose publishes ${PORT_V*_0}:80 — host :80 is not bound.
+  # start.sh waits until /bin/view or /bin/login answers.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

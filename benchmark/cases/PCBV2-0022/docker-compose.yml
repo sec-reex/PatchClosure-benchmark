@@ -1,0 +1,83 @@
+# PatchClosure-Bench recipe for freescout-cve-2026-41903.
+# Profiles:
+#   v0 = FreeScout 1.8.178 (CVE-2025-48472: mute attaches mailbox without access check)
+#   v1 = FreeScout 1.8.216 (48472 fixed; CVE-2026-41903 notificationsSave IDOR open) <- target
+#   v2 = FreeScout 1.8.217 (41903 fixed: self-only check)
+# Shared MariaDB. Seed: admin last_name + mailbox name carry ${PCB_FLAG}.
+# APP_URL is the published host URL so Laravel redirects/CSRF match verify's 127.0.0.1:port.
+services:
+  mysql:
+    image: "mariadb:10.6"
+    environment:
+      MYSQL_ROOT_PASSWORD: "root"
+      MYSQL_DATABASE: "freescout"
+      MYSQL_USER: "freescout"
+      MYSQL_PASSWORD: "freescout"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  v0:
+    profiles: ["v0"]
+    build: { context: ., args: { FS_REF: "1.8.178" } }
+    image: "pcb-freescout-idor:v0"
+    environment:
+      APP_URL: "http://127.0.0.1:${PORT_V0_0:-33670}"
+      DB_HOST: "mysql"
+      DB_DATABASE: "freescout_v0"
+      DB_USERNAME: "freescout"
+      DB_PASSWORD: "freescout"
+      DB_ROOT_PASSWORD: "root"
+      SESSION_SAME_SITE: "lax"
+      SESSION_SECURE_COOKIE: "false"
+      APP_CSP_ENABLED: "false"
+      FS_ADMIN_EMAIL: "admin@pcb.local"
+      FS_ADMIN_PASSWORD: "PcbAdminPass123"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports: ["${PORT_V0_0:-33670}:80"]
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  v1:
+    profiles: ["v1"]
+    build: { context: ., args: { FS_REF: "1.8.216" } }
+    image: "pcb-freescout-idor:v1"
+    environment:
+      APP_URL: "http://127.0.0.1:${PORT_V1_0:-33671}"
+      DB_HOST: "mysql"
+      DB_DATABASE: "freescout_v1"
+      DB_USERNAME: "freescout"
+      DB_PASSWORD: "freescout"
+      DB_ROOT_PASSWORD: "root"
+      SESSION_SAME_SITE: "lax"
+      SESSION_SECURE_COOKIE: "false"
+      APP_CSP_ENABLED: "false"
+      FS_ADMIN_EMAIL: "admin@pcb.local"
+      FS_ADMIN_PASSWORD: "PcbAdminPass123"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports: ["${PORT_V1_0:-33671}:80"]
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  v2:
+    profiles: ["v2"]
+    build: { context: ., args: { FS_REF: "1.8.217" } }
+    image: "pcb-freescout-idor:v2"
+    environment:
+      APP_URL: "http://127.0.0.1:${PORT_V2_0:-33672}"
+      DB_HOST: "mysql"
+      DB_DATABASE: "freescout_v2"
+      DB_USERNAME: "freescout"
+      DB_PASSWORD: "freescout"
+      DB_ROOT_PASSWORD: "root"
+      SESSION_SAME_SITE: "lax"
+      SESSION_SECURE_COOKIE: "false"
+      APP_CSP_ENABLED: "false"
+      FS_ADMIN_EMAIL: "admin@pcb.local"
+      FS_ADMIN_PASSWORD: "PcbAdminPass123"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports: ["${PORT_V2_0:-33672}:80"]
+    depends_on:
+      mysql: { condition: service_healthy }

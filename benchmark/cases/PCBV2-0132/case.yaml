@@ -1,0 +1,25 @@
+case_id: PCBV2-0132
+public_name: js-help-desk-wordpress-plugin-cve-2023-7337
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: wordpress_plugin_zip
+  repo: https://downloads.wordpress.org/plugin/js-support-ticket
+  v0: "2.8.1"
+  v1: "2.8.2"
+service:
+  # Host publishes ${PORT_WP_V*_0}:80 — not host :80. Platform HTTP/TCP
+  # readiness on :80 times out. start.sh waits for wp-login + /flag/ready.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

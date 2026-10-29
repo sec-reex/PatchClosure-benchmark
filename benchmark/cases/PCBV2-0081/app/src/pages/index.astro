@@ -1,0 +1,13 @@
+---
+// Minimal on-demand-rendered page so `output: 'server'` has a route.
+// The vulnerability lives in the injected /_image endpoint, not this page.
+const now = new Date().toISOString();
+---
+<html>
+  <head><title>PCB astro-cloudflare image proxy</title></head>
+  <body>
+    <h1>Image proxy demo</h1>
+    <p>Rendered at {now}</p>
+    <p>Use the built-in <code>/_image?href=...</code> endpoint.</p>
+  </body>
+</html>

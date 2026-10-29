@@ -1,0 +1,1059 @@
+PCBV2-0202 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: c115713f6d73a4c0e2d83b1fb9e385db4199fb2a
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0202/
+
+diff --git a/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/SPELVariableExpressionEvaluator.java b/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/SPELVariableExpressionEvaluator.java
+index c71180d27..100045864 100644
+--- a/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/SPELVariableExpressionEvaluator.java
++++ b/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/SPELVariableExpressionEvaluator.java
+@@ -24,6 +24,8 @@
+ import org.springframework.expression.EvaluationContext;
+ import org.springframework.expression.spel.SpelCompilerMode;
+ import org.springframework.expression.spel.SpelParserConfiguration;
++import org.springframework.expression.spel.SpelNode;
++import org.springframework.expression.spel.ast.VariableReference;
+ import org.springframework.expression.spel.standard.SpelExpression;
+ import org.springframework.expression.spel.standard.SpelExpressionParser;
+ import org.springframework.expression.spel.support.StandardEvaluationContext;
+@@ -134,19 +136,36 @@ public final Object evaluate(
+             final IExpressionContext context,
+             final IStandardVariableExpression expression,
+             final StandardExpressionExecutionContext expContext) {
+-        
++
+         if (logger.isTraceEnabled()) {
+             logger.trace("[THYMELEAF][{}] SpringEL expression: evaluating expression \"{}\" on target", TemplateEngine.threadIndex(), expression.getExpression());
+         }
+ 
+-        try {
+ 
+-            final String spelExpression = expression.getExpression();
+-            final boolean useSelectionAsRoot = expression.getUseSelectionAsRoot();
++        final String spelExpression = expression.getExpression();
++        final boolean useSelectionAsRoot = expression.getUseSelectionAsRoot();
++
++        if (spelExpression == null) {
++            throw new TemplateProcessingException("Expression content is null, which is not allowed");
++        }
++
++        final IEngineConfiguration configuration = context.getConfiguration();
++
++
++        /*
++         * OBTAIN THE EXPRESSION (SpelExpression OBJECT) FROM THE CACHE, OR PARSE IT
++         */
++        final ComputedSpelExpression exp =
++                obtainComputedSpelExpression(configuration, expression, spelExpression, expContext);
++
++
++        if (expContext.getRestrictVariableAccess()) {
++            checkRestrictedVariables(exp.expression.getAST());
++        }
++
++
++        try {
+ 
+-            if (spelExpression == null) {
+-                throw new TemplateProcessingException("Expression content is null, which is not allowed");
+-            }
+ 
+             /*
+              * TRY TO DELEGATE EVALUATION TO SPRING IF EXPRESSION IS ON A BOUND OBJECT
+@@ -172,15 +191,6 @@ public final Object evaluate(
+ 
+             }
+ 
+-            final IEngineConfiguration configuration = context.getConfiguration();
+-
+-
+-            /*
+-             * OBTAIN THE EXPRESSION (SpelExpression OBJECT) FROM THE CACHE, OR PARSE IT
+-             */
+-            final ComputedSpelExpression exp =
+-                    obtainComputedSpelExpression(configuration, expression, spelExpression, expContext);
+-
+ 
+             /*
+              * COMPUTE EXPRESSION OBJECTS AND ADDITIONAL CONTEXT VARIABLES MAP
+@@ -304,8 +314,8 @@ private static ComputedSpelExpression obtainComputedSpelExpression(
+             final IStandardVariableExpression expression, final String spelExpression,
+             final StandardExpressionExecutionContext expContext) {
+ 
+-        if (expContext.getRestrictInstantiationAndStatic()
+-                && SpringStandardExpressionUtils.containsSpELInstantiationOrStaticOrParam(spelExpression)) {
++        if (expContext.getRestrictExternalAccess()
++                && SpringStandardExpressionUtils.containsExternalAccess(spelExpression)) {
+             throw new TemplateProcessingException(
+                 "Instantiation of new objects and access to static classes or parameters is forbidden in this context");
+         }
+@@ -409,6 +419,23 @@ private static boolean isLocalVariableOverriding(final IExpressionContext contex
+ 
+ 
+ 
++    private static void checkRestrictedVariables(final SpelNode node) {
++        if (node instanceof VariableReference) {
++            final String name = node.toStringAST();
++            if (name != null && name.length() > 1 && name.charAt(0) == '#') {
++                final String varName = name.substring(1);
++                if (ThymeleafEvaluationContext.RESTRICTED_VARIABLE_NAMES.contains(varName)) {
++                    throw new TemplateProcessingException(
++                            "Access to variable '" + name + "' is forbidden in this context");
++                }
++            }
++        }
++        for (int i = 0; i < node.getChildCount(); i++) {
++            checkRestrictedVariables(node.getChild(i));
++        }
++    }
++
++
+     @Override
+     public String toString() {
+         return "SpringEL";
+diff --git a/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/ThymeleafEvaluationContext.java b/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/ThymeleafEvaluationContext.java
+index c63013e25..b13b729e3 100755
+--- a/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/ThymeleafEvaluationContext.java
++++ b/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/ThymeleafEvaluationContext.java
+@@ -20,6 +20,7 @@
+ package org.thymeleaf.spring5.expression;
+ 
+ import java.util.ArrayList;
++import java.util.Arrays;
+ import java.util.Collection;
+ import java.util.Collections;
+ import java.util.HashSet;
+@@ -47,6 +48,7 @@
+ import org.springframework.expression.spel.support.StandardTypeLocator;
+ import org.thymeleaf.expression.IExpressionObjects;
+ import org.thymeleaf.spring5.view.ThymeleafView;
++import org.thymeleaf.standard.expression.StandardExpressionObjectFactory;
+ import org.thymeleaf.util.ExpressionUtils;
+ import org.thymeleaf.util.Validate;
+ 
+@@ -82,6 +84,13 @@ public final class ThymeleafEvaluationContext
+ 
+     public static final String THYMELEAF_EVALUATION_CONTEXT_CONTEXT_VARIABLE_NAME = "thymeleaf::EvaluationContext";
+ 
++    static final Set<String> RESTRICTED_VARIABLE_NAMES =
++            Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
++                    StandardExpressionObjectFactory.CONTEXT_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.VARIABLES_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.ROOT_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.THIS_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.EXECUTION_INFO_OBJECT_NAME)));
+ 
+     private static final ReflectivePropertyAccessor REFLECTIVE_PROPERTY_ACCESSOR_INSTANCE =
+             new ThymeleafEvaluationContextACLPropertyAccessor();
+@@ -169,6 +178,12 @@ public Collection<Class<?>> getAllowedClassOverridesForViews() {
+ 
+     @Override
+     public Object lookupVariable(final String name) {
++        if (this.variableAccessRestricted) {
++            if (RESTRICTED_VARIABLE_NAMES.contains(name)) {
++                throw new EvaluationException(
++                        String.format("Access to variable '%s' is forbidden in this context.", name));
++            }
++        }
+         if (this.expressionObjects != null && this.expressionObjects.containsObject(name)) {
+             final Object result = this.expressionObjects.getObject(name);
+             if (result != null) {
+diff --git a/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/ThymeleafEvaluationContextWrapper.java b/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/ThymeleafEvaluationContextWrapper.java
+index 64bfc63c1..75940ba2f 100755
+--- a/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/ThymeleafEvaluationContextWrapper.java
++++ b/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/expression/ThymeleafEvaluationContextWrapper.java
+@@ -29,6 +29,7 @@
+ import org.springframework.expression.BeanResolver;
+ import org.springframework.expression.ConstructorResolver;
+ import org.springframework.expression.EvaluationContext;
++import org.springframework.expression.EvaluationException;
+ import org.springframework.expression.MethodResolver;
+ import org.springframework.expression.OperatorOverloader;
+ import org.springframework.expression.PropertyAccessor;
+@@ -73,14 +74,14 @@ public final class ThymeleafEvaluationContextWrapper implements IThymeleafEvalua
+     private final List<MethodResolver> methodResolvers;     // can be initialized to null if we can delegate
+ 
+     private IExpressionObjects expressionObjects = null;
+-    private boolean requestParametersRestricted = false;
++    private boolean variableAccessRestricted = false;
+     private Map<String,Object> additionalVariables = null;
+ 
+ 
+ 
+ 
+     public ThymeleafEvaluationContextWrapper(final EvaluationContext delegate) {
+-        
++
+         super();
+ 
+         Validate.notNull(delegate, "Evaluation context delegate cannot be null");
+@@ -119,7 +120,7 @@ public ThymeleafEvaluationContextWrapper(final EvaluationContext delegate) {
+ 
+     }
+ 
+-    
++
+     public TypedValue getRootObject() {
+         return this.delegate.getRootObject();
+     }
+@@ -165,6 +166,13 @@ public void setVariable(final String name, final Object value) {
+ 
+     public Object lookupVariable(final String name) {
+ 
++        if (this.variableAccessRestricted) {
++            if (ThymeleafEvaluationContext.RESTRICTED_VARIABLE_NAMES.contains(name)) {
++                throw new EvaluationException(
++                        String.format("Access to variable '%s' is forbidden in this context.", name));
++            }
++        }
++
+         if (this.expressionObjects != null && this.expressionObjects.containsObject(name)) {
+             final Object result = this.expressionObjects.getObject(name);
+             if (result != null) {
+@@ -186,11 +194,11 @@ public Object lookupVariable(final String name) {
+ 
+ 
+     public boolean isVariableAccessRestricted() {
+-        return this.requestParametersRestricted;
++        return this.variableAccessRestricted;
+     }
+ 
+     public void setVariableAccessRestricted(final boolean restricted) {
+-        this.requestParametersRestricted = restricted;
++        this.variableAccessRestricted = restricted;
+     }
+ 
+     public IExpressionObjects getExpressionObjects() {
+diff --git a/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/util/SpringRequestUtils.java b/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/util/SpringRequestUtils.java
+index ff765b0ec..1bd800b84 100644
+--- a/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/util/SpringRequestUtils.java
++++ b/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/util/SpringRequestUtils.java
+@@ -60,6 +60,9 @@ public static void checkViewNameNotInRequest(final String viewName, final IWebRe
+             final Map<String,String[]> parameterMap = request.getParameterMap();
+             if (parameterMap != null && !parameterMap.isEmpty()) {
+                 for (final String[] parameterValues : parameterMap.values()) {
++                    if (parameterValues == null) {
++                        continue;
++                    }
+                     for (int i = 0; !found && i < parameterValues.length; i++) {
+                         final String parameterValue = StringUtils.pack(parameterValues[i]);
+                         if (parameterValue != null && containsExpression(parameterValue) && vn.contains(parameterValue)) {
+@@ -74,10 +77,52 @@ public static void checkViewNameNotInRequest(final String viewName, final IWebRe
+             }
+         }
+ 
++        if (!found) {
++            final Map<String,String[]> cookieMap = request.getCookieMap();
++            if (cookieMap != null && !cookieMap.isEmpty()) {
++                for (final String[] cookieValues : cookieMap.values()) {
++                    if (cookieValues == null) {
++                        continue;
++                    }
++                    for (int i = 0; !found && i < cookieValues.length; i++) {
++                        final String cookieValue = StringUtils.pack(cookieValues[i]);
++                        if (cookieValue != null && containsExpression(cookieValue) && vn.contains(cookieValue)) {
++                            // Cookie contains an expression, and it is contained in the view name. Too dangerous.
++                            found = true;
++                        }
++                    }
++                    if (found) {
++                        break;
++                    }
++                }
++            }
++        }
++
++        if (!found) {
++            final Map<String,String[]> headerMap = request.getHeaderMap();
++            if (headerMap != null && !headerMap.isEmpty()) {
++                for (final String[] headerValues : headerMap.values()) {
++                    if (headerValues == null) {
++                        continue;
++                    }
++                    for (int i = 0; !found && i < headerValues.length; i++) {
++                        final String headerValue = StringUtils.pack(headerValues[i]);
++                        if (headerValue != null && containsExpression(headerValue) && vn.contains(headerValue)) {
++                            // Header contains an expression, and it is contained in the view name. Too dangerous.
++                            found = true;
++                        }
++                    }
++                    if (found) {
++                        break;
++                    }
++                }
++            }
++        }
++
+         if (found) {
+             throw new TemplateProcessingException(
+-                    "View name contains an expression and so does either the URL path or one of the request " +
+-                    "parameters. This is forbidden in order to reduce the possibilities that direct user input " +
++                    "View name contains an expression and so does either the URL path or the request parameters " +
++                    "or contents. This is forbidden in order to reduce the possibilities that direct user input " +
+                     "is executed as a part of the view name.");
+         }
+ 
+@@ -88,6 +133,8 @@ private static boolean containsExpression(final String text) {
+         final int textLen = text.length();
+         char c;
+         boolean expInit = false;
++        boolean preInit = false;
++        boolean lsubInit = false;
+         for (int i = 0; i < textLen; i++) {
+             c = text.charAt(i);
+             if (!expInit) {
+@@ -101,6 +148,21 @@ private static boolean containsExpression(final String text) {
+                     expInit = false;
+                 }
+             }
++            if (c == '_' && (i + 1) < textLen && text.charAt(i + 1) == '_') {
++                if (!preInit) {
++                    preInit = true;
++                    i++;
++                } else {
++                    return true;
++                }
++            }
++            if (c == '|') {
++                if (!lsubInit) {
++                    lsubInit = true;
++                } else {
++                    return true;
++                }
++            }
+         }
+         return false;
+     }
+diff --git a/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/util/SpringStandardExpressionUtils.java b/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/util/SpringStandardExpressionUtils.java
+index a2acc9f6c..5ec6086ac 100644
+--- a/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/util/SpringStandardExpressionUtils.java
++++ b/lib/thymeleaf-spring5/src/main/java/org/thymeleaf/spring5/util/SpringStandardExpressionUtils.java
+@@ -37,7 +37,7 @@ public final class SpringStandardExpressionUtils {
+     private static final int PARAM_LEN = PARAM_ARRAY.length;
+ 
+ 
+-    public static boolean containsSpELInstantiationOrStaticOrParam(final String expression) {
++    public static boolean containsExternalAccess(final String expression) {
+ 
+         /*
+          * Checks whether the expression contains instantiation of objects ("new SomeClass") or makes use of
+@@ -102,6 +102,12 @@ public static boolean containsSpELInstantiationOrStaticOrParam(final String expr
+                 return true;
+             }
+ 
++            if (c == '@' &&
++                    ((n + 1 < explen) && isSafeIdentifierChar(exp.charAt(n + 1))) &&
++                    (n == 0  || !isSafeIdentifierChar(exp.charAt(n - 1)))) {
++                return true;
++            }
++
+         }
+ 
+         return false;
+diff --git a/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/SPELVariableExpressionEvaluator.java b/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/SPELVariableExpressionEvaluator.java
+index 60c9e85c1..448d7935d 100644
+--- a/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/SPELVariableExpressionEvaluator.java
++++ b/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/SPELVariableExpressionEvaluator.java
+@@ -24,6 +24,8 @@
+ import org.springframework.expression.EvaluationContext;
+ import org.springframework.expression.spel.SpelCompilerMode;
+ import org.springframework.expression.spel.SpelParserConfiguration;
++import org.springframework.expression.spel.SpelNode;
++import org.springframework.expression.spel.ast.VariableReference;
+ import org.springframework.expression.spel.standard.SpelExpression;
+ import org.springframework.expression.spel.standard.SpelExpressionParser;
+ import org.springframework.expression.spel.support.StandardEvaluationContext;
+@@ -139,14 +141,31 @@ public final Object evaluate(
+             logger.trace("[THYMELEAF][{}] SpringEL expression: evaluating expression \"{}\" on target", TemplateEngine.threadIndex(), expression.getExpression());
+         }
+ 
+-        try {
+ 
+-            final String spelExpression = expression.getExpression();
+-            final boolean useSelectionAsRoot = expression.getUseSelectionAsRoot();
++        final String spelExpression = expression.getExpression();
++        final boolean useSelectionAsRoot = expression.getUseSelectionAsRoot();
++
++        if (spelExpression == null) {
++            throw new TemplateProcessingException("Expression content is null, which is not allowed");
++        }
++
++        final IEngineConfiguration configuration = context.getConfiguration();
++
++
++        /*
++         * OBTAIN THE EXPRESSION (SpelExpression OBJECT) FROM THE CACHE, OR PARSE IT
++         */
++        final ComputedSpelExpression exp =
++                obtainComputedSpelExpression(configuration, expression, spelExpression, expContext);
++
++
++        if (expContext.getRestrictVariableAccess()) {
++            checkRestrictedVariables(exp.expression.getAST());
++        }
++
++
++        try {
+ 
+-            if (spelExpression == null) {
+-                throw new TemplateProcessingException("Expression content is null, which is not allowed");
+-            }
+ 
+             /*
+              * TRY TO DELEGATE EVALUATION TO SPRING IF EXPRESSION IS ON A BOUND OBJECT
+@@ -172,15 +191,6 @@ public final Object evaluate(
+ 
+             }
+ 
+-            final IEngineConfiguration configuration = context.getConfiguration();
+-
+-
+-            /*
+-             * OBTAIN THE EXPRESSION (SpelExpression OBJECT) FROM THE CACHE, OR PARSE IT
+-             */
+-            final ComputedSpelExpression exp =
+-                    obtainComputedSpelExpression(configuration, expression, spelExpression, expContext);
+-
+ 
+             /*
+              * COMPUTE EXPRESSION OBJECTS AND ADDITIONAL CONTEXT VARIABLES MAP
+@@ -304,8 +314,8 @@ private static ComputedSpelExpression obtainComputedSpelExpression(
+             final IStandardVariableExpression expression, final String spelExpression,
+             final StandardExpressionExecutionContext expContext) {
+ 
+-        if (expContext.getRestrictInstantiationAndStatic()
+-                && SpringStandardExpressionUtils.containsSpELInstantiationOrStaticOrParam(spelExpression)) {
++        if (expContext.getRestrictExternalAccess()
++                && SpringStandardExpressionUtils.containsExternalAccess(spelExpression)) {
+             throw new TemplateProcessingException(
+                 "Instantiation of new objects and access to static classes or parameters is forbidden in this context");
+         }
+@@ -409,6 +419,23 @@ private static boolean isLocalVariableOverriding(final IExpressionContext contex
+ 
+ 
+ 
++    private static void checkRestrictedVariables(final SpelNode node) {
++        if (node instanceof VariableReference) {
++            final String name = node.toStringAST();
++            if (name != null && name.length() > 1 && name.charAt(0) == '#') {
++                final String varName = name.substring(1);
++                if (ThymeleafEvaluationContext.RESTRICTED_VARIABLE_NAMES.contains(varName)) {
++                    throw new TemplateProcessingException(
++                            "Access to variable '" + name + "' is forbidden in this context");
++                }
++            }
++        }
++        for (int i = 0; i < node.getChildCount(); i++) {
++            checkRestrictedVariables(node.getChild(i));
++        }
++    }
++
++
+     @Override
+     public String toString() {
+         return "SpringEL";
+diff --git a/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/ThymeleafEvaluationContext.java b/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/ThymeleafEvaluationContext.java
+index 5649e1ed6..69389c818 100755
+--- a/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/ThymeleafEvaluationContext.java
++++ b/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/ThymeleafEvaluationContext.java
+@@ -20,6 +20,7 @@
+ package org.thymeleaf.spring6.expression;
+ 
+ import java.util.ArrayList;
++import java.util.Arrays;
+ import java.util.Collection;
+ import java.util.Collections;
+ import java.util.HashSet;
+@@ -47,6 +48,7 @@
+ import org.springframework.expression.spel.support.StandardTypeLocator;
+ import org.thymeleaf.expression.IExpressionObjects;
+ import org.thymeleaf.spring6.view.ThymeleafView;
++import org.thymeleaf.standard.expression.StandardExpressionObjectFactory;
+ import org.thymeleaf.util.ExpressionUtils;
+ import org.thymeleaf.util.Validate;
+ 
+@@ -82,6 +84,13 @@ public final class ThymeleafEvaluationContext
+ 
+     public static final String THYMELEAF_EVALUATION_CONTEXT_CONTEXT_VARIABLE_NAME = "thymeleaf::EvaluationContext";
+ 
++    static final Set<String> RESTRICTED_VARIABLE_NAMES =
++            Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
++                    StandardExpressionObjectFactory.CONTEXT_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.VARIABLES_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.ROOT_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.THIS_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.EXECUTION_INFO_OBJECT_NAME)));
+ 
+     private static final ReflectivePropertyAccessor REFLECTIVE_PROPERTY_ACCESSOR_INSTANCE =
+             new ThymeleafEvaluationContextACLPropertyAccessor();
+@@ -169,6 +178,12 @@ public Collection<Class<?>> getAllowedClassOverridesForViews() {
+ 
+     @Override
+     public Object lookupVariable(final String name) {
++        if (this.variableAccessRestricted) {
++            if (RESTRICTED_VARIABLE_NAMES.contains(name)) {
++                throw new EvaluationException(
++                        String.format("Access to variable '%s' is forbidden in this context.", name));
++            }
++        }
+         if (this.expressionObjects != null && this.expressionObjects.containsObject(name)) {
+             final Object result = this.expressionObjects.getObject(name);
+             if (result != null) {
+@@ -376,8 +391,8 @@ public MethodExecutor resolve(
+                 if (isMemberForbidden(targetObject, name)) {
+                     throw new EvaluationException(
+                             String.format(
+-                                "Calling method '%s' is forbidden for type '%s' in this expression context.",
+-                                name, targetObject.getClass()));
++                                    "Calling method '%s' is forbidden for type '%s' in this expression context.",
++                                    name, targetObject.getClass()));
+                 }
+             }
+ 
+diff --git a/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/ThymeleafEvaluationContextWrapper.java b/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/ThymeleafEvaluationContextWrapper.java
+index 65cf8b047..477c08ee4 100755
+--- a/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/ThymeleafEvaluationContextWrapper.java
++++ b/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/expression/ThymeleafEvaluationContextWrapper.java
+@@ -29,6 +29,7 @@
+ import org.springframework.expression.BeanResolver;
+ import org.springframework.expression.ConstructorResolver;
+ import org.springframework.expression.EvaluationContext;
++import org.springframework.expression.EvaluationException;
+ import org.springframework.expression.MethodResolver;
+ import org.springframework.expression.OperatorOverloader;
+ import org.springframework.expression.PropertyAccessor;
+@@ -73,7 +74,7 @@ public final class ThymeleafEvaluationContextWrapper implements IThymeleafEvalua
+     private final List<MethodResolver> methodResolvers;     // can be initialized to null if we can delegate
+ 
+     private IExpressionObjects expressionObjects = null;
+-    private boolean requestParametersRestricted = false;
++    private boolean variableAccessRestricted = false;
+     private Map<String,Object> additionalVariables = null;
+ 
+ 
+@@ -165,6 +166,13 @@ public void setVariable(final String name, final Object value) {
+ 
+     public Object lookupVariable(final String name) {
+ 
++        if (this.variableAccessRestricted) {
++            if (ThymeleafEvaluationContext.RESTRICTED_VARIABLE_NAMES.contains(name)) {
++                throw new EvaluationException(
++                        String.format("Access to variable '%s' is forbidden in this context.", name));
++            }
++        }
++
+         if (this.expressionObjects != null && this.expressionObjects.containsObject(name)) {
+             final Object result = this.expressionObjects.getObject(name);
+             if (result != null) {
+@@ -186,11 +194,11 @@ public Object lookupVariable(final String name) {
+ 
+ 
+     public boolean isVariableAccessRestricted() {
+-        return this.requestParametersRestricted;
++        return this.variableAccessRestricted;
+     }
+ 
+     public void setVariableAccessRestricted(final boolean restricted) {
+-        this.requestParametersRestricted = restricted;
++        this.variableAccessRestricted = restricted;
+     }
+ 
+     public IExpressionObjects getExpressionObjects() {
+diff --git a/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/util/SpringRequestUtils.java b/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/util/SpringRequestUtils.java
+index 7e2c1dac2..5aa38b5de 100644
+--- a/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/util/SpringRequestUtils.java
++++ b/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/util/SpringRequestUtils.java
+@@ -60,6 +60,9 @@ public static void checkViewNameNotInRequest(final String viewName, final IWebRe
+             final Map<String,String[]> parameterMap = request.getParameterMap();
+             if (parameterMap != null && !parameterMap.isEmpty()) {
+                 for (final String[] parameterValues : parameterMap.values()) {
++                    if (parameterValues == null) {
++                        continue;
++                    }
+                     for (int i = 0; !found && i < parameterValues.length; i++) {
+                         final String parameterValue = StringUtils.pack(parameterValues[i]);
+                         if (parameterValue != null && containsExpression(parameterValue) && vn.contains(parameterValue)) {
+@@ -74,10 +77,52 @@ public static void checkViewNameNotInRequest(final String viewName, final IWebRe
+             }
+         }
+ 
++        if (!found) {
++            final Map<String,String[]> cookieMap = request.getCookieMap();
++            if (cookieMap != null && !cookieMap.isEmpty()) {
++                for (final String[] cookieValues : cookieMap.values()) {
++                    if (cookieValues == null) {
++                        continue;
++                    }
++                    for (int i = 0; !found && i < cookieValues.length; i++) {
++                        final String cookieValue = StringUtils.pack(cookieValues[i]);
++                        if (cookieValue != null && containsExpression(cookieValue) && vn.contains(cookieValue)) {
++                            // Cookie contains an expression, and it is contained in the view name. Too dangerous.
++                            found = true;
++                        }
++                    }
++                    if (found) {
++                        break;
++                    }
++                }
++            }
++        }
++
++        if (!found) {
++            final Map<String,String[]> headerMap = request.getHeaderMap();
++            if (headerMap != null && !headerMap.isEmpty()) {
++                for (final String[] headerValues : headerMap.values()) {
++                    if (headerValues == null) {
++                        continue;
++                    }
++                    for (int i = 0; !found && i < headerValues.length; i++) {
++                        final String headerValue = StringUtils.pack(headerValues[i]);
++                        if (headerValue != null && containsExpression(headerValue) && vn.contains(headerValue)) {
++                            // Header contains an expression, and it is contained in the view name. Too dangerous.
++                            found = true;
++                        }
++                    }
++                    if (found) {
++                        break;
++                    }
++                }
++            }
++        }
++
+         if (found) {
+             throw new TemplateProcessingException(
+-                    "View name contains an expression and so does either the URL path or one of the request " +
+-                    "parameters. This is forbidden in order to reduce the possibilities that direct user input " +
++                    "View name contains an expression and so does either the URL path or the request parameters " +
++                    "or contents. This is forbidden in order to reduce the possibilities that direct user input " +
+                     "is executed as a part of the view name.");
+         }
+ 
+@@ -88,6 +133,8 @@ private static boolean containsExpression(final String text) {
+         final int textLen = text.length();
+         char c;
+         boolean expInit = false;
++        boolean preInit = false;
++        boolean lsubInit = false;
+         for (int i = 0; i < textLen; i++) {
+             c = text.charAt(i);
+             if (!expInit) {
+@@ -101,6 +148,21 @@ private static boolean containsExpression(final String text) {
+                     expInit = false;
+                 }
+             }
++            if (c == '_' && (i + 1) < textLen && text.charAt(i + 1) == '_') {
++                if (!preInit) {
++                    preInit = true;
++                    i++;
++                } else {
++                    return true;
++                }
++            }
++            if (c == '|') {
++                if (!lsubInit) {
++                    lsubInit = true;
++                } else {
++                    return true;
++                }
++            }
+         }
+         return false;
+     }
+diff --git a/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/util/SpringStandardExpressionUtils.java b/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/util/SpringStandardExpressionUtils.java
+index f8ae66d55..5ecabecc0 100644
+--- a/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/util/SpringStandardExpressionUtils.java
++++ b/lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/util/SpringStandardExpressionUtils.java
+@@ -37,7 +37,7 @@ public final class SpringStandardExpressionUtils {
+     private static final int PARAM_LEN = PARAM_ARRAY.length;
+ 
+ 
+-    public static boolean containsSpELInstantiationOrStaticOrParam(final String expression) {
++    public static boolean containsExternalAccess(final String expression) {
+ 
+         /*
+          * Checks whether the expression contains instantiation of objects ("new SomeClass") or makes use of
+@@ -102,6 +102,12 @@ public static boolean containsSpELInstantiationOrStaticOrParam(final String expr
+                 return true;
+             }
+ 
++            if (c == '@' &&
++                    ((n + 1 < explen) && isSafeIdentifierChar(exp.charAt(n + 1))) &&
++                    (n == 0  || !isSafeIdentifierChar(exp.charAt(n - 1)))) {
++                return true;
++            }
++
+         }
+ 
+         return false;
+diff --git a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLContextPropertyAccessor.java b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLContextPropertyAccessor.java
+index c0e3e13e0..ff5d1c3c5 100644
+--- a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLContextPropertyAccessor.java
++++ b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLContextPropertyAccessor.java
+@@ -53,7 +53,7 @@ public final class OGNLContextPropertyAccessor implements PropertyAccessor {
+ 
+     private static final Logger LOGGER = LoggerFactory.getLogger(OGNLContextPropertyAccessor.class);
+ 
+-    public static final String RESTRICT_REQUEST_PARAMETERS = "%RESTRICT_REQUEST_PARAMETERS%";
++    public static final String RESTRICT_EXPRESSION_OBJECTS = "%RESTRICT_EXPRESSION_OBJECTS%";
+     static final String REQUEST_PARAMETERS_RESTRICTED_VARIABLE_NAME = "param";
+ 
+ 
+@@ -72,7 +72,7 @@ public Object getProperty(final Map ognlContext, final Object target, final Obje
+                     "in this case the target object is " + (target == null? "null" : ("of class " + target.getClass().getName())));
+         }
+ 
+-        if (REQUEST_PARAMETERS_RESTRICTED_VARIABLE_NAME.equals(name) && ognlContext != null && ognlContext.containsKey(RESTRICT_REQUEST_PARAMETERS)) {
++        if (REQUEST_PARAMETERS_RESTRICTED_VARIABLE_NAME.equals(name) && ognlContext != null && ognlContext.containsKey(RESTRICT_EXPRESSION_OBJECTS)) {
+             throw new OgnlException(
+                     "Access to variable \"" + name + "\" is forbidden in this context. Note some restrictions apply to " +
+                     "variable access. For example, direct access to request parameters is forbidden in preprocessing and " +
+diff --git a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLExpressionObjectsWrapper.java b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLExpressionObjectsWrapper.java
+index 13c4b2c38..043a9e356 100644
+--- a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLExpressionObjectsWrapper.java
++++ b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLExpressionObjectsWrapper.java
+@@ -19,12 +19,16 @@
+  */
+ package org.thymeleaf.standard.expression;
+ 
++import java.util.Arrays;
+ import java.util.Collection;
++import java.util.Collections;
+ import java.util.HashMap;
++import java.util.HashSet;
+ import java.util.LinkedHashSet;
+ import java.util.Map;
+ import java.util.Set;
+ 
++import org.thymeleaf.exceptions.TemplateProcessingException;
+ import org.thymeleaf.expression.IExpressionObjects;
+ 
+ /**
+@@ -36,9 +40,22 @@
+  */
+ final class OGNLExpressionObjectsWrapper extends HashMap<String, Object> {
+ 
++    private static final Set<String> RESTRICTED_EXPRESSION_OBJECT_NAMES =
++            Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
++                    StandardExpressionObjectFactory.CONTEXT_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.VARIABLES_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.ROOT_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.THIS_EXPRESSION_OBJECT_NAME,
++                    StandardExpressionObjectFactory.EXECUTION_INFO_OBJECT_NAME)));
++
+     private final IExpressionObjects expressionObjects;
+ 
+ 
++    static boolean isRestricted(final String name) {
++        return RESTRICTED_EXPRESSION_OBJECT_NAMES.contains(name);
++    }
++
++
+     OGNLExpressionObjectsWrapper(final IExpressionObjects expressionObjects) {
+         super(5);
+         this.expressionObjects = expressionObjects;
+@@ -57,8 +74,13 @@ public boolean isEmpty() {
+ 
+     @Override
+     public Object get(final Object key) {
+-
+         if (this.expressionObjects.containsObject(key.toString())) {
++            if (restrictExpressionObjects()) {
++                if (RESTRICTED_EXPRESSION_OBJECT_NAMES.contains(key)) {
++                    throw new TemplateProcessingException(
++                            String.format("Access to variable '%s' is forbidden in this context.", key));
++                }
++            }
+             return this.expressionObjects.getObject(key.toString());
+         }
+         return super.get(key);
+@@ -70,6 +92,12 @@ public boolean containsKey(final Object key) {
+         return this.expressionObjects.containsObject(key.toString()) || super.containsKey(key);
+     }
+ 
++
++    private boolean restrictExpressionObjects() {
++        return super.containsKey(OGNLContextPropertyAccessor.RESTRICT_EXPRESSION_OBJECTS);
++    }
++
++
+     @Override
+     public Object put(final String key, final Object value) {
+         if (this.expressionObjects.containsObject(key.toString())) {
+diff --git a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLShortcutExpression.java b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLShortcutExpression.java
+index e1da3e0cb..bcb41cbe9 100644
+--- a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLShortcutExpression.java
++++ b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLShortcutExpression.java
+@@ -157,7 +157,7 @@ private static Object getContextProperty(
+             throws OgnlException {
+ 
+         if (OGNLContextPropertyAccessor.REQUEST_PARAMETERS_RESTRICTED_VARIABLE_NAME.equals(propertyName) &&
+-                context != null && context.containsKey(OGNLContextPropertyAccessor.RESTRICT_REQUEST_PARAMETERS)) {
++                context != null && context.containsKey(OGNLContextPropertyAccessor.RESTRICT_EXPRESSION_OBJECTS)) {
+             throw new OgnlException(
+                     "Access to variable \"" + propertyName + "\" is forbidden in this context. Note some restrictions apply to " +
+                     "variable access. For example, accessing request parameters is forbidden in preprocessing and " +
+diff --git a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLVariableExpressionEvaluator.java b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLVariableExpressionEvaluator.java
+index 6e742951a..a1a33c54a 100644
+--- a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLVariableExpressionEvaluator.java
++++ b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/OGNLVariableExpressionEvaluator.java
+@@ -26,9 +26,11 @@
+ import java.util.Map;
+ import java.util.concurrent.ConcurrentHashMap;
+ 
++import ognl.ASTVarRef;
+ import ognl.AbstractMemberAccess;
+ import ognl.ClassResolver;
+ import ognl.MemberAccess;
++import ognl.Node;
+ import ognl.OgnlContext;
+ import ognl.OgnlException;
+ import ognl.OgnlRuntime;
+@@ -69,8 +71,8 @@ public final class OGNLVariableExpressionEvaluator
+ 
+     private static Map<String,Object> CONTEXT_VARIABLES_MAP_NOEXPOBJECTS_RESTRICTIONS =
+             (Map<String,Object>) (Map<?,?>)Collections.singletonMap(
+-                    OGNLContextPropertyAccessor.RESTRICT_REQUEST_PARAMETERS,
+-                    OGNLContextPropertyAccessor.RESTRICT_REQUEST_PARAMETERS);
++                    OGNLContextPropertyAccessor.RESTRICT_EXPRESSION_OBJECTS,
++                    OGNLContextPropertyAccessor.RESTRICT_EXPRESSION_OBJECTS);
+ 
+     private static MemberAccess MEMBER_ACCESS = new ThymeleafACLMemberAccess();
+     private static ThymeleafACLClassResolver CLASS_RESOLVER = new ThymeleafACLClassResolver();
+@@ -112,24 +114,34 @@ private static Object evaluate(
+         final IStandardVariableExpression expression,
+         final StandardExpressionExecutionContext expContext,
+         final boolean applyOGNLShortcuts) {
+-       
+-        try {
+-
+-            if (logger.isTraceEnabled()) {
+-                logger.trace("[THYMELEAF][{}] OGNL expression: evaluating expression \"{}\" on target", TemplateEngine.threadIndex(), expression.getExpression());
+-            }
+ 
+-            final IEngineConfiguration configuration = context.getConfiguration();
++        final IEngineConfiguration configuration = context.getConfiguration();
+ 
+-            final String exp = expression.getExpression();
+-            final boolean useSelectionAsRoot = expression.getUseSelectionAsRoot();
++        final String exp = expression.getExpression();
++        final boolean useSelectionAsRoot = expression.getUseSelectionAsRoot();
+ 
+-            if (exp == null) {
+-                throw new TemplateProcessingException("Expression content is null, which is not allowed");
+-            }
++        if (exp == null) {
++            throw new TemplateProcessingException("Expression content is null, which is not allowed");
++        }
+ 
+-            final ComputedOGNLExpression parsedExpression =
++        final ComputedOGNLExpression parsedExpression;
++        try {
++            parsedExpression =
+                     obtainComputedOGNLExpression(configuration, expression, exp, expContext, applyOGNLShortcuts);
++        } catch (final OgnlException e) {
++            throw new TemplateProcessingException(
++                    "Exception evaluating OGNL expression: \"" + expression.getExpression() + "\"", e);
++        }
++
++        if (expContext.getRestrictVariableAccess()) {
++            checkRestrictedVariables(parsedExpression.expression);
++        }
++
++        try {
++
++            if (logger.isTraceEnabled()) {
++                logger.trace("[THYMELEAF][{}] OGNL expression: evaluating expression \"{}\" on target", TemplateEngine.threadIndex(), expression.getExpression());
++            }
+ 
+             final Map<String,Object> contextVariablesMap;
+             if (parsedExpression.mightNeedExpressionObjects) {
+@@ -150,9 +162,9 @@ private static Object evaluate(
+                 // agent in charge of applying such restrictions, is by adding a context variable that the property accessor
+                 // can later lookup during evaluation.
+                 if (expContext.getRestrictVariableAccess()) {
+-                    contextVariablesMap.put(OGNLContextPropertyAccessor.RESTRICT_REQUEST_PARAMETERS, OGNLContextPropertyAccessor.RESTRICT_REQUEST_PARAMETERS);
++                    contextVariablesMap.put(OGNLContextPropertyAccessor.RESTRICT_EXPRESSION_OBJECTS, OGNLContextPropertyAccessor.RESTRICT_EXPRESSION_OBJECTS);
+                 } else {
+-                    contextVariablesMap.remove(OGNLContextPropertyAccessor.RESTRICT_REQUEST_PARAMETERS);
++                    contextVariablesMap.remove(OGNLContextPropertyAccessor.RESTRICT_EXPRESSION_OBJECTS);
+                 }
+ 
+             } else {
+@@ -214,10 +226,10 @@ private static ComputedOGNLExpression obtainComputedOGNLExpression(
+         // of method calls and references to allowed classes.
+         final boolean doApplyOGNLShortcuts =
+                 applyOGNLShortcuts &&
+-                        !expContext.getRestrictVariableAccess() && !expContext.getRestrictInstantiationAndStatic();
++                        !expContext.getRestrictVariableAccess() && !expContext.getRestrictExternalAccess();
+ 
+-        if (expContext.getRestrictInstantiationAndStatic()
+-                && StandardExpressionUtils.containsOGNLInstantiationOrStaticOrParam(exp)) {
++        if (expContext.getRestrictExternalAccess()
++                && StandardExpressionUtils.containsExternalAccess(exp)) {
+             throw new TemplateProcessingException(
+                 "Instantiation of new objects and access to static classes or parameters is forbidden in this context");
+         }
+@@ -342,6 +354,31 @@ private static Object executeExpression(
+     }
+ 
+ 
++    private static void checkRestrictedVariables(final Object parsedExpression) {
++        if (parsedExpression instanceof Node) {
++            checkRestrictedVariables((Node) parsedExpression);
++        }
++    }
++
++
++    private static void checkRestrictedVariables(final Node node) {
++        if (node instanceof ASTVarRef) {
++            final String varName = node.toString();
++            // All OGNL variable references start with '#'
++            if (varName.length() > 1) {
++                final String name = varName.substring(1);
++                if (OGNLExpressionObjectsWrapper.isRestricted(name)) {
++                    throw new TemplateProcessingException(
++                            String.format("Access to variable '%s' is forbidden in this context.", varName));
++                }
++            }
++        }
++        for (int i = 0; i < node.jjtGetNumChildren(); i++) {
++            checkRestrictedVariables(node.jjtGetChild(i));
++        }
++    }
++
++
+ 
+ 
+     private static final class ComputedOGNLExpression {
+diff --git a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/StandardExpressionExecutionContext.java b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/StandardExpressionExecutionContext.java
+index b46311787..93a220ea4 100755
+--- a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/StandardExpressionExecutionContext.java
++++ b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/StandardExpressionExecutionContext.java
+@@ -54,19 +54,19 @@ public final class StandardExpressionExecutionContext {
+             new StandardExpressionExecutionContext(false, false, false, true);
+ 
+     private final boolean restrictVariableAccess;
+-    private final boolean restrictInstantiationAndStatic;
++    private final boolean restrictExternalAccess;
+     private final boolean forbidUnsafeExpressionResults;
+     private final boolean performTypeConversion;
+ 
+     
+     private StandardExpressionExecutionContext(
+             final boolean restrictVariableAccess,
+-            final boolean restrictInstantiationAndStatic,
++            final boolean restrictExternalAccess,
+             final boolean forbidUnsafeExpressionResults,
+             final boolean performTypeConversion) {
+         super();
+         this.restrictVariableAccess = restrictVariableAccess;
+-        this.restrictInstantiationAndStatic = restrictInstantiationAndStatic;
++        this.restrictExternalAccess = restrictExternalAccess;
+         this.forbidUnsafeExpressionResults = forbidUnsafeExpressionResults;
+         this.performTypeConversion = performTypeConversion;
+     }
+@@ -82,8 +82,8 @@ public boolean getRestrictVariableAccess() {
+      * @return Whether this restriction should be applied or not.
+      * @since 3.0.12
+      */
+-    public boolean getRestrictInstantiationAndStatic() {
+-        return this.restrictInstantiationAndStatic;
++    public boolean getRestrictExternalAccess() {
++        return this.restrictExternalAccess;
+     }
+ 
+     public boolean getForbidUnsafeExpressionResults() {
+@@ -108,7 +108,7 @@ public StandardExpressionExecutionContext withoutTypeConversion() {
+             return RESTRICTED_FORBID_UNSAFE_EXP_RESULTS;
+         }
+         return new StandardExpressionExecutionContext(
+-                getRestrictVariableAccess(), getRestrictInstantiationAndStatic(), getForbidUnsafeExpressionResults(), false);
++                getRestrictVariableAccess(), getRestrictExternalAccess(), getForbidUnsafeExpressionResults(), false);
+     }
+ 
+     public StandardExpressionExecutionContext withTypeConversion() {
+@@ -125,7 +125,7 @@ public StandardExpressionExecutionContext withTypeConversion() {
+             return RESTRICTED_FORBID_UNSAFE_EXP_RESULTS_WITH_TYPE_CONVERSION;
+         }
+         return new StandardExpressionExecutionContext(
+-                getRestrictVariableAccess(), getRestrictInstantiationAndStatic(), getForbidUnsafeExpressionResults(), true);
++                getRestrictVariableAccess(), getRestrictExternalAccess(), getForbidUnsafeExpressionResults(), true);
+     }
+ 
+ 
+diff --git a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/StandardExpressionObjectFactory.java b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/StandardExpressionObjectFactory.java
+index 1cd30e7b8..e20b0ced5 100644
+--- a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/StandardExpressionObjectFactory.java
++++ b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/expression/StandardExpressionObjectFactory.java
+@@ -63,6 +63,7 @@ public class StandardExpressionObjectFactory implements IExpressionObjectFactory
+ 
+     public static final String CONTEXT_EXPRESSION_OBJECT_NAME = "ctx";
+     public static final String ROOT_EXPRESSION_OBJECT_NAME = "root";
++    public static final String THIS_EXPRESSION_OBJECT_NAME = "this";
+     public static final String VARIABLES_EXPRESSION_OBJECT_NAME = "vars";
+     public static final String SELECTION_TARGET_EXPRESSION_OBJECT_NAME = "object";
+     public static final String LOCALE_EXPRESSION_OBJECT_NAME = "locale";
+diff --git a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/util/StandardExpressionUtils.java b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/util/StandardExpressionUtils.java
+index 6a81418cf..6bd4f24c2 100644
+--- a/lib/thymeleaf/src/main/java/org/thymeleaf/standard/util/StandardExpressionUtils.java
++++ b/lib/thymeleaf/src/main/java/org/thymeleaf/standard/util/StandardExpressionUtils.java
+@@ -45,7 +45,7 @@ public static boolean mightNeedExpressionObjects(final String expression) {
+     /*
+      * @since 3.0.12
+      */
+-    public static boolean containsOGNLInstantiationOrStaticOrParam(final String expression) {
++    public static boolean containsExternalAccess(final String expression) {
+ 
+         /*
+          * Checks whether the expression contains instantiation of objects ("new SomeClass") or makes use of
+diff --git a/lib/thymeleaf/src/main/java/org/thymeleaf/util/ExpressionUtils.java b/lib/thymeleaf/src/main/java/org/thymeleaf/util/ExpressionUtils.java
+index e214a5bf1..baa557e52 100644
+--- a/lib/thymeleaf/src/main/java/org/thymeleaf/util/ExpressionUtils.java
++++ b/lib/thymeleaf/src/main/java/org/thymeleaf/util/ExpressionUtils.java
+@@ -88,12 +88,15 @@ public final class ExpressionUtils {
+                     "com.squareup.javapoet.",
+                     "net.bytebuddy.", "net.sf.cglib.",
+                     "javassist.", "javax0.geci.",
++                    "com.zaxxer.hikari.", "com.fasterxml.jackson.", "tools.jackson.",
++                    "org.apache.tomcat.jdbc.", "org.apache.commons.dbcp2.",
++                    "org.apache.commons.lang.reflect.", "org.apache.commons.lang3.reflect.",
+                     "org.apache.bcel.", "org.aspectj.", "org.javassist.", "org.mockito.", "org.objectweb.asm.",
+                     "org.objenesis.", "org.springframework.aot.", "org.springframework.asm.",
+-                    "org.springframework.cglib.", "org.springframework.javapoet.", "org.springframework.objenesis.",
+-                    "org.springframework.web.", "org.springframework.webflow.", "org.springframework.context.",
+-                    "org.springframework.beans.", "org.springframework.aspects.", "org.springframework.aop.",
+-                    "org.springframework.expression.", "org.springframework.util."));
++                    "org.springframework.core.", "org.springframework.cglib.", "org.springframework.javapoet.",
++                    "org.springframework.objenesis.", "org.springframework.web.", "org.springframework.webflow.",
++                    "org.springframework.context.", "org.springframework.beans.", "org.springframework.aspects.",
++                    "org.springframework.aop.", "org.springframework.expression.", "org.springframework.util."));
+ 
+ 
+     private static final Set<String> ALLOWED_JAVA_CLASS_NAMES;
+@@ -174,11 +177,15 @@ public static String normalize(final String expression) {
+         char c;
+         for (int i = 0; i < expLen; i++) {
+             c = expression.charAt(i);
+-            if (c != '\n' && (c < '\u0020' || (c >= '\u007F' && c <= '\u009F'))) {
++            if (c != '\n' && (c < '\u0020' || (c >= '\u007F' && c <= '\u009F') || Character.isWhitespace(c))) {
+                 if (strBuilder == null) {
+                     strBuilder = new StringBuilder(expLen);
+                     strBuilder.append(expression, 0, i);
+                 }
++                if (Character.isWhitespace(c)) {
++                    // For whitespaces (non-linefeed), we are simplifying to a regular whitespace char
++                    strBuilder.append(' ');
++                }
+             } else if (strBuilder != null) {
+                 strBuilder.append(c);
+             }
+@@ -214,9 +221,6 @@ static boolean isTypeBlockedForTypeReference(final String typeName) {
+         if (c0 != 'c' && c0 != 'n' && c0 != 'j' && c0 != 'o'){ // All blocked packages start with: c, n, j, o
+             return false;
+         }
+-        if (c0 == 'c') { // Shortcut for the lot of allowed "com." packages out there.
+-            return typeName.startsWith("com.squareup.javapoet.");
+-        }
+         return BLOCKED_TYPE_REFERENCE_PACKAGE_NAME_PREFIXES.stream().anyMatch(typeName::startsWith);
+     }
+ 

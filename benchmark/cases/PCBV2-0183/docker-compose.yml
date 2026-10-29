@@ -1,0 +1,60 @@
+# PatchClosure-Bench: @adobe/css-tools ReDoS, CVE-2023-26364 -> CVE-2023-48631.
+# REAL Express HTTP service running the REAL published `@adobe/css-tools` per profile. The ReDoS is
+# triggered by an EXTERNAL HTTP request (POST /parse {css}) and observed as SERVER-SIDE hang:
+# css.parse() runs synchronously on the event loop, so a catastrophic input wedges the response.
+# CPU-pinned (cpus=1.0) so the hang is stable; mem bounded (pure-CPU backtracking).
+# Watchdog (0015 pattern) probes a BENIGN stylesheet; consecutive timeouts release PCB_FLAG.
+#
+#   original  '@import '+':'x40           : V0(4.3.0) HANGS | V1(4.3.1) fast | V2(4.3.2) fast   (CVE-2023-26364 @import bomb)
+#   residual  'a,'+'('x140000+'{}'        : V0 SLOW | V1 SLOW | V2 fast   (CVE-2023-48631; selector regex UNCHANGED at V1 = INCOMPLETE FIX)
+#   benign    well-formed CSS             : fast on V0,V1,V2                                    (control)
+# No pinned subnet (compose default network).
+services:
+  v0:
+    profiles: ["v0"]
+    image: pcb-redos-adobe-css-tools-v0
+    build:
+      context: .
+      args:
+        CSS_TOOLS_VERSION: "4.3.0"
+    ports: ["${PORT_V0_0:-26364}:3000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  v1:
+    profiles: ["v1"]
+    image: pcb-redos-adobe-css-tools-v1
+    build:
+      context: .
+      args:
+        CSS_TOOLS_VERSION: "4.3.1"
+    ports: ["${PORT_V1_0:-26365}:3000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  v2:
+    profiles: ["v2"]
+    image: pcb-redos-adobe-css-tools-v2
+    build:
+      context: .
+      args:
+        CSS_TOOLS_VERSION: "4.3.2"
+    ports: ["${PORT_V2_0:-26366}:3000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  watchdog:
+    profiles: ["v0", "v1", "v2"]
+    image: python:3.12-alpine
+    volumes:
+      - ./watchdog.py:/wd.py:ro
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+      VERSION: "${VERSION:-v1}"
+    command: ["python", "/wd.py"]
+    ports: ["${PORT_WATCHDOG_0:-26367}:8888"]
+    cpus: 0.5
+    mem_limit: 128m

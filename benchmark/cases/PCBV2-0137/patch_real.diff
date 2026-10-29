@@ -1,0 +1,234 @@
+# CVE: CVE-2025-7105
+# Upstream: https://github.com/danny-avila/LibreChat.git
+# Fix: 97a99985fa339db0a21ad63604e0bb8db4442ffc
+
+diff --git a/api/server/middleware/limiters/forkLimiters.js b/api/server/middleware/limiters/forkLimiters.js
+new file mode 100644
+index 0000000..c486c46
+--- /dev/null
++++ b/api/server/middleware/limiters/forkLimiters.js
+@@ -0,0 +1,88 @@
++const rateLimit = require('express-rate-limit');
++const { isEnabled } = require('@librechat/api');
++const { RedisStore } = require('rate-limit-redis');
++const { logger } = require('@librechat/data-schemas');
++const { ViolationTypes } = require('librechat-data-provider');
++const ioredisClient = require('~/cache/ioredisClient');
++const logViolation = require('~/cache/logViolation');
++
++const getEnvironmentVariables = () => {
++  const FORK_IP_MAX = parseInt(process.env.FORK_IP_MAX) || 30;
++  const FORK_IP_WINDOW = parseInt(process.env.FORK_IP_WINDOW) || 1;
++  const FORK_USER_MAX = parseInt(process.env.FORK_USER_MAX) || 7;
++  const FORK_USER_WINDOW = parseInt(process.env.FORK_USER_WINDOW) || 1;
++
++  const forkIpWindowMs = FORK_IP_WINDOW * 60 * 1000;
++  const forkIpMax = FORK_IP_MAX;
++  const forkIpWindowInMinutes = forkIpWindowMs / 60000;
++
++  const forkUserWindowMs = FORK_USER_WINDOW * 60 * 1000;
++  const forkUserMax = FORK_USER_MAX;
++  const forkUserWindowInMinutes = forkUserWindowMs / 60000;
++
++  return {
++    forkIpWindowMs,
++    forkIpMax,
++    forkIpWindowInMinutes,
++    forkUserWindowMs,
++    forkUserMax,
++    forkUserWindowInMinutes,
++  };
++};
++
++const createForkHandler = (ip = true) => {
++  const { forkIpMax, forkIpWindowInMinutes, forkUserMax, forkUserWindowInMinutes } =
++    getEnvironmentVariables();
++
++  return async (req, res) => {
++    const type = ViolationTypes.FILE_UPLOAD_LIMIT;
++    const errorMessage = {
++      type,
++      max: ip ? forkIpMax : forkUserMax,
++      limiter: ip ? 'ip' : 'user',
++      windowInMinutes: ip ? forkIpWindowInMinutes : forkUserWindowInMinutes,
++    };
++
++    await logViolation(req, res, type, errorMessage);
++    res.status(429).json({ message: 'Too many conversation fork requests. Try again later' });
++  };
++};
++
++const createForkLimiters = () => {
++  const { forkIpWindowMs, forkIpMax, forkUserWindowMs, forkUserMax } = getEnvironmentVariables();
++
++  const ipLimiterOptions = {
++    windowMs: forkIpWindowMs,
++    max: forkIpMax,
++    handler: createForkHandler(),
++  };
++  const userLimiterOptions = {
++    windowMs: forkUserWindowMs,
++    max: forkUserMax,
++    handler: createForkHandler(false),
++    keyGenerator: function (req) {
++      return req.user?.id;
++    },
++  };
++
++  if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
++    logger.debug('Using Redis for fork rate limiters.');
++    const sendCommand = (...args) => ioredisClient.call(...args);
++    const ipStore = new RedisStore({
++      sendCommand,
++      prefix: 'fork_ip_limiter:',
++    });
++    const userStore = new RedisStore({
++      sendCommand,
++      prefix: 'fork_user_limiter:',
++    });
++    ipLimiterOptions.store = ipStore;
++    userLimiterOptions.store = userStore;
++  }
++
++  const forkIpLimiter = rateLimit(ipLimiterOptions);
++  const forkUserLimiter = rateLimit(userLimiterOptions);
++  return { forkIpLimiter, forkUserLimiter };
++};
++
++module.exports = { createForkLimiters };
+diff --git a/api/server/middleware/limiters/importLimiters.js b/api/server/middleware/limiters/importLimiters.js
+index f353f5e..88c4e98 100644
+--- a/api/server/middleware/limiters/importLimiters.js
++++ b/api/server/middleware/limiters/importLimiters.js
+@@ -1,10 +1,10 @@
+ const rateLimit = require('express-rate-limit');
++const { isEnabled } = require('@librechat/api');
+ const { RedisStore } = require('rate-limit-redis');
++const { logger } = require('@librechat/data-schemas');
+ const { ViolationTypes } = require('librechat-data-provider');
+ const ioredisClient = require('~/cache/ioredisClient');
+ const logViolation = require('~/cache/logViolation');
+-const { isEnabled } = require('~/server/utils');
+-const { logger } = require('~/config');
+ 
+ const getEnvironmentVariables = () => {
+   const IMPORT_IP_MAX = parseInt(process.env.IMPORT_IP_MAX) || 100;
+diff --git a/api/server/middleware/limiters/index.js b/api/server/middleware/limiters/index.js
+index d1c11e0..ab11044 100644
+--- a/api/server/middleware/limiters/index.js
++++ b/api/server/middleware/limiters/index.js
+@@ -4,6 +4,7 @@ const createSTTLimiters = require('./sttLimiters');
+ const loginLimiter = require('./loginLimiter');
+ const importLimiters = require('./importLimiters');
+ const uploadLimiters = require('./uploadLimiters');
++const forkLimiters = require('./forkLimiters');
+ const registerLimiter = require('./registerLimiter');
+ const toolCallLimiter = require('./toolCallLimiter');
+ const messageLimiters = require('./messageLimiters');
+@@ -14,6 +15,7 @@ module.exports = {
+   ...uploadLimiters,
+   ...importLimiters,
+   ...messageLimiters,
++  ...forkLimiters,
+   loginLimiter,
+   registerLimiter,
+   toolCallLimiter,
+diff --git a/api/server/routes/convos.js b/api/server/routes/convos.js
+index eb7e2c5..18dbf8d 100644
+--- a/api/server/routes/convos.js
++++ b/api/server/routes/convos.js
+@@ -1,16 +1,17 @@
+ const multer = require('multer');
+ const express = require('express');
++const { sleep } = require('@librechat/agents');
++const { isEnabled } = require('@librechat/api');
++const { logger } = require('@librechat/data-schemas');
+ const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
+ const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
+ const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
++const { createImportLimiters, createForkLimiters } = require('~/server/middleware');
+ const { storage, importFileFilter } = require('~/server/routes/files/multer');
+ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+ const { importConversations } = require('~/server/utils/import');
+-const { createImportLimiters } = require('~/server/middleware');
+ const { deleteToolCalls } = require('~/models/ToolCall');
+-const { isEnabled, sleep } = require('~/server/utils');
+ const getLogStores = require('~/cache/getLogStores');
+-const { logger } = require('~/config');
+ 
+ const assistantClients = {
+   [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
+@@ -43,6 +44,7 @@ router.get('/', async (req, res) => {
+     });
+     res.status(200).json(result);
+   } catch (error) {
++    logger.error('Error fetching conversations', error);
+     res.status(500).json({ error: 'Error fetching conversations' });
+   }
+ });
+@@ -156,6 +158,7 @@ router.post('/update', async (req, res) => {
+ });
+ 
+ const { importIpLimiter, importUserLimiter } = createImportLimiters();
++const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
+ const upload = multer({ storage: storage, fileFilter: importFileFilter });
+ 
+ /**
+@@ -189,7 +192,7 @@ router.post(
+  * @param {express.Response<TForkConvoResponse>} res - Express response object.
+  * @returns {Promise<void>} - The response after forking the conversation.
+  */
+-router.post('/fork', async (req, res) => {
++router.post('/fork', forkIpLimiter, forkUserLimiter, async (req, res) => {
+   try {
+     /** @type {TForkConvoRequest} */
+     const { conversationId, messageId, option, splitAtTarget, latestMessageId } = req.body;
+diff --git a/client/src/components/Chat/Messages/Fork.tsx b/client/src/components/Chat/Messages/Fork.tsx
+index 1cc319c..0a0c0a1 100644
+--- a/client/src/components/Chat/Messages/Fork.tsx
++++ b/client/src/components/Chat/Messages/Fork.tsx
+@@ -233,9 +233,17 @@ export default function Fork({
+         status: 'info',
+       });
+     },
+-    onError: () => {
++    onError: (error) => {
++      /** Rate limit error (429 status code) */
++      const isRateLimitError =
++        (error as any)?.response?.status === 429 ||
++        (error as any)?.status === 429 ||
++        (error as any)?.statusCode === 429;
++
+       showToast({
+-        message: localize('com_ui_fork_error'),
++        message: isRateLimitError
++          ? localize('com_ui_fork_error_rate_limit')
++          : localize('com_ui_fork_error'),
+         status: 'error',
+       });
+     },
+diff --git a/client/src/locales/en/translation.json b/client/src/locales/en/translation.json
+index 83930f3..c8964cd 100644
+--- a/client/src/locales/en/translation.json
++++ b/client/src/locales/en/translation.json
+@@ -773,6 +773,7 @@
+   "com_ui_fork_change_default": "Default fork option",
+   "com_ui_fork_default": "Use default fork option",
+   "com_ui_fork_error": "There was an error forking the conversation",
++  "com_ui_fork_error_rate_limit": "Too many fork requests. Please try again later",
+   "com_ui_fork_from_message": "Select a fork option",
+   "com_ui_fork_info_1": "Use this setting to fork messages with the desired behavior.",
+   "com_ui_fork_info_2": "\"Forking\" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.",
+diff --git a/packages/data-schemas/src/models/plugins/mongoMeili.ts b/packages/data-schemas/src/models/plugins/mongoMeili.ts
+index 84a8c7e..c908135 100644
+--- a/packages/data-schemas/src/models/plugins/mongoMeili.ts
++++ b/packages/data-schemas/src/models/plugins/mongoMeili.ts
+@@ -716,7 +716,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions):
+     } catch (error) {
+       if (meiliEnabled) {
+         logger.error(
+-          '[MeiliMongooseModel.deleteMany] There was an issue deleting conversation indexes upon deletion. Next startup may be slow due to syncing.',
++          '[MeiliMongooseModel.deleteMany] There was an issue deleting conversation indexes upon deletion. Next startup may trigger syncing.',
+           error,
+         );
+       }

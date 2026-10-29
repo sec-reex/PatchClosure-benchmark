@@ -1,0 +1,25 @@
+case_id: PCBV2-0119
+public_name: glpi-search-constructsql-sqli
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: url_tgz
+  repo: https://github.com/glpi-project/glpi
+  v0: "10.0.12"
+  v1: "10.0.14"
+service:
+  # Compose publishes ${PORT_V*_0}:80. Platform HTTP on host :80 would miss.
+  # start.sh / reset.sh wait on the published host port after CLI install.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

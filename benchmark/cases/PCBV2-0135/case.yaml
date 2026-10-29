@@ -1,0 +1,26 @@
+case_id: PCBV2-0135
+public_name: koel-cve-2026-54491
+run_mode: real-app-http
+oracle_family: ssrf_sidecar
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: phanan/koel
+  v0: "9.3.2"
+  v1: "9.3.5"
+service:
+  # Compose publishes ${PORT_V*_0}:80. Platform HTTP on :80 would miss the
+  # randomized host port; start.sh / reset.sh wait on the published mapping
+  # and provision the non-admin listener before returning.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

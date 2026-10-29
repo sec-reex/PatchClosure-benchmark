@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+PatchClosure-Bench benign authz canary component for apache-ofbiz-cve-2023-51467.
+This does NOT modify any Apache OFBiz source. It only adds a tiny webapp mounted at
+/pcbcanary whose single request "flag" is gated by OFBiz's own real auth guard
+(<security auth="true"/> -> LoginWorker.checkLogin). When checkLogin returns
+"success" the request's groovy event writes ${PCB_FLAG} (baked in at container boot)
+to the HTTP response. The CVE-2023-51467 auth bypass (requirePasswordChange=Y with
+non-empty invalid creds) makes checkLogin wrongly return "success" on 18.12.10 and
+thus leaks the flag; 18.12.11 returns "error" and the flag is withheld.
+-->
+<ofbiz-component name="pcbcanary"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="https://ofbiz.apache.org/dtds/ofbiz-component.xsd">
+    <resource-loader name="main" type="component"/>
+    <webapp name="pcbcanary"
+        title="PCB Canary"
+        server="default-server"
+        location="webapp/pcbcanary"
+        mount-point="/pcbcanary"/>
+</ofbiz-component>

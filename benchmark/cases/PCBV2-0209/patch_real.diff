@@ -1,0 +1,195 @@
+CVE: CVE-2016-4993
+upstream: https://github.com/undertow-io/undertow.git
+fix: 5d017ce12d075679822104e8a8a3b1ad98abad86
+
+diff --git a/core/src/main/java/io/undertow/UndertowMessages.java b/core/src/main/java/io/undertow/UndertowMessages.java
+index d7211a5..a1ea2ab 100644
+--- a/core/src/main/java/io/undertow/UndertowMessages.java
++++ b/core/src/main/java/io/undertow/UndertowMessages.java
+@@ -476,6 +476,10 @@ public interface UndertowMessages {
+     @Message(id = 148, value = "Invalid HPack encoding. First byte: %s")
+     HpackException invalidHpackEncoding(byte b);
+ 
+-    @Message(id = 149, value = "Pseudo header %s received after receiving normal headers. Pseudo headers must be the first headers in a HTTP/2 header block.")
++    @Message(id = 149, value = "HttpString is not allowed to contain newlines. value: %s")
++    IllegalArgumentException newlineNotSupportedInHttpString(String value);
++
++    @Message(id = 150, value = "Pseudo header %s received after receiving normal headers. Pseudo headers must be the first headers in a HTTP/2 header block.")
+     IllegalArgumentException pseudoHeaderInWrongOrder(HttpString header);
++
+ }
+diff --git a/core/src/main/java/io/undertow/protocols/http2/HpackEncoder.java b/core/src/main/java/io/undertow/protocols/http2/HpackEncoder.java
+index 78c049e..f71c403 100644
+--- a/core/src/main/java/io/undertow/protocols/http2/HpackEncoder.java
++++ b/core/src/main/java/io/undertow/protocols/http2/HpackEncoder.java
+@@ -155,6 +155,13 @@ public class HpackEncoder {
+                     int required = 11 + headerName.length(); //we use 11 to make sure we have enough room for the variable length itegers
+ 
+                     String val = values.get(i);
++                    for(int v = 0; v < val.length(); ++v) {
++                        char c = val.charAt(v);
++                        if(c == '\r' || c == '\n') {
++                            val = val.replace('\r', ' ').replace('\n', ' ');
++                            break;
++                        }
++                    }
+                     TableEntry tableEntry = findInTable(headerName, val);
+ 
+                     required += (1 + val.length());
+diff --git a/core/src/main/java/io/undertow/server/protocol/ajp/AjpServerResponseConduit.java b/core/src/main/java/io/undertow/server/protocol/ajp/AjpServerResponseConduit.java
+index 0123a61..189e850 100644
+--- a/core/src/main/java/io/undertow/server/protocol/ajp/AjpServerResponseConduit.java
++++ b/core/src/main/java/io/undertow/server/protocol/ajp/AjpServerResponseConduit.java
+@@ -151,7 +151,12 @@ final class AjpServerResponseConduit extends AbstractFramedStreamSinkConduit {
+         final int length = value.length();
+         putInt(buf, length);
+         for (int i = 0; i < length; ++i) {
+-            buf.put((byte) value.charAt(i));
++            char c = value.charAt(i);
++            if(c != '\r' && c != '\n'){
++                buf.put((byte) c);
++            } else {
++                buf.put((byte)' ');
++            }
+         }
+         buf.put((byte) 0);
+     }
+diff --git a/core/src/main/java/io/undertow/server/protocol/http/HttpResponseConduit.java b/core/src/main/java/io/undertow/server/protocol/http/HttpResponseConduit.java
+index 6e83460..da3e06f 100644
+--- a/core/src/main/java/io/undertow/server/protocol/http/HttpResponseConduit.java
++++ b/core/src/main/java/io/undertow/server/protocol/http/HttpResponseConduit.java
+@@ -289,7 +289,12 @@ final class HttpResponseConduit extends AbstractStreamSinkConduit<StreamSinkCond
+     private static void writeString(ByteBuffer buffer, String string) {
+         int length = string.length();
+         for (int charIndex = 0; charIndex < length; charIndex++) {
+-            buffer.put((byte) string.charAt(charIndex));
++            char c = string.charAt(charIndex);
++            if(c != '\r' && c != '\n') {
++                buffer.put((byte) c);
++            } else {
++                buffer.put((byte) ' ');
++            }
+         }
+     }
+ 
+diff --git a/core/src/main/java/io/undertow/util/HttpString.java b/core/src/main/java/io/undertow/util/HttpString.java
+index 656f735..d4cbe05 100644
+--- a/core/src/main/java/io/undertow/util/HttpString.java
++++ b/core/src/main/java/io/undertow/util/HttpString.java
+@@ -30,6 +30,8 @@ import static java.lang.Integer.signum;
+ import static java.lang.System.arraycopy;
+ import static java.util.Arrays.copyOfRange;
+ 
++import io.undertow.UndertowMessages;
++
+ /**
+  * An HTTP case-insensitive Latin-1 string.
+  *
+@@ -116,6 +118,15 @@ public final class HttpString implements Comparable<HttpString>, Serializable {
+         this.bytes = bytes;
+         this.hashCode = calcHashCode(bytes);
+         this.string = string;
++        checkForNewlines();
++    }
++
++    private void checkForNewlines() {
++        for(byte b : bytes) {
++            if(b == '\r' || b == '\n') {
++                throw UndertowMessages.MESSAGES.newlineNotSupportedInHttpString(string);
++            }
++        }
+     }
+ 
+     private HttpString(final byte[] bytes, final String string) {
+@@ -123,6 +134,7 @@ public final class HttpString implements Comparable<HttpString>, Serializable {
+         this.hashCode = calcHashCode(bytes);
+         this.string = string;
+         this.orderInt = 0;
++        checkForNewlines();
+     }
+ 
+     /**
+diff --git a/core/src/test/java/io/undertow/server/NewlineInHeadersTestCase.java b/core/src/test/java/io/undertow/server/NewlineInHeadersTestCase.java
+new file mode 100644
+index 0000000..4af3df2
+--- /dev/null
++++ b/core/src/test/java/io/undertow/server/NewlineInHeadersTestCase.java
+@@ -0,0 +1,78 @@
++/*
++ * JBoss, Home of Professional Open Source.
++ * Copyright 2014 Red Hat, Inc., and individual contributors
++ * as indicated by the @author tags.
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ *  Unless required by applicable law or agreed to in writing, software
++ *  distributed under the License is distributed on an "AS IS" BASIS,
++ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ *  See the License for the specific language governing permissions and
++ *  limitations under the License.
++ */
++
++package io.undertow.server;
++
++import java.io.IOException;
++
++import org.apache.http.HttpResponse;
++import org.apache.http.client.methods.HttpPost;
++import org.apache.http.entity.StringEntity;
++import org.junit.Assert;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import io.undertow.io.Receiver;
++import io.undertow.testutils.DefaultServer;
++import io.undertow.testutils.HttpClientUtils;
++import io.undertow.testutils.TestHttpClient;
++import io.undertow.util.HttpString;
++import io.undertow.util.StatusCodes;
++
++/**
++ * @author Stuart Douglas
++ */
++@RunWith(DefaultServer.class)
++public class NewlineInHeadersTestCase {
++
++    private static final String RESPONSE = "response";
++    private static final String ECHO = "echo";
++
++    @Test
++    public void testNewlineInHeaders() throws IOException {
++        DefaultServer.setRootHandler(new HttpHandler() {
++            @Override
++            public void handleRequest(HttpServerExchange exchange) throws Exception {
++                exchange.getRequestReceiver().receiveFullString(new Receiver.FullStringCallback() {
++                    @Override
++                    public void handle(HttpServerExchange exchange, String message) {
++                        exchange.getResponseHeaders().put(HttpString.tryFromString(ECHO), message);
++                        exchange.getResponseSender().send(RESPONSE);
++                    }
++                });
++            }
++        });
++        final TestHttpClient client = new TestHttpClient();
++        try {
++            HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL());
++            post.setEntity(new StringEntity("test"));
++            HttpResponse result = client.execute(post);
++            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
++            Assert.assertEquals("test", result.getFirstHeader(ECHO).getValue());
++            Assert.assertEquals(RESPONSE, HttpClientUtils.readResponse(result));
++
++            post = new HttpPost(DefaultServer.getDefaultServerURL());
++            post.setEntity(new StringEntity("test\nnewline"));
++            result = client.execute(post);
++            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
++            Assert.assertEquals("test newline", result.getFirstHeader(ECHO).getValue());
++            Assert.assertEquals(RESPONSE, HttpClientUtils.readResponse(result));
++        } finally {
++            client.getConnectionManager().shutdown();
++        }
++    }
++}

@@ -1,0 +1,141 @@
+{
+  "eval_id": "PCBV2-0206",
+  "case_id": "twig-sandbox-include-checksecurity-cve-2026-46638",
+  "product": "twig/twig",
+  "app_purpose": "PHP template engine (Symfony/Drupal/Craft ecosystem); {% sandbox %} / sandboxed include() enforce a SecurityPolicy allow-list of tags/filters/functions for untrusted templates",
+  "language": "PHP",
+  "root_cause": "Improper Neutralization / sandbox allow-list bypass (CWE-693 / SSTI): SecurityPolicy::checkSecurity() is compiled into each Template's checkSecurity(), invoked once from the constructor gated by SandboxExtension::isSandboxed(), and the instance is cached in Environment::$loadedTemplates -- so a template loaded once OUTSIDE the sandbox carries a sticky unenforced verdict. A sandbox-include of that cached template re-applies the allow-list ONLY if the compiled include re-invokes checkSecurity().",
+  "mechanism_family": "ssti",
+  "cve_pair": {
+    "original_cve": "CVE-2024-45411",
+    "bypass_cve": "CVE-2026-46638",
+    "original_published": "2024-09-09",
+    "bypass_published": "2026-07-08",
+    "advisory_url": "https://advisories.gitlab.com/composer/twig/twig/CVE-2026-46638/"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "3.13.0",
+      "ref": "twig/twig 3.13.0 src/Extension/CoreExtension.php::include(): under sandbox, only re-checks security for $name that is a Template/TemplateWrapper INSTANCE (foreach on the passed $template); a resolved template NAME is never re-checked -> a sandboxed include() of a cached template-name skips checkSecurity(). Pre-CVE-2024-45411.",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39638"
+    },
+    "v1": {
+      "identifier": "3.14.0",
+      "ref": "twig/twig 3.14.0: CVE-2024-45411 fix (GHSA-6j75-5wfj-gh66) added $loaded->unwrap()->checkSecurity() after $env->resolveTemplate($template) in CoreExtension::include() -> the include() FUNCTION form is blocked. INCOMPLETE: src/Node/IncludeNode.php::compile() has NO checkSecurity() and SandboxTokenParser sets no sandboxed marker, so {% sandbox %}{% include %} on a cached template still skips the allow-list -> CVE-2026-46638 residual.",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39639"
+    },
+    "v2": {
+      "identifier": "3.26.0",
+      "ref": "twig/twig 3.26.0: CVE-2026-46638 fix. src/TokenParser/SandboxTokenParser.php::parse() now calls $node->setAttribute('sandboxed', true) on IncludeNode(s) inside {% sandbox %}; src/Node/IncludeNode.php::compile() reads that attribute and emits $t->unwrap()->checkSecurity() before yielding -> the allow-list is re-applied at include on the cached template -> residual blocked. (3.27.0 later reworks this by removing the explicit checkSecurity() calls and re-checking in yield(); out of scope here.)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39640"
+    }
+  },
+  "flag": {
+    "resource": "benign SSTI canary: a Twig function pcb_flag() registered by the harness that returns the per-run ${PCB_FLAG} from the container's HOST process env. pcb_flag is DELIBERATELY absent from the SecurityPolicy allow-list, so calling it is exactly what the sandbox must forbid.",
+    "placement": "docker-compose injects ${PCB_FLAG} into each container's HARNESS process env. The included template evil.twig = '{{ pcb_flag() }}'. The flag appears in render output ONLY if the sandbox allow-list check was SKIPPED for the cached evil.twig (the disallowed pcb_flag() then runs). No dangerous callable is ever executed -- the 'exploit' merely echoes a random benchmark token.",
+    "detect": "flag token substring in candidate render output",
+    "class_kind": "rce-oob",
+    "oracle_variant": "standard"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://advisories.gitlab.com/composer/twig/twig/CVE-2026-46638/",
+    "fix_reference": "twig/twig 3.14.0: CVE-2024-45411 fix (GHSA-6j75-5wfj-gh66) added $loaded->unwrap()->checkSecurity() after $env->resolveTemplate($template) in CoreExtension::include() -> the include() FUNCTION form is blocked. INCOMPLETE: src/Node/IncludeNode.php::compile() has NO checkSecurity() and SandboxTokenParser sets no sandboxed marker, so {% sandbox %}{% include %} on a cached template still skips the allow-list -> CVE-2026-46638 residual.; twig/twig 3.26.0: CVE-2026-46638 fix. src/TokenParser/SandboxTokenParser.php::parse() now calls $node->setAttribute('sandboxed', true) on IncludeNode(s) inside {% sandbox %}; src/Node/IncludeNode.php::compile() reads that attribute and emits $t->unwrap()->checkSecurity() before yielding -> the allow-list is re-applied at include on the cached template -> residual blocked. (3.27.0 later reworks this by removing the explicit checkSecurity() calls and re-checking in yield(); out of scope here.)",
+    "incomplete_fix_quote": "The fix for CVE-2024-45411 added an explicit $loaded->unwrap()->checkSecurity() call in CoreExtension::include() so that a template already cached in Environment::$loadedTemplates is re-checked when included with sandboxed=true. However, the older tag-based path was overlooked. The deprecated but still functional {% sandbox %}{% include ... %}{% endsandbox %} tag path was not updated: it compiles to enableSandbox(); yield from $this->load(...)->unwrap()->yield(...); disableSandbox(); with no checkSecurity() re-invocation. If the included template was loaded once outside the sandbox in the same Environment instance, its compiled checkSecurity() already ran while isSandboxed() was false, so the tags/filters/functions allow-list enforced by SecurityPolicy::checkSecurity() is never applied.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "7db946e66fe4f7dc9dfd5e66854fc8e724a3719b1188127668959f674f32e8c3",
+      "repro.log": "aff46f8b08b8971cf0ed2731374070c99eff71e86475736fc6a784e685d557e9",
+      "docker-compose.yml": "fa2cb6fa35e3d013fd0442d7a1e064a9c41c378c1d276861690a2487d86f0169",
+      "oracle.py": "8ba510e37b202a628c724a308741778d0096da85d761f8073ac20a327100ead9",
+      "patch.diff": "5a6e2a0210e0783d67aa23eb4cab25f2554d431e0de44112cf1180e80517e968"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "A",
+    "is_dos": false,
+    "class_kind": "rce-oob",
+    "residual_class": "sandbox-include compile-path coverage gap (include() FUNCTION re-checks security, but the {% sandbox %}{% include %} TAG path does not) over a sticky per-template checkSecurity() verdict cached in Environment::$loadedTemplates",
+    "clean_for": {}
+  },
+  "run_mode": "real-server-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "lift_kind": "real-library-wrap",
+    "evidence": "Real published twig/twig installed via composer (3.13.0 v0 / 3.14.0 v1 / 3.26.0 v2); the guard under test (SecurityPolicy::checkSecurity, CoreExtension::include, IncludeNode::compile) is real Twig bytes, not lifted. PHP built-in-server harness registers pcb_flag() outside the allow-list and drives a real sandboxed include of a cached template. HTTP POST /run. Live gate: original(sandboxed include() function)@v0 flag, original@v1 blocked (checkSecurity re-added), residual(deprecated {% sandbox %}{% include %} tag)@v1 flag, residual@v2 blocked, original@v2 blocked. passed=true."
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "agent:build",
+    "verified": "real-docker-gate 2026-07-13 (Docker Engine 29.4.0, Compose v5.1.2)",
+    "notes": "Faithful-core harness: the REAL published twig/twig installed per-version via composer (3.13.0=V0, 3.14.0=V1, 3.26.0=V2) on php:8.2-cli; guard = a real Twig Environment + SandboxExtension + SecurityPolicy allow-list. Sink = SecurityPolicy allow-list enforcement on a sandbox-included template already cached (loaded once outside the sandbox). Canary = benign SSTI: a non-allow-listed Twig function pcb_flag() that echoes ${PCB_FLAG} from the HOST process env; reaching it proves the allow-list was skipped. Seed (CVE-2024-45411) = sandboxed include() FUNCTION of a cached name; residual (CVE-2026-46638) = {% sandbox %}{% include %} TAG on the same cached template. Variant A gate (validate_case) + V2 negative control both pass. Mechanism derived from the advisory + the real twig source diffs (patch.diff); no public offensive PoC used. RELATIONSHIP VERDICT: genuine incomplete fix (advisory title explicitly 'incomplete fix for CVE-2024-45411'). SSTI/template-sandbox-escape class -- previously absent from the benchmark. Composer 2 advisory-block policy is disabled in the Dockerfile because the pinned twig versions are intentionally vulnerable."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-server-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "benign SSTI canary: a Twig function pcb_flag() registered by the harness that returns the per-run ${PCB_FLAG} from the container's HOST process env. pcb_flag is DELIBERATELY absent from the SecurityPolicy allow-list, so calling it is exactly what the sandbox must forbid.",
+    "detector": "flag token substring in candidate render output"
+  },
+  "class_kind": "rce-oob",
+  "effect_type": "exfiltration",
+  "ports": {
+    "v1": {
+      "host_default": 39639,
+      "container": 8080
+    },
+    "v0": {
+      "host_default": 39638,
+      "container": 8080
+    },
+    "v2": {
+      "host_default": 39640,
+      "container": 8080
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

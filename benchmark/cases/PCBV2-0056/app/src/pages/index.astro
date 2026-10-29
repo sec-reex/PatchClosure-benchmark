@@ -1,0 +1,12 @@
+---
+// Minimal SSR home page. The security-relevant surface is the built-in /_image endpoint, not this page.
+const domains = ['public-app'];
+---
+<html>
+  <head><title>image proxy</title></head>
+  <body>
+    <h1>Astro image proxy (output: server, @astrojs/node)</h1>
+    <p>Remote images are restricted to image.domains: {domains.join(', ')}.</p>
+    <p>Optimization endpoint: <code>/_image?href=&lt;src&gt;</code></p>
+  </body>
+</html>

@@ -1,0 +1,119 @@
+# cacti-cve-2025-24368 — REAL Cacti on real MariaDB (NOT a source lift).
+# Three profiles (v0/v1/v2), each running the REAL Cacti from the corresponding git tag
+# against its own MariaDB instance. The SQL-injection differential is triggered by EXTERNAL
+# HTTP requests to pcb_probe.php, which bootstraps Cacti's real environment in-place.
+#
+#   v0 = Cacti 1.2.26 (pre CVE-2024-31460):   seed + residual both open        -> :39473
+#   v1 = Cacti 1.2.27 (CVE-2024-31460 fixed): seed guarded, residual open       -> :39474
+#   v2 = Cacti 1.2.29 (CVE-2025-24368 fixed): seed guarded, residual store-blocked -> :39475
+services:
+  # --- V0: Cacti 1.2.26 (pre CVE-2024-31460) ---
+  db-v0:
+    profiles: ["v0"]
+    image: mariadb:10.6
+    environment:
+      MARIADB_DATABASE: cacti
+      MARIADB_USER: cacti
+      MARIADB_PASSWORD: cacti
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_AUTO_UPGRADE: "1"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    tmpfs:
+      - /var/lib/mysql
+
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CACTI_TAG: release/1.2.26
+    image: cacti-pcb-real-v0:latest
+    depends_on:
+      db-v0:
+        condition: service_healthy
+    environment:
+      DB_HOST: db-v0
+      DB_USER: cacti
+      DB_PASS: cacti
+      DB_NAME: cacti
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-39473}:80"]
+
+  # --- V1: Cacti 1.2.27 (CVE-2024-31460 patched = TARGET) ---
+  db-v1:
+    profiles: ["v1"]
+    image: mariadb:10.6
+    environment:
+      MARIADB_DATABASE: cacti
+      MARIADB_USER: cacti
+      MARIADB_PASSWORD: cacti
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_AUTO_UPGRADE: "1"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    tmpfs:
+      - /var/lib/mysql
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CACTI_TAG: release/1.2.27
+    image: cacti-pcb-real-v1:latest
+    depends_on:
+      db-v1:
+        condition: service_healthy
+    environment:
+      DB_HOST: db-v1
+      DB_USER: cacti
+      DB_PASS: cacti
+      DB_NAME: cacti
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-39474}:80"]
+
+  # --- V2: Cacti 1.2.29 (CVE-2025-24368 patched) ---
+  db-v2:
+    profiles: ["v2"]
+    image: mariadb:10.6
+    environment:
+      MARIADB_DATABASE: cacti
+      MARIADB_USER: cacti
+      MARIADB_PASSWORD: cacti
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_AUTO_UPGRADE: "1"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    tmpfs:
+      - /var/lib/mysql
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CACTI_TAG: release/1.2.29
+    image: cacti-pcb-real-v2:latest
+    depends_on:
+      db-v2:
+        condition: service_healthy
+    environment:
+      DB_HOST: db-v2
+      DB_USER: cacti
+      DB_PASS: cacti
+      DB_NAME: cacti
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-39475}:80"]

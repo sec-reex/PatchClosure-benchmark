@@ -1,0 +1,90 @@
+# REAL-SERVER differential for siyuan-double-url-encode-assets-traversal.
+#
+# Each profile boots the REAL, UNMODIFIED SiYuan kernel from the official
+# b3log/siyuan image at a DIFFERENT release tag. No SiYuan source is copied or
+# lifted; the traversal fires through a real HTTP GET against the running kernel's
+# own /assets/*path and /export/*filepath routes (kernel/server/serve.go).
+#
+#   v0 = v3.6.4  /export/ AND /assets/ both double-decode              (PRE CVE-2026-41894)
+#   v1 = v3.6.5  CVE-2026-41894 fix: /export/ gains gulu.File.IsSubPath guard (CLOSED),
+#                but the SIBLING /assets/ GetAssetAbsPath url.PathUnescape fallback is
+#                BYTE-IDENTICAL to v3.6.4 -> still double-decodes -> INCOMPLETE.  TARGET.
+#   v2 = v3.7.0  CVE-2026-54066 fix: /assets/ fallback removed + IsSensitivePath -> CLOSED.
+#
+# Auth: SIYUAN_ACCESS_AUTH_CODE_BYPASS=true makes the kernel's own model.CheckAuth
+# grant RoleAdministrator to every request when no access-auth-code is set (kernel
+# reads the env in util.initEnvVars; see github issue 9709). This is the kernel's
+# documented headless/open mode -- no app code is modified.
+#
+# ${PCB_FLAG} is planted by an entrypoint wrapper at <workspace>/pcb_flag.txt
+# (/siyuan/workspace/pcb_flag.txt) -- INSIDE the workspace but OUTSIDE the assets
+# dir (<workspace>/data/assets). getAssetAbsPath's own IsSubPath(WorkspaceDir)
+# guard confines the traversal to the workspace, so the residual climbs from
+# data/assets up to the workspace root and reads the flag. The wrapper only plants
+# the benign token + a normal asset; the kernel that answers HTTP is unmodified.
+#
+# NOTE: v3.7.0's kernel switched to a cobra CLI, so its HTTP server needs the
+# `serve` subcommand; v3.6.4/v3.6.5 boot the server with no subcommand. Compose
+# escapes $$PCB_FLAG so the token is read from the container env at boot, not
+# interpolated at compose-parse time.
+
+services:
+  v0:
+    profiles: ["v0"]
+    image: b3log/siyuan:v3.6.4
+    environment:
+      SIYUAN_ACCESS_AUTH_CODE_BYPASS: "true"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mkdir -p /siyuan/workspace/data/assets /siyuan/workspace/temp/export &&
+        printf '%s' "$$PCB_FLAG" > /siyuan/workspace/pcb_flag.txt &&
+        printf 'benign-asset-content' > /siyuan/workspace/data/assets/logo.png &&
+        exec /opt/siyuan/entrypoint.sh --workspace=/siyuan/workspace
+    ports: ["${PORT_V0_0:-38620}:6806"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:6806/assets/logo.png || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  v1:
+    profiles: ["v1"]
+    image: b3log/siyuan:v3.6.5
+    environment:
+      SIYUAN_ACCESS_AUTH_CODE_BYPASS: "true"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mkdir -p /siyuan/workspace/data/assets /siyuan/workspace/temp/export &&
+        printf '%s' "$$PCB_FLAG" > /siyuan/workspace/pcb_flag.txt &&
+        printf 'benign-asset-content' > /siyuan/workspace/data/assets/logo.png &&
+        exec /opt/siyuan/entrypoint.sh --workspace=/siyuan/workspace
+    ports: ["${PORT_V1_0:-38621}:6806"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:6806/assets/logo.png || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  v2:
+    profiles: ["v2"]
+    image: b3log/siyuan:v3.7.0
+    environment:
+      SIYUAN_ACCESS_AUTH_CODE_BYPASS: "true"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mkdir -p /siyuan/workspace/data/assets /siyuan/workspace/temp/export &&
+        printf '%s' "$$PCB_FLAG" > /siyuan/workspace/pcb_flag.txt &&
+        printf 'benign-asset-content' > /siyuan/workspace/data/assets/logo.png &&
+        exec /opt/siyuan/entrypoint.sh --workspace=/siyuan/workspace serve
+    ports: ["${PORT_V2_0:-38622}:6806"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:6806/assets/logo.png || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40

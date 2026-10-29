@@ -1,0 +1,25 @@
+case_id: PCBV2-0058
+public_name: frappe-cve-2025-55732
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: pcb-frappe-real
+  v0: "15.57.0"
+  v1: "15.58.0"
+service:
+  # Host publishes ${PORT_FRAPPE_V*_0}:8000 — platform must not probe :8000.
+  # start.sh waits until Frappe /api/method/login answers.
+  readiness: none
+  exposed_ports: [8000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

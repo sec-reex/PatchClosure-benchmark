@@ -1,0 +1,52 @@
+# Runtime deps needed to import the installed Glance Kilo tree
+# (glance.common.store_utils -> glance.db / i18n / scrubber / common.utils).
+# Full glance package is pip-installed --no-deps from the pinned git tree.
+# Last Python 2.7-compatible pins. glance_store 2.0.1 is the filesystem
+# backend that registers both file:// and filesystem://.
+PyYAML==5.3.1
+six==1.16.0
+pbr==5.4.5
+setuptools==44.1.1
+wheel==0.37.1
+glance_store==2.0.1
+eventlet==0.25.2
+greenlet==0.4.17
+netaddr==0.7.19
+pyOpenSSL==19.1.0
+cryptography==3.3.2
+cffi==1.14.6
+enum34==1.1.10
+ipaddress==1.0.23
+pycparser==2.20
+WebOb==1.8.7
+Paste==2.0.3
+PasteDeploy==2.1.1
+Routes==2.4.1
+SQLAlchemy==1.3.24
+WSME==0.9.3
+simplegeneric==0.8.1
+jsonschema==2.6.0
+iso8601==0.1.12
+stevedore==1.32.0
+retrying==1.3.3
+posix_ipc==1.0.5
+netaddr==0.7.19
+anyjson==0.3.3
+argparse==1.4.0
+httplib2==0.19.1
+kombu==4.6.11
+amqp==2.6.1
+vine==1.3.0
+pycrypto==2.6.1
+ordereddict==1.1
+funcsigs==1.0.2
+contextlib2==0.6.0.post1
+wrapt==1.12.1
+debtcollector==1.22.0
+monotonic==1.6
+rfc3986==1.5.0
+PrettyTable==0.7.2
+sqlalchemy-migrate==0.13.0
+Tempita==0.5.2
+decorator==4.4.2
+pbr==5.4.5

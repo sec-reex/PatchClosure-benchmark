@@ -1,0 +1,40 @@
+# PatchClosure-Bench recipe for pp2-json-pointer (CVE-2020-7709 -> CVE-2021-23807).
+# run_mode = real-app-http. Each profile builds an image that npm-installs the REAL published
+# `jsonpointer` release (per JSONPOINTER_VER build-arg) and boots a REAL Express service
+# (app/server.js) that writes a value into fresh JSON state via jsonpointer.set(obj, pointer, value).
+services:
+  v1:
+    build:
+      context: .
+      args:
+        JSONPOINTER_VER: "4.1.0"
+    image: "pcb-json-pointer:4.1.0"
+    profiles: ["v1"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      JSONPOINTER_VER: "4.1.0"
+    ports: ["${PORT_V1_0}:8080"]
+
+  v0:
+    build:
+      context: .
+      args:
+        JSONPOINTER_VER: "4.0.1"
+    image: "pcb-json-pointer:4.0.1"
+    profiles: ["v0"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      JSONPOINTER_VER: "4.0.1"
+    ports: ["${PORT_V0_0}:8080"]
+
+  v2:
+    build:
+      context: .
+      args:
+        JSONPOINTER_VER: "5.0.0"
+    image: "pcb-json-pointer:5.0.0"
+    profiles: ["v2"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      JSONPOINTER_VER: "5.0.0"
+    ports: ["${PORT_V2_0}:8080"]

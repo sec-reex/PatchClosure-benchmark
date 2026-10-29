@@ -1,0 +1,51 @@
+# PatchClosure-Bench recipe: grav-cms-cleandangeroustwig-regex-bypass-cve-2025-66294
+# Pair: CVE-2024-28116 (original) -> CVE-2025-66294 (incomplete-fix target).
+#
+# Builds REAL Grav CMS from git tags. The pcb-probe plugin provides a POST
+# /pcb-probe endpoint that feeds the Twig payload through Grav's own
+# Twig::processString() which calls the real Security::cleanDangerousTwig().
+#
+# Profiles: v0 (1.7.44, no cleanDangerousTwig)
+#           v1 (1.7.45, single-pass regex -- TARGET)
+#           v2 (1.8.0-beta.27, 4-pass filter -- negative control)
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args:
+        GRAV_TAG: "1.7.44"
+    image: "pcb-grav-real:v0"
+    environment:
+      PCB_VER: "v0"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-39744}:80"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args:
+        GRAV_TAG: "1.7.45"
+    image: "pcb-grav-real:v1"
+    environment:
+      PCB_VER: "v1"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-39745}:80"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        GRAV_TAG: "1.8.0-beta.27"
+    image: "pcb-grav-real:v2"
+    environment:
+      PCB_VER: "v2"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-39746}:80"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.26.0/24

@@ -1,0 +1,60 @@
+# PatchClosure-Bench recipe for keycloak-cve-2026-3872.
+# Pair: CVE-2024-1132  ->  CVE-2026-3872  (redirect_uri wildcard path-traversal validation).
+# Recipe-based: NO committed images/source. Official Keycloak (Quarkus) images are
+# pulled at `up` time; only small text (this file + realm/realm-export.json) lives here.
+#
+# Sink: org.keycloak.protocol.oidc.utils.RedirectUtils.UNSAFE_PATH_PATTERN — the guard
+# that validates the OIDC `redirect_uri` against the client's wildcard pattern.
+#   V0 keycloak:24.0.2  -> NO UNSAFE_PATH_PATTERN       => `../` traversal ACCEPTED (CVE-2024-1132)
+#   V1 keycloak:24.0.3  -> pattern present, WITHOUT `;` => `../` BLOCKED, `..;/` ACCEPTED (CVE-2026-3872)  <- TARGET
+#   V2 keycloak:26.5.7  -> pattern gains `|;`           => `..;/` BLOCKED (fully fixed)
+#
+# Canary = ENVIRONMENT, not app code: the `attacker` sidecar (hashicorp/http-echo) is a
+# server on another host:path the attacker controls; it returns ${PCB_FLAG} for ANY path.
+# Keycloak never fetches it — the victim's browser (our curl -L) is 302-redirected there
+# ONLY when the malicious redirect_uri passes RedirectUtils validation. A blocked payload
+# yields Keycloak's own "Invalid parameter: redirect_uri" page and never reaches the sidecar,
+# so the flag (per-run random token) is exfiltrated iff the traversal bypasses the guard.
+# The client's registered redirect pattern (realm-export.json) is http://127.0.0.1:40052/allowed/*
+# — the /allowed/ base the guard is meant to confine redirects to.
+
+x-kc-common: &kc-common
+  environment:
+    KEYCLOAK_ADMIN: admin
+    KEYCLOAK_ADMIN_PASSWORD: admin
+    KC_HTTP_ENABLED: "true"
+  command: ["start-dev", "--import-realm"]
+  volumes:
+    - ./realm/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+
+services:
+  attacker:
+    # Environment canary: attacker-controlled server OUTSIDE the /allowed/ path.
+    # http-echo returns ${PCB_FLAG} for every path (catch-all). No profile => always up.
+    image: "hashicorp/http-echo:latest"
+    command: ["-listen=:5678", "-text=${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"]
+    ports: ["${PORT_ATTACKER_0:-40052}:5678"]
+
+  v1:
+    <<: *kc-common
+    profiles: ["v1"]
+    image: "quay.io/keycloak/keycloak:24.0.3"
+    ports: ["${PORT_V1_0:-40081}:8080"]
+
+  v0:
+    <<: *kc-common
+    profiles: ["v0"]
+    image: "quay.io/keycloak/keycloak:24.0.2"
+    ports: ["${PORT_V0_0:-40080}:8080"]
+
+  v2:
+    <<: *kc-common
+    profiles: ["v2"]
+    image: "quay.io/keycloak/keycloak:26.5.7"
+    ports: ["${PORT_V2_0:-40082}:8080"]
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.134.0/24

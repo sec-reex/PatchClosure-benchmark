@@ -1,0 +1,123 @@
+{
+  "eval_id": "PCBV2-0032",
+  "case_id": "dbi-cve-2026-14739",
+  "product": "Perl DBI (preparse placeholder expansion)",
+  "app_purpose": "Perl database interface; prepares SQL statements and expands placeholders",
+  "language": "Perl/C (XS)",
+  "root_cause": "Heap buffer overflow in preparse() placeholder expansion (CWE-787)",
+  "mechanism_family": "placeholder_expansion_buffer_overflow",
+  "cve_pair": {
+    "original_cve": "CVE-2026-10879",
+    "bypass_cve": "CVE-2026-14739",
+    "original_published": "2026-06-04",
+    "bypass_published": "2026-07-07"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "1.647",
+      "ref": "CPAN DBI 1.647 (pre CVE-2026-10879 fix; preparse buffer factor 3)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": "https://metacpan.org/dist/DBI",
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "1.648",
+      "ref": "CPAN DBI 1.648 (CVE-2026-10879 fix: buffer factor 6; still overflows for ~1.2M placeholders). 1.649 is a doc-only re-release with identical DBI.xs.",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": "https://metacpan.org/dist/DBI",
+      "base_url": null
+    },
+    "v2": {
+      "identifier": "1.650",
+      "ref": "CPAN DBI 1.650 (CVE-2026-14739 fix: buffer factor 7 + hard limit of 99999 placeholders)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": "https://metacpan.org/dist/DBI",
+      "base_url": null
+    }
+  },
+  "flag": {
+    "resource": "none (Variant C dos-threshold)",
+    "placement": "no canary file; PCB_FLAG only satisfies compose interpolation",
+    "detect": "crash = probe perl process killed by signal (exit code >= 128; SIGABRT 134 / SIGSEGV 139 observed); no-crash = clean exit 0",
+    "class_kind": "dos-threshold"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out_from_method": [
+    "v2 source",
+    "bypass_poc.py",
+    "v0/v2 env (profiles v0/v2)"
+  ],
+  "provenance": {
+    "source": "public:NVD_fix_pattern",
+    "verified": "runtime_gate_passed",
+    "notes": "CVE-2026-10879: DBI preparse() allocates the expanded statement buffer as strlen(statement)*3 (<=1.647); each '?' becomes ':p<idx>' (~2+log10(idx) bytes), so >~1.1K placeholders overflow the heap buffer. Fixed in 1.648 by raising the factor to 6+16, which covers ':p1'..':p11106' (upstream comment in 1.650). Residual CVE-2026-14739: ~1.2M placeholders still overflow the factor-6 buffer (~10.4MB expansion vs ~7.2MB allocation) -> SIGABRT/SIGSEGV; fixed in 1.650 with factor 7 plus a hard limit of 99999 '?' placeholders that raises a DBI error instead. NOTE: the task brief said the 10879 fix is in 1.649; source verification shows the fix landed in 1.648 (ChangeLog entry) and 1.649 has an identical DBI.xs, so V1=1.648 (1.649 behaves identically). PoC: perl probe calls $dbh->preparse('?'xN, 0x200, 0x100|0x200) on DBD::ExampleP; seed N=5000 crashes 1.647 (exit 134) and is clean on 1.648 (exit 0, len=28893); residual N=1200000 crashes 1.648 (exit 134/139) and is a clean DBI 'Limit exceeded' error on 1.650 (exit 0). Variant C dos-threshold; probe exit code >= 128 = crash. Built 2026-08-01.",
+    "patch_diff_status": {
+      "upstream_diff": "unavailable",
+      "reason": "ROUND9: dbi/dbi-perl has no matching tags (1.647/1.648); commit messages do not cite CVE-2026-10879"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_repository",
+    "full_application": false,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "dos_threshold",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "threshold": {
+      "kind": "probe_process_killed_by_signal",
+      "detect": "exit code >= 128 (SIGABRT 134 / SIGSEGV 139) = crash; exit 0 = clean",
+      "seed_n": 5000,
+      "residual_n": 1200000
+    },
+    "flag_resource": "none (crash threshold, Variant C)",
+    "detector": "GET /probe?n=<N>; crash = exit >= 128 -> flag released in JSON"
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "[2026-08-02 LLM freeze audit: oracle 4-way all True + Phase-B real gate repro]",
+    "frozen_2026-08-02": "strict_gold"
+  },
+  "evidence": {
+    "artifact_sha256": {
+      "case.json": "7590db863c0d7f43c11648c0fa5c5c9647cc6a4efea8390c249d4a651c327a56",
+      "repro.log": "3773ba47f53560f04a8e970a8fa30b13b46e2d42a20d320b4d9c2fe31b19f50a",
+      "docker-compose.yml": "8de9e085396e13926f21b24329fa07e32ea245cbf6a38c3cceaf7f06a5ddfccd",
+      "oracle.py": "1dd498f33ea700030abd299cb856186a1c6a35c87187333f697d6f3836e3988d",
+      "original_poc.py": "579f69cd8b338e8963ab5e6350cf1e23329704f9dc0a4cf188f7797019518b0e",
+      "patch.diff": "b8250809c219323c8d6106855728e37b2b1df78401c2f11d57180d66088b028f",
+      "Dockerfile": "5dc2a42facba1fcd89b052328be7946818ebf0bb1de8d0fc7060b737bf09b2c5",
+      "_heldout/bypass_poc.py": "1960188fb5edcabb0234423ef9945d09e94de520a079b04fa793553e89a10eba",
+      "README.md": "afe82a655ba505cee40a5717700efc8f20b6897126a47e4408107575911a1c17"
+    }
+  },
+  "ports": {
+    "v0": {"host_default": 39503, "container": 8080},
+    "v1": {"host_default": 39504, "container": 8080},
+    "v2": {"host_default": 39505, "container": 8080}
+  },
+  "run_mode": "real-app-http",
+  "class_kind": "dos-threshold",
+  "effect_type": "exfiltration",
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

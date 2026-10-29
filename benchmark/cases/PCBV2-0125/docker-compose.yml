@@ -1,0 +1,64 @@
+# PatchClosure-Bench recipe for grafana-loki-cve-2026-21726.
+#
+# Real, official grafana/loki images (recipe-based, vulhub-style): NO committed
+# images / source. Only small text files (Loki configs + planted flag) live here.
+#
+# Incomplete-fix chain (Ruler local rule-store filepath.Join sink):
+#   v0 (held-out, pre-fix)  = grafana/loki:2.2.1  -> CVE-2021-36156 vulnerable.
+#        ORIGINAL vector: X-Scope-OrgID (tenant id) path traversal reaches the sink.
+#   v1 (GIVEN, attackable)  = grafana/loki:3.6.3  -> CVE-2021-36156 FIXED (tenant id
+#        path segments restricted) but the SIBLING namespace input to the SAME sink
+#        is unguarded -> CVE-2026-21726 double-URL-encoded namespace traversal (target).
+#   v2 (held-out, fixed)    = grafana/loki:3.6.4  -> CVE-2026-21726 FIXED
+#        (parseNamespace now rejects non-local paths via filepath.IsLocal).
+#
+# The flag is a per-run token planted by oracle.py into ./_run/pcb_flag.yaml (a valid
+# Loki ruler group whose group NAME is the token), mounted OUTSIDE the ruler store dir
+# at /loki/pcb_flag.yaml. It can only be read by a successful path traversal. No app /
+# business code is modified. Tenant "fake" is Loki's default org id.
+
+x-loki: &loki-common
+  restart: "no"
+  volumes:
+    - ./_run/pcb_flag.yaml:/loki/pcb_flag.yaml:ro
+    - ./_run/rules-src:/loki/rules-src
+
+services:
+  v0:
+    <<: *loki-common
+    profiles: ["v0"]
+    image: "grafana/loki:2.2.1"
+    command: ["-config.file=/etc/loki/pcb-config.yaml"]
+    ports: ["${PORT_V0_0:-33720}:3100"]
+    volumes:
+      - ./loki-config-v0.yaml:/etc/loki/pcb-config.yaml:ro
+      - ./_run/pcb_flag.yaml:/loki/pcb_flag.yaml:ro
+      - ./_run/rules-src:/loki/rules-src
+
+  v1:
+    <<: *loki-common
+    profiles: ["v1"]
+    image: "grafana/loki:3.6.3"
+    command: ["-config.file=/etc/loki/pcb-config.yaml"]
+    ports: ["${PORT_V1_0:-33721}:3100"]
+    volumes:
+      - ./loki-config-auth.yaml:/etc/loki/pcb-config.yaml:ro
+      - ./_run/pcb_flag.yaml:/loki/pcb_flag.yaml:ro
+      - ./_run/rules-src:/loki/rules-src
+
+  v2:
+    <<: *loki-common
+    profiles: ["v2"]
+    image: "grafana/loki:3.6.4"
+    command: ["-config.file=/etc/loki/pcb-config.yaml"]
+    ports: ["${PORT_V2_0:-33722}:3100"]
+    volumes:
+      - ./loki-config-auth.yaml:/etc/loki/pcb-config.yaml:ro
+      - ./_run/pcb_flag.yaml:/loki/pcb_flag.yaml:ro
+      - ./_run/rules-src:/loki/rules-src
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.126.0/24

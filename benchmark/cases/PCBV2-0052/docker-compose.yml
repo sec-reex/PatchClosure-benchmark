@@ -1,0 +1,50 @@
+# PatchClosure-Bench recipe for aiohttp-cve-2024-23829
+# Pair: CVE-2023-47627 (original, Content-Length int() leniency)
+#    -> CVE-2024-23829 (incomplete-fix target, Content-Length .isdecimal() still accepts Unicode digits).
+# Canary kind = request-smuggling: an obfuscated-Content-Length request whose acceptance lets a
+# pipelined `GET /flag` smuggled sub-request reach the internal ${PCB_FLAG} route.
+#
+# Faithful-core: each service is the OFFICIAL python:3.11-slim image running a REAL, unmodified
+# aiohttp.web server with the PURE-PYTHON parser (AIOHTTP_NO_EXTENSIONS=1). The version's own
+# get_content_length() guard decides whether the malformed Content-Length is accepted.
+#
+#   seed  (CVE-2023-47627): Content-Length: +0   (int() accepts, .isdecimal() rejects)
+#       -> V0 aiohttp 3.8.5  int("+0")=0 -> accepted -> pipelined GET /flag parsed -> FLAG.
+#       -> V1 aiohttp 3.8.6  "+0".isdecimal()=False -> 400 + close -> BLOCKED.
+#   residual (CVE-2024-23829): Content-Length: U+0660 (Arabic-Indic zero, UTF-8 d9 a0)
+#       -> V1 aiohttp 3.8.6  "٠".isdecimal()=True, int()=0 -> accepted -> FLAG (bypass).
+#       -> V2 aiohttp 3.9.2  DIGITS(re.ASCII).fullmatch fails -> 400 + close -> BLOCKED.
+#
+# Profiles: v1 (REQUIRED, GIVEN target) = 3.8.6; v0 (held-out seed env) = 3.8.5; v2 (negative) = 3.9.2.
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args: { AIOHTTP_VER: "3.8.5" }
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-39580}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args: { AIOHTTP_VER: "3.8.6" }
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-39581}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args: { AIOHTTP_VER: "3.9.2" }
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-39582}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.53.0/24

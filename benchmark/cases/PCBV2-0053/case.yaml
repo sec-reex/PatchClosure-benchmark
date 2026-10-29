@@ -1,0 +1,25 @@
+case_id: PCBV2-0053
+public_name: antisamy_comment_mxss
+run_mode: real-app-http
+oracle_family: browser_xss
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/nahsra/antisamy.git
+  v0: 1.7.3
+  v1: 1.7.4
+service:
+  # Compose publishes ${PORT_V*_0}:80 plus callback/victim. Platform HTTP on
+  # host :80 would miss; start.sh / reset.sh wait on published host ports.
+  readiness: none
+  exposed_ports: [80, 8070, 9000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

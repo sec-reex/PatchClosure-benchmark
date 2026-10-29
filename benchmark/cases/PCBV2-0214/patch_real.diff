@@ -1,0 +1,257 @@
+CVE: CVE-2025-55748
+upstream: https://github.com/xwiki/xwiki-platform.git
+fix: 9e7b4c03f2143978d891109a17159f73d4cdd318
+
+diff --git a/xwiki-platform-core/xwiki-platform-flamingo/xwiki-platform-flamingo-skin/xwiki-platform-flamingo-skin-test/xwiki-platform-flamingo-skin-test-docker/src/test/it/org/xwiki/flamingo/test/docker/WebJarsIT.java b/xwiki-platform-core/xwiki-platform-flamingo/xwiki-platform-flamingo-skin/xwiki-platform-flamingo-skin-test/xwiki-platform-flamingo-skin-test-docker/src/test/it/org/xwiki/flamingo/test/docker/WebJarsIT.java
+new file mode 100644
+index 00000000..7f94a946
+--- /dev/null
++++ b/xwiki-platform-core/xwiki-platform-flamingo/xwiki-platform-flamingo-skin/xwiki-platform-flamingo-skin-test/xwiki-platform-flamingo-skin-test-docker/src/test/it/org/xwiki/flamingo/test/docker/WebJarsIT.java
+@@ -0,0 +1,54 @@
++/*
++ * See the NOTICE file distributed with this work for additional
++ * information regarding copyright ownership.
++ *
++ * This is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU Lesser General Public License as
++ * published by the Free Software Foundation; either version 2.1 of
++ * the License, or (at your option) any later version.
++ *
++ * This software is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this software; if not, write to the Free
++ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
++ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
++ */
++package org.xwiki.flamingo.test.docker;
++
++import java.net.URI;
++
++import org.apache.commons.httpclient.methods.GetMethod;
++import org.apache.commons.lang3.StringUtils;
++import org.junit.jupiter.api.Order;
++import org.junit.jupiter.api.Test;
++import org.xwiki.test.docker.junit5.UITest;
++import org.xwiki.test.ui.TestUtils;
++
++import static org.junit.jupiter.api.Assertions.assertNotEquals;
++
++/**
++ * Tests related to the webjars endpoint.
++ *
++ * @version $Id$
++ */
++@UITest
++class WebJarsIT
++{
++    @Test
++    @Order(1)
++    void pathTraversal(TestUtils setup) throws Exception
++    {
++        URI uri = new URI(StringUtils.removeEnd(setup.rest().getBaseURL(), "rest")
++            + "webjars/wiki%3Axwiki/..%2F..%2F..%2F..%2F..%2FWEB-INF%2Fxwiki.cfg");
++
++        GetMethod response = setup.rest().executeGet(uri);
++
++        assertNotEquals(200, response.getStatusCode());
++
++        response.releaseConnection();
++    }
++}
+diff --git a/xwiki-platform-core/xwiki-platform-oldcore/src/main/java/com/xpn/xwiki/internal/template/InternalTemplateManager.java b/xwiki-platform-core/xwiki-platform-oldcore/src/main/java/com/xpn/xwiki/internal/template/InternalTemplateManager.java
+index e8b83d3f..fd5f2807 100644
+--- a/xwiki-platform-core/xwiki-platform-oldcore/src/main/java/com/xpn/xwiki/internal/template/InternalTemplateManager.java
++++ b/xwiki-platform-core/xwiki-platform-oldcore/src/main/java/com/xpn/xwiki/internal/template/InternalTemplateManager.java
+@@ -59,6 +59,7 @@ import org.xwiki.cache.CacheControl;
+ import org.xwiki.cache.CacheException;
+ import org.xwiki.cache.CacheManager;
+ import org.xwiki.cache.config.LRUCacheConfiguration;
++import org.xwiki.classloader.internal.ClassLoaderUtils;
+ import org.xwiki.component.annotation.Component;
+ import org.xwiki.component.manager.ComponentLifecycleException;
+ import org.xwiki.component.manager.ComponentLookupException;
+@@ -1107,19 +1108,15 @@ public class InternalTemplateManager implements Initializable, Disposable
+ 
+     private Template getClassloaderTemplate(ClassLoader classloader, String prefixPath, String templateName)
+     {
+-        String templatePath = prefixPath + templateName;
+-
+-        // Prevent access to resources from other directories
+-        Path normalizedResource = Paths.get(templatePath).normalize();
+-        // Protect against directory attacks.
+-        if (!normalizedResource.startsWith(prefixPath)) {
+-            this.logger.warn("Direct access to skin file [{}] refused. Possible break-in attempt!", normalizedResource);
++        URL url;
++        try {
++            url = ClassLoaderUtils.getResource(classloader, prefixPath, templateName);
++        } catch (IllegalArgumentException e) {
++            this.logger.warn("The template name [{}] is trying to execute a path traversal attack!", templateName);
+ 
+             return null;
+         }
+ 
+-        URL url = classloader.getResource(templatePath);
+-
+         return url != null ? new ClassloaderTemplate(new ClassloaderResource(url, templateName)) : null;
+     }
+ 
+diff --git a/xwiki-platform-core/xwiki-platform-resource/xwiki-platform-resource-servlet/src/main/java/org/xwiki/resource/servlet/AbstractServletResourceReferenceHandler.java b/xwiki-platform-core/xwiki-platform-resource/xwiki-platform-resource-servlet/src/main/java/org/xwiki/resource/servlet/AbstractServletResourceReferenceHandler.java
+index 2ea3d0e7..1338dd09 100644
+--- a/xwiki-platform-core/xwiki-platform-resource/xwiki-platform-resource-servlet/src/main/java/org/xwiki/resource/servlet/AbstractServletResourceReferenceHandler.java
++++ b/xwiki-platform-core/xwiki-platform-resource/xwiki-platform-resource-servlet/src/main/java/org/xwiki/resource/servlet/AbstractServletResourceReferenceHandler.java
+@@ -92,7 +92,7 @@ public abstract class AbstractServletResourceReferenceHandler<R extends Resource
+                     sendError(HttpStatus.SC_NOT_FOUND, "Resource not found [%s].",
+                         getResourceName(typedResourceReference));
+                 }
+-            } catch (IOException | ResourceReferenceHandlerException e) {
++            } catch (Exception e) {
+                 this.logger.error(e.getMessage(), e);
+                 sendError(HttpStatus.SC_INTERNAL_SERVER_ERROR, e.getMessage());
+             }
+diff --git a/xwiki-platform-core/xwiki-platform-skin/xwiki-platform-skin-skinx/src/main/java/com/xpn/xwiki/web/sx/SxResourceSource.java b/xwiki-platform-core/xwiki-platform-skin/xwiki-platform-skin-skinx/src/main/java/com/xpn/xwiki/web/sx/SxResourceSource.java
+index 71517d4a..ece2d9e5 100644
+--- a/xwiki-platform-core/xwiki-platform-skin/xwiki-platform-skin-skinx/src/main/java/com/xpn/xwiki/web/sx/SxResourceSource.java
++++ b/xwiki-platform-core/xwiki-platform-skin/xwiki-platform-skin-skinx/src/main/java/com/xpn/xwiki/web/sx/SxResourceSource.java
+@@ -24,6 +24,7 @@ import java.io.InputStream;
+ import java.nio.charset.StandardCharsets;
+ 
+ import org.apache.commons.io.IOUtils;
++import org.xwiki.classloader.internal.ClassLoaderUtils;
+ 
+ /**
+  * JAR resource source for Skin Extensions.
+@@ -58,7 +59,7 @@ public class SxResourceSource implements SxSource
+         try {
+             // Load from the current context class loader to allow extensions to contribute skin extensions.
+             ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+-            try (InputStream in = contextClassLoader.getResourceAsStream(this.resourceName)) {
++            try (InputStream in = ClassLoaderUtils.getResourceAsStream(contextClassLoader, this.resourceName)) {
+                 return IOUtils.toString(in, StandardCharsets.UTF_8);
+             }
+         } catch (NullPointerException e) {
+diff --git a/xwiki-platform-core/xwiki-platform-skin/xwiki-platform-skin-test/xwiki-platform-skin-test-docker/src/test/it/org/xwiki/skin/test/ui/SXSkinIT.java b/xwiki-platform-core/xwiki-platform-skin/xwiki-platform-skin-test/xwiki-platform-skin-test-docker/src/test/it/org/xwiki/skin/test/ui/SXSkinIT.java
+new file mode 100644
+index 00000000..8f00c40a
+--- /dev/null
++++ b/xwiki-platform-core/xwiki-platform-skin/xwiki-platform-skin-test/xwiki-platform-skin-test-docker/src/test/it/org/xwiki/skin/test/ui/SXSkinIT.java
+@@ -0,0 +1,50 @@
++/*
++ * See the NOTICE file distributed with this work for additional
++ * information regarding copyright ownership.
++ *
++ * This is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU Lesser General Public License as
++ * published by the Free Software Foundation; either version 2.1 of
++ * the License, or (at your option) any later version.
++ *
++ * This software is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this software; if not, write to the Free
++ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
++ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
++ */
++package org.xwiki.skin.test.ui;
++
++import java.net.URI;
++
++import org.apache.commons.httpclient.methods.GetMethod;
++import org.junit.jupiter.api.Test;
++import org.xwiki.test.docker.junit5.UITest;
++import org.xwiki.test.ui.TestUtils;
++
++import static org.junit.jupiter.api.Assertions.assertNotEquals;
++
++/**
++ * Verify the behavior of resource based skin resources.
++ *
++ * @version $Id$
++ */
++@UITest
++class SXSkinIT
++{
++    @Test
++    void pathTraversal(TestUtils setup) throws Exception
++    {
++        URI uri = new URI(setup.getURL("Main", "WebHome", "sx", "resource=../../WEB-INF/xwiki.cfg"));
++
++        GetMethod response = setup.rest().executeGet(uri);
++
++        assertNotEquals(200, response.getStatusCode());
++
++        response.releaseConnection();
++     }
++}
+diff --git a/xwiki-platform-core/xwiki-platform-webjars/xwiki-platform-webjars-api/src/main/java/org/xwiki/webjars/internal/WebJarsResourceReferenceHandler.java b/xwiki-platform-core/xwiki-platform-webjars/xwiki-platform-webjars-api/src/main/java/org/xwiki/webjars/internal/WebJarsResourceReferenceHandler.java
+index 76d1b351..ef170369 100644
+--- a/xwiki-platform-core/xwiki-platform-webjars/xwiki-platform-webjars-api/src/main/java/org/xwiki/webjars/internal/WebJarsResourceReferenceHandler.java
++++ b/xwiki-platform-core/xwiki-platform-webjars/xwiki-platform-webjars-api/src/main/java/org/xwiki/webjars/internal/WebJarsResourceReferenceHandler.java
+@@ -30,6 +30,7 @@ import javax.inject.Singleton;
+ 
+ import org.apache.tika.mime.MediaType;
+ import org.xwiki.classloader.ClassLoaderManager;
++import org.xwiki.classloader.internal.ClassLoaderUtils;
+ import org.xwiki.component.annotation.Component;
+ import org.xwiki.resource.ResourceReferenceHandlerException;
+ import org.xwiki.resource.ResourceType;
+@@ -76,8 +77,8 @@ public class WebJarsResourceReferenceHandler extends AbstractServletResourceRefe
+     @Override
+     protected InputStream getResourceStream(WebJarsResourceReference resourceReference)
+     {
+-        String resourcePath = String.format("%s%s", WEBJARS_RESOURCE_PREFIX, getResourceName(resourceReference));
+-        return getClassLoader(resourceReference.getNamespace()).getResourceAsStream(resourcePath);
++        return ClassLoaderUtils.getResourceAsStream(getClassLoader(resourceReference.getNamespace()),
++            WEBJARS_RESOURCE_PREFIX, getResourceName(resourceReference));
+     }
+ 
+     @Override
+diff --git a/xwiki-platform-core/xwiki-platform-webjars/xwiki-platform-webjars-test/xwiki-platform-webjars-test-tests/src/test/it/org/xwiki/webjars/test/ui/WebJarsTest.java b/xwiki-platform-core/xwiki-platform-webjars/xwiki-platform-webjars-test/xwiki-platform-webjars-test-tests/src/test/it/org/xwiki/webjars/test/ui/WebJarsTest.java
+index 1c811d11..cf974695 100644
+--- a/xwiki-platform-core/xwiki-platform-webjars/xwiki-platform-webjars-test/xwiki-platform-webjars-test-tests/src/test/it/org/xwiki/webjars/test/ui/WebJarsTest.java
++++ b/xwiki-platform-core/xwiki-platform-webjars/xwiki-platform-webjars-test/xwiki-platform-webjars-test-tests/src/test/it/org/xwiki/webjars/test/ui/WebJarsTest.java
+@@ -19,6 +19,10 @@
+  */
+ package org.xwiki.webjars.test.ui;
+ 
++import java.net.URI;
++
++import org.apache.commons.httpclient.methods.GetMethod;
++import org.apache.commons.lang3.StringUtils;
+ import org.junit.Rule;
+ import org.junit.Test;
+ import org.openqa.selenium.By;
+@@ -27,7 +31,8 @@ import org.xwiki.test.ui.AbstractTest;
+ import org.xwiki.test.ui.SuperAdminAuthenticationRule;
+ import org.xwiki.test.ui.po.ViewPage;
+ 
+-import static org.junit.Assert.*;
++import static org.junit.Assert.assertTrue;
++import static org.junit.Assert.assertNotEquals;
+ 
+ /**
+  * Functional tests for the WebJars integration.
+@@ -73,4 +78,17 @@ public class WebJarsTest extends AbstractTest
+         // Verify that the served resource is the one from the webjars
+         assertTrue(getDriver().getPageSource().contains("// AjaxQ jQuery Plugin"));
+     }
++
++    @Test
++    public void pathTraversal() throws Exception
++    {
++        URI uri = new URI(StringUtils.removeEnd(getUtil().rest().getBaseURL(), "rest")
++            + "webjars/wiki%3Axwiki/..%2F..%2F..%2F..%2F..%2FWEB-INF%2Fxwiki.cfg");
++
++        GetMethod response = getUtil().rest().executeGet(uri);
++
++        assertNotEquals(200, response.getStatusCode());
++
++        response.releaseConnection();
++    }
+ }

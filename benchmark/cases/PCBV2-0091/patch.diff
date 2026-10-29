@@ -1,0 +1,37 @@
+PCBV2-0091 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: Fix: 013db636fdb38f3ce5657fd196b6d952f98ebc52
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0091/
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 09f10d8..eff16f1 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,7 @@
+ - Fixed a PHP error that could occur when creating a username that began or ended with an `@`. ([#18123](https://github.com/craftcms/cms/pull/18123))
+ - Fixed a bug where assets with disallowed file extensions could be stored in the system’s temp directory. ([#18049](https://github.com/craftcms/cms/pull/18049))
+ - Fixed RCE vulnerabilities. (GHSA-255j-qw47-wjh5, GHSA-742x-x762-7383)
++- Fixed an SSRF vulnerability. (GHSA-x27p-wfqw-hfcc)
+ 
+ ## 4.16.16 - 2025-11-18
+ 
+diff --git a/src/gql/resolvers/mutations/Asset.php b/src/gql/resolvers/mutations/Asset.php
+index 4113826..da273ce 100644
+--- a/src/gql/resolvers/mutations/Asset.php
++++ b/src/gql/resolvers/mutations/Asset.php
+@@ -242,6 +242,15 @@ class Asset extends ElementMutationResolver
+         } elseif (!empty($fileInformation['url'])) {
+             $url = $fileInformation['url'];
+ 
++            // make sure the hostname is alphanumeric and not an IP address
++            $hostname = parse_url($url, PHP_URL_HOST);
++            if (
++                !filter_var($hostname, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) ||
++                filter_var($hostname, FILTER_VALIDATE_IP)
++            ) {
++                throw new UserError("$url contains an invalid hostname.");
++            }
++
+             if (empty($fileInformation['filename'])) {
+                 $filename = AssetsHelper::prepareAssetName(pathinfo(UrlHelper::stripQueryString($url), PATHINFO_BASENAME));
+             } else {

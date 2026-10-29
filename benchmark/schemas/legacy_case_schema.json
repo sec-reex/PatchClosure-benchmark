@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://patchclosure-bench/case.schema.json",
+  "title": "PatchClosure-Bench Case Manifest",
+  "description": "One benchmark case built around a gold CVE1->CVE2 incomplete-fix pair. See SPEC.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case_id", "cve_pair", "product", "root_cause", "versions", "flag", "given_to_method", "held_out", "status"],
+  "properties": {
+    "case_id": {"type": "string", "minLength": 1},
+    "product": {"type": "string", "minLength": 1},
+    "app_purpose": {"type": "string"},
+    "language": {"type": "string"},
+    "root_cause": {"type": "string", "description": "CWE / vuln-class label (NOT P1-P5)"},
+    "mechanism_family": {"type": "string", "description": "free-form mechanism tag, e.g. ip-representation, cross-component-path-decode, object-op-authz"},
+
+    "cve_pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["original_cve", "bypass_cve"],
+      "properties": {
+        "original_cve": {"type": "string", "pattern": "^CVE-\\d{4}-\\d+$"},
+        "bypass_cve": {"type": "string", "pattern": "^CVE-\\d{4}-\\d+$"},
+        "original_published": {"type": ["string", "null"]},
+        "bypass_published": {"type": ["string", "null"], "description": "ISO date; drives per-model post-cutoff partition"}
+      }
+    },
+
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v1_incomplete"],
+      "description": "V0 vulnerable, V1 CVE1-patched (target), V2 CVE2-patched (optional).",
+      "properties": {
+        "v0_vulnerable": {"$ref": "#/$defs/version"},
+        "v1_incomplete": {"$ref": "#/$defs/version"},
+        "v2_fixed": {"$ref": "#/$defs/version"}
+      }
+    },
+
+    "flag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource", "detect"],
+      "description": "The oracle answer key. Held-out from the method.",
+      "properties": {
+        "resource": {"type": "string", "description": "the defended asset the flag is planted at (SSRF internal endpoint / secret file / foreign object field / etc.)"},
+        "placement": {"type": "string", "description": "how the flag is instrumented into V0/V1 at build time without perturbing the vuln"},
+        "detect": {"type": "string", "description": "how 'flag reached' is observed in a candidate's result (e.g., token substring in response)"},
+        "class_kind": {"type": "string", "enum": ["read-exfil", "state-write", "authz-seeded", "redirect-canary", "xss-exfil", "dos-threshold"]}
+      }
+    },
+
+    "given_to_method": {
+      "type": "array", "items": {"type": "string"},
+      "description": "paths handed to the system-under-test (V1 source, patch.diff, original_poc, V1 env handle)"
+    },
+    "held_out": {
+      "type": "array", "items": {"type": "string"},
+      "description": "paths NEVER exposed to the system (bypass_poc, flag_spec, advisory, V0/V2 sources)"
+    },
+
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "advisory_url": {"type": "string"},
+        "incomplete_fix_quote": {"type": "string"}
+      }
+    },
+
+    "labels": {
+      "type": "object",
+      "properties": {
+        "quality_tier": {"type": "string", "enum": ["REAL", "HYBRID", "LIBRARY", "SYNTHETIC"]},
+        "tier": {"type": "string", "enum": ["web-app", "library", "infra"]},
+        "is_dos": {"type": "boolean"},
+        "clean_for": {"type": "object", "additionalProperties": {"type": "boolean"},
+          "description": "per-model: bypass_published > model knowledge cutoff"}
+      }
+    },
+
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage"],
+      "properties": {
+        "stage": {"type": "string", "enum": ["scaffolded", "envs_built", "poc_ready", "flag_planted", "gate_passed", "frozen"]},
+        "gate": {
+          "type": "object",
+          "description": "validity gate results (flag_oracle.validate_case)",
+          "properties": {
+            "original_poc_reaches_flag_on_v0": {"type": ["boolean", "null"]},
+            "original_poc_blocked_on_v1": {"type": ["boolean", "null"]},
+            "bypass_poc_reaches_flag_on_v1": {"type": ["boolean", "null"]}
+          }
+        }
+      }
+    },
+
+    "provenance": {"type": "object", "properties": {
+      "source": {"type": "string"}, "verified": {"type": "string"}, "notes": {"type": "string"}
+    }}
+  },
+
+  "$defs": {
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {"type": "string"},
+        "ref": {"type": "string", "description": "git tag/commit"},
+        "source_path": {"type": "string"},
+        "compose_profile": {"type": "string", "description": "docker-compose profile that boots this version"},
+        "base_url": {"type": "string"}
+      }
+    }
+  }
+}

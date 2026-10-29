@@ -1,0 +1,64 @@
+# PatchClosure-Bench recipe for siyuan-cve-2026-31809.
+# Official kernel images only. Trigger is GET /api/icon/getDynamicIcon?type=8&content=...
+# Canary = xss-exfil: headless Chromium `victim` carries ${PCB_FLAG} in a siyuan-origin
+# cookie, NAVIGATES the returned image/svg+xml as a document (not <img>), then clicks
+# the reflected <a>. javascript: reads document.cookie and hits internal `callback`.
+#
+# Version arithmetic against V1 (SiYuan 3.5.9) SanitizeSVG:
+#   - seed (CVE-2026-29183): <a href="javascript:...">
+#       V0=3.5.8 RemoveScriptsInSVG keeps href -> click executes -> flag.
+#       V1=3.5.9 SanitizeSVG HasPrefix(val, "javascript:") strips static href -> BLOCKED.
+#   - residual (CVE-2026-31809 / GHSA-pmc9 Vector 3): <a href="java&#13;script:...">
+#       After HTML parse the value is java\rscript:...; HasPrefix fails; browser
+#       strips CR per WHATWG -> javascript: -> click executes -> flag.
+#       V2=3.5.10 strips \t\n\r before the check -> BLOCKED.
+#   NOT CVE-2026-31807 <animate> residual (that is PCBV2-0193).
+#
+# victim + callback share every version profile so `compose --profile $VERSION up`
+# starts them. No custom subnet (avoid IPAM clashes with parallel cases).
+services:
+  callback:
+    profiles: ["v0", "v1", "v2"]
+    image: "python:3.12-alpine"
+    volumes: ["./callback.py:/callback.py:ro"]
+    command: ["python3", "/callback.py"]
+    ports: ["${PORT_CALLBACK_0:-}:9000"]
+
+  victim:
+    profiles: ["v0", "v1", "v2"]
+    image: "mcr.microsoft.com/playwright/python:v1.47.0-jammy"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run victim secret}"
+    volumes: ["./victim.py:/victim.py:ro"]
+    command: ["bash", "-lc", "pip install --quiet playwright==1.47.0 && exec python3 /victim.py"]
+    ports: ["${PORT_VICTIM_0:-}:8070"]
+    depends_on: ["callback"]
+
+  v1:
+    profiles: ["v1"]
+    image: "b3log/siyuan:v3.5.9"
+    command: ["--workspace=/siyuan/workspace", "--accessAuthCode=pcb"]
+    volumes: ["siyuan_ws1:/siyuan/workspace"]
+    ports: ["${PORT_V1_0:-}:6806"]
+    depends_on: ["victim", "callback"]
+
+  v0:
+    profiles: ["v0"]
+    image: "b3log/siyuan:v3.5.8"
+    command: ["--workspace=/siyuan/workspace", "--accessAuthCode=pcb"]
+    volumes: ["siyuan_ws0:/siyuan/workspace"]
+    ports: ["${PORT_V0_0:-}:6806"]
+    depends_on: ["victim", "callback"]
+
+  v2:
+    profiles: ["v2"]
+    image: "b3log/siyuan:v3.5.10"
+    command: ["--workspace=/siyuan/workspace", "--accessAuthCode=pcb"]
+    volumes: ["siyuan_ws2:/siyuan/workspace"]
+    ports: ["${PORT_V2_0:-}:6806"]
+    depends_on: ["victim", "callback"]
+
+volumes:
+  siyuan_ws0: {}
+  siyuan_ws1: {}
+  siyuan_ws2: {}

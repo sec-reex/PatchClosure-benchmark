@@ -1,0 +1,67 @@
+# PatchClosure-Bench recipe for librechat-cve-2026-54024
+# (CVE-2024-11171 -> CVE-2026-54024).
+#
+# REAL LibreChat (official ghcr.io/danny-avila/librechat images) + mongo:7.
+# Authenticated users drive LibreChat's OWN HTTP routes:
+#   seed     POST /api/files/images/avatar   (CVE-2024-11171 unlimited multer)
+#   residual POST /api/convos/import         (CVE-2026-54024 unlimited multer)
+#
+# Profiles: v0=0.7.5 (seed open), v1=0.7.6 (seed closed, residual open),
+# v2=0.8.4-rc1 (residual closed). No container_name; host ports are randomized.
+
+x-librechat-env: &librechat-env
+  HOST: "0.0.0.0"
+  PORT: "3080"
+  JWT_SECRET: "pcb-jwt-secret-54024-0123456789abcdef01234567"
+  JWT_REFRESH_SECRET: "pcb-jwt-refresh-54024-fedcba9876543210fedcba98"
+  CREDS_KEY: "f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0"
+  CREDS_IV: "e2341419ec3dd3d19b13a1a87fafcbfb"
+  ALLOW_REGISTRATION: "true"
+  NO_INDEX: "true"
+  # start.sh + seed/wrong/stale each POST /api/auth/login from one IP.
+  # Default LOGIN_MAX=7 / REGISTER_MAX=5 429s the trial-2 stale check.
+  LOGIN_MAX: "1000"
+  LOGIN_WINDOW: "1"
+  REGISTER_MAX: "1000"
+  REGISTER_WINDOW: "1"
+  BAN_VIOLATIONS: "false"
+
+services:
+  mongo:
+    image: mongo:7.0
+    pull_policy: never
+    volumes: ["mdb:/data/db"]
+
+  v0:
+    profiles: ["v0"]
+    image: ghcr.io/danny-avila/librechat:v0.7.5
+    pull_policy: never
+    depends_on: ["mongo"]
+    environment:
+      <<: *librechat-env
+      MONGO_URI: "mongodb://mongo:27017/pcb_54024_v0"
+    ports: ["${PORT_V0_0:-53710}:3080"]
+
+  v1:
+    profiles: ["v1"]
+    image: ghcr.io/danny-avila/librechat:v0.7.6
+    pull_policy: never
+    depends_on: ["mongo"]
+    environment:
+      <<: *librechat-env
+      MONGO_URI: "mongodb://mongo:27017/pcb_54024_v1"
+    ports: ["${PORT_V1_0:-53711}:3080"]
+
+  v2:
+    profiles: ["v2"]
+    image: ghcr.io/danny-avila/librechat:v0.8.4-rc1
+    pull_policy: never
+    depends_on: ["mongo"]
+    environment:
+      <<: *librechat-env
+      MONGO_URI: "mongodb://mongo:27017/pcb_54024_v2"
+      CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES: "5242880"
+    ports: ["${PORT_V2_0:-53712}:3080"]
+
+volumes:
+  mdb:

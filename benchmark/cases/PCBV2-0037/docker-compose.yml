@@ -1,0 +1,59 @@
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VM2_VERSION: "3.9.19"
+    image: vm2-pcb-v0:latest
+    container_name: pcb-vm2-v0
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "$PCB_FLAG" > /flag.txt
+        exec node /app/server.js
+    ports: ["${PORT_V0_0:-33860}:3000"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VM2_VERSION: "3.10.0"
+    image: vm2-pcb-v1:latest
+    container_name: pcb-vm2-v1
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "$PCB_FLAG" > /flag.txt
+        exec node /app/server.js
+    ports: ["${PORT_V1_0:-33861}:3000"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VM2_VERSION: "3.10.5"
+    image: vm2-pcb-v2:latest
+    container_name: pcb-vm2-v2
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "$PCB_FLAG" > /flag.txt
+        exec node /app/server.js
+    ports: ["${PORT_V2_0:-33862}:3000"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.38.0/24

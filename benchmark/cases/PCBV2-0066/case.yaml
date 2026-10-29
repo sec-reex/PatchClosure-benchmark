@@ -1,0 +1,24 @@
+case_id: PCBV2-0066
+public_name: antisamy_style_smuggling
+run_mode: real-app-http
+oracle_family: browser_xss
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/nahsra/antisamy.git
+  v0: 1.6.5
+  v1: 1.6.6
+service:
+  # Compose publishes ${PORT_V*_0}:80 plus victim/callback. start.sh waits on /health.
+  readiness: none
+  exposed_ports: [80, 8070, 9000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

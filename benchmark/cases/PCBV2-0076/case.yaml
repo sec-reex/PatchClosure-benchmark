@@ -1,0 +1,23 @@
+case_id: PCBV2-0076
+public_name: apache-http-server-mod-proxy-cve-2011-3639
+run_mode: real-app-http
+oracle_family: ssrf_sidecar
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/apache/httpd.git
+  v0: 2.2.21
+  v1: 2.2.21
+service:
+  readiness: http://127.0.0.1:80/
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

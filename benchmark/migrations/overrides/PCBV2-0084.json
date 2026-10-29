@@ -1,0 +1,6 @@
+{
+ "eval_id": "PCBV2-0084",
+ "family": "ssrf_sidecar",
+ "reason": "\u4efb\u52a1\u4e66 \u00a713 \u6307\u5b9a\uff1aaxios buildFullpath SSRF \u5916\u5e26",
+ "recorded_at": "2026-08-11"
+}

@@ -1,0 +1,45 @@
+# PatchClosure-Bench recipe for deser_fastjson_autotype -- REAL com.alibaba:fastjson per version behind a REAL Java
+# HTTP service, deserialization triggered by an EXTERNAL HTTP request whose JSON body is autoType-deserialized.
+#
+# CVE-2017-18349 [fastjson autoType {"@type":"<class>"} -> class resolution/instantiation -> deser/RCE; the -18349
+#  fix in 1.2.25 adds ParserConfig.checkAutoType() + a prefix class denyList = TARGET]
+#  -> CVE-2025-70974 [that denylist fix is INCOMPLETE: the class-cache / TypeUtils.mappings trick resolves a denied
+#  class past the string-prefix denylist -- "incomplete fix for CVE-2017-18349"; 1.2.48 closes it via MiscCodec
+#  loadClass(.., cache=false)], CWE-502. Genuine incomplete fix.
+#
+# Each profile builds the shared Dockerfile pinning the REAL fastjson at FASTJSON_VER, boots the HTTP service, and
+# maps its port 8080 to a unique host port. The oracle drives POST /deser over real external HTTP with a benign
+# autoType JSON body; ${PCB_FLAG} is planted per-run via env.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = fastjson 1.2.25. CVE-2017-18349 FIXED: checkAutoType() + prefix denyList present
+#        -> the LITERAL {"@type":"com.mchange.PcbFlagBean"} is BLOCKED. But INCOMPLETELY: the class-cache residual
+#        ({"a":{"@type":"java.lang.Class","val":"...PcbFlagBean"},"b":{"@type":"com.mchange.PcbFlagBean"}}) resolves
+#        the SAME class via TypeUtils.mappings PAST the denylist -> the CVE-2025-70974 residual stays open. Target.
+#   v0 (gate)     = fastjson 1.2.24. Pre-CVE-2017-18349: NO checkAutoType -> a bare {"@type":".."} resolves directly.
+#   v2 (negative) = fastjson 1.2.48. CVE-2025-70974 FIXED: MiscCodec loadClass(.., cache=false) -> class never cached
+#        -> the cache residual is blocked; the literal stays blocked. Both closed.
+services:
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {FASTJSON_VER: "1.2.24"}}
+    image: "pcb/fastjson-deser-http:1.2.24"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-18810}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {FASTJSON_VER: "1.2.25"}}
+    image: "pcb/fastjson-deser-http:1.2.25"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-18811}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {FASTJSON_VER: "1.2.48"}}
+    image: "pcb/fastjson-deser-http:1.2.48"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-18812}:8080"]

@@ -1,0 +1,56 @@
+CVE: CVE-2026-44560 / GHSA-h36f-rqpx-j5wx first-fix (collection ACL)
+upstream: https://github.com/open-webui/open-webui
+fix: v0.8.12..v0.9.0  backend/open_webui/retrieval/utils.py  filter_accessible_collections
+
+diff --git a/backend/open_webui/retrieval/utils.py b/backend/open_webui/retrieval/utils.py
+--- a/backend/open_webui/retrieval/utils.py
++++ b/backend/open_webui/retrieval/utils.py
+@@ -0,0 +1,48 @@
++async def filter_accessible_collections(
++    collection_names: set[str],
++    user: UserModel,
++    access_type: str = 'read',
++) -> set[str]:
++    """
++    Return only the collection names the user is allowed to access.
++    Admins bypass all checks.  For non-admins the policy is:
++
++      - file-*          → validated via has_access_to_file
++      - user-memory-*   → must match user's own memory collection
++      - web-search-*    → ephemeral per-query collections, always allowed
++      - knowledge-bases → always denied (system meta-collection)
++      - everything else → if the name matches a knowledge base, validated
++                          via Knowledges.check_access_by_user_id; if no
++                          such KB exists, the name is treated as an
++                          ephemeral/legacy collection and allowed
++    """
++    if user.role == 'admin':
++        return collection_names
++
++    validated = set()
++    for name in collection_names:
++        if name == 'knowledge-bases':
++            continue
++        elif name.startswith('file-'):
++            file_id = name[len('file-') :]
++            if await has_access_to_file(file_id=file_id, access_type=access_type, user=user):
++                validated.add(name)
++        elif name.startswith('user-memory-'):
++            if name == f'user-memory-{user.id}':
++                validated.add(name)
++        elif name.startswith('web-search-'):
++            validated.add(name)
++        else:
++            if await Knowledges.check_access_by_user_id(name, user.id, permission=access_type):
++                validated.add(name)
++            elif not await Knowledges.get_knowledge_by_id(name):
++                validated.add(name)
++    return validated
++
+@@
++            # Filter out collections the user cannot read
++            if user:
++                collection_names = await filter_accessible_collections(collection_names, user)
++                if not collection_names:
++                    log.debug(f'access denied for all collections in item {item}')
++                    continue

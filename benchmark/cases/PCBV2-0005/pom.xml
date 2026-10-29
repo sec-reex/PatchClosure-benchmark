@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Faithful-core recipe: pull the EXACT published com.thoughtworks.xstream:xstream:${xstream.version}
+     (V0=1.4.10 / V1=1.4.13 / V2=1.4.14) + its transitive deps (xpp3_min, xmlpull) from Maven Central
+     at build time. No vendored jars. The Dockerfile selects the version via
+     -Dxstream.version=${XSTREAM_VER} per build profile. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>xstream-deser-http</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <properties>
+    <xstream.version>1.4.13</xstream.version>
+    <maven.compiler.source>8</maven.compiler.source>
+    <maven.compiler.target>8</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>com.thoughtworks.xstream</groupId>
+      <artifactId>xstream</artifactId>
+      <version>${xstream.version}</version>
+    </dependency>
+  </dependencies>
+</project>

@@ -1,0 +1,189 @@
+PCBV2-0156 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 9ffafad4b2d2f9f7668e5504565f356a7c047b77 (v7.11.0 / GHSA-7rh7-c77v-6434)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0156/
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index ed30ea57c6..2b751d9f11 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,8 +4,22 @@
+ 
+ ## Important Notes
+ 
++Fixed critical vulnerability where `skip_auth_routes` regex patterns matched against the full request URI (path + query parameters) instead of just the path, allowing authentication bypass attacks.
++
+ ## Breaking Changes
+ 
++If your configuration relies on matching query parameters in `skip_auth_routes` patterns, you must update your regex patterns to match paths only. Review all `skip_auth_routes` entries for potential impact.
++
++**Example of affected configuration:**
++```yaml
++# This pattern previously matched both:
++# - /api/foo/status (intended)
++# - /api/private/sensitive?path=/status (bypass - now fixed)
++skip_auth_routes: ["^/api/.*/status"]
++```
++
++For detailed information, migration guidance, and security implications, see the [security advisory](https://github.com/oauth2-proxy/oauth2-proxy/security/advisories/GHSA-7rh7-c77v-6434).
++
+ ## Changes since v7.10.0
+ 
+ - [#2615](https://github.com/oauth2-proxy/oauth2-proxy/pull/2615) feat(cookies): add option to set a limit on the number of per-request CSRF cookies oauth2-proxy sets (@bh-tt)
+@@ -17,6 +31,7 @@
+ - [#3055](https://github.com/oauth2-proxy/oauth2-proxy/pull/3055) feat: support non-default authorization request response mode also for OIDC providers (@stieler-it)
+ - [#3138](https://github.com/oauth2-proxy/oauth2-proxy/pull/3138) feat: make google_groups argument optional when using google provider (@sourava01)
+ - [#3093](https://github.com/oauth2-proxy/oauth2-proxy/pull/3093) feat: differentiate between "no available key" and error for redis sessions (@nobletrout)
++- [GHSA-7rh7-c77v-6434](https://github.com/oauth2-proxy/oauth2-proxy/security/advisories/GHSA-7rh7-c77v-6434) fix: skip_auth_routes bypass through query parameter inclusion
+ 
+ 
+ # V7.10.0
+diff --git a/oauthproxy.go b/oauthproxy.go
+index d8984cde7c..7526d6417a 100644
+--- a/oauthproxy.go
++++ b/oauthproxy.go
+@@ -580,7 +580,7 @@ func isAllowedMethod(req *http.Request, route allowedRoute) bool {
+ }
+ 
+ func isAllowedPath(req *http.Request, route allowedRoute) bool {
+-	matches := route.pathRegex.MatchString(requestutil.GetRequestURI(req))
++	matches := route.pathRegex.MatchString(requestutil.GetRequestPath(req))
+ 
+ 	if route.negate {
+ 		return !matches
+diff --git a/pkg/requests/util/util.go b/pkg/requests/util/util.go
+index 44e1ab0e91..290f805937 100644
+--- a/pkg/requests/util/util.go
++++ b/pkg/requests/util/util.go
+@@ -2,6 +2,8 @@ package util
+ 
+ import (
+ 	"net/http"
++	"net/url"
++	"strings"
+ 
+ 	middlewareapi "github.com/oauth2-proxy/oauth2-proxy/v7/pkg/apis/middleware"
+ )
+@@ -43,6 +45,25 @@ func GetRequestURI(req *http.Request) string {
+ 	return uri
+ }
+ 
++// GetRequestPath returns the request URI or X-Forwarded-Uri if present and the
++// request is proxied but always strips the query parameters and only returns
++// the pure path
++func GetRequestPath(req *http.Request) string {
++	uri := GetRequestURI(req)
++
++	// Parse URI and return only the path component
++	if parsedURL, err := url.Parse(uri); err == nil {
++		return parsedURL.Path
++	}
++
++	// Fallback: strip query parameters manually
++	if idx := strings.Index(uri, "?"); idx != -1 {
++		return uri[:idx]
++	}
++
++	return uri
++}
++
+ // IsProxied determines if a request was from a proxy based on the RequestScope
+ // ReverseProxy tracker.
+ func IsProxied(req *http.Request) bool {
+diff --git a/pkg/requests/util/util_test.go b/pkg/requests/util/util_test.go
+index f1153d87a9..ba72c66dcf 100644
+--- a/pkg/requests/util/util_test.go
++++ b/pkg/requests/util/util_test.go
+@@ -13,16 +13,17 @@ import (
+ 
+ var _ = Describe("Util Suite", func() {
+ 	const (
+-		proto = "http"
+-		host  = "www.oauth2proxy.test"
+-		uri   = "/test/endpoint"
++		proto              = "http"
++		host               = "www.oauth2proxy.test"
++		uriWithQueryParams = "/test/endpoint?query=param"
++		uriNoQueryParams   = "/test/endpoint"
+ 	)
+ 	var req *http.Request
+ 
+ 	BeforeEach(func() {
+ 		req = httptest.NewRequest(
+ 			http.MethodGet,
+-			fmt.Sprintf("%s://%s%s", proto, host, uri),
++			fmt.Sprintf("%s://%s%s", proto, host, uriWithQueryParams),
+ 			nil,
+ 		)
+ 	})
+@@ -101,13 +102,13 @@ var _ = Describe("Util Suite", func() {
+ 				req = middleware.AddRequestScope(req, &middleware.RequestScope{})
+ 			})
+ 
+-			It("returns the URI", func() {
+-				Expect(util.GetRequestURI(req)).To(Equal(uri))
++			It("returns the URI (with query params)", func() {
++				Expect(util.GetRequestURI(req)).To(Equal(uriWithQueryParams))
+ 			})
+ 
+-			It("ignores X-Forwarded-Uri and returns the URI", func() {
++			It("ignores X-Forwarded-Uri and returns the URI (with query params)", func() {
+ 				req.Header.Add("X-Forwarded-Uri", "/some/other/path")
+-				Expect(util.GetRequestURI(req)).To(Equal(uri))
++				Expect(util.GetRequestURI(req)).To(Equal(uriWithQueryParams))
+ 			})
+ 		})
+ 
+@@ -118,13 +119,47 @@ var _ = Describe("Util Suite", func() {
+ 				})
+ 			})
+ 
+-			It("returns the URI if X-Forwarded-Uri is not present", func() {
+-				Expect(util.GetRequestURI(req)).To(Equal(uri))
++			It("returns the URI if X-Forwarded-Uri is not present (with query params)", func() {
++				Expect(util.GetRequestURI(req)).To(Equal(uriWithQueryParams))
+ 			})
+ 
+-			It("returns the X-Forwarded-Uri when present", func() {
+-				req.Header.Add("X-Forwarded-Uri", "/some/other/path")
+-				Expect(util.GetRequestURI(req)).To(Equal("/some/other/path"))
++			It("returns the X-Forwarded-Uri when present (with query params)", func() {
++				req.Header.Add("X-Forwarded-Uri", "/some/other/path?query=param")
++				Expect(util.GetRequestURI(req)).To(Equal("/some/other/path?query=param"))
++			})
++		})
++	})
++
++	Context("GetRequestPath", func() {
++		Context("IsProxied is false", func() {
++			BeforeEach(func() {
++				req = middleware.AddRequestScope(req, &middleware.RequestScope{})
++			})
++
++			It("returns the URI (without query params)", func() {
++				Expect(util.GetRequestPath(req)).To(Equal(uriNoQueryParams))
++			})
++
++			It("ignores X-Forwarded-Uri and returns the URI (without query params)", func() {
++				req.Header.Add("X-Forwarded-Uri", "/some/other/path?query=param")
++				Expect(util.GetRequestPath(req)).To(Equal(uriNoQueryParams))
++			})
++		})
++
++		Context("IsProxied is true", func() {
++			BeforeEach(func() {
++				req = middleware.AddRequestScope(req, &middleware.RequestScope{
++					ReverseProxy: true,
++				})
++			})
++
++			It("returns the URI if X-Forwarded-Uri is not present (without query params)", func() {
++				Expect(util.GetRequestPath(req)).To(Equal(uriNoQueryParams))
++			})
++
++			It("returns the X-Forwarded-Uri when present (without query params)", func() {
++				req.Header.Add("X-Forwarded-Uri", "/some/other/path?query=param")
++				Expect(util.GetRequestPath(req)).To(Equal("/some/other/path"))
+ 			})
+ 		})
+ 	})

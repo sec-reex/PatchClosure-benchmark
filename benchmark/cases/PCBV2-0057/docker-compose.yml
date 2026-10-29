@@ -1,0 +1,37 @@
+# PatchClosure-Bench: cpp-httplib CRLF response-header-injection incomplete-fix chain.
+# V0 = v0.5.8 (no filter), V1 = v0.18.3 (has_crlf, NUL-truncatable), V2 = v0.18.4 (is_field_value).
+services:
+  v0:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HTTPLIB_TAG: v0.5.8
+    image: pcb-cpphttplib-crlf-v0
+    ports:
+      - "${PORT_V0_0:-18080}:8080"
+
+  v1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HTTPLIB_TAG: v0.18.3
+    image: pcb-cpphttplib-crlf-v1
+    ports:
+      - "${PORT_V1_0:-18081}:8080"
+
+  v2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HTTPLIB_TAG: v0.18.4
+    image: pcb-cpphttplib-crlf-v2
+    ports:
+      - "${PORT_V2_0:-18082}:8080"
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.58.0/24

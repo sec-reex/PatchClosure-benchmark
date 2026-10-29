@@ -1,0 +1,11 @@
+{
+  "name": "pcb-netmask-ssrf-core",
+  "private": true,
+  "type": "commonjs",
+  "description": "Faithful-core SSRF guard using the REAL npm `netmask` package per version (CVE-2021-28918 -> CVE-2021-29418). npm aliases hold all three versions side-by-side; the harness selects one by HARNESS_VER.",
+  "dependencies": {
+    "netmask-v0": "npm:netmask@1.0.6",
+    "netmask-v1": "npm:netmask@2.0.0",
+    "netmask-v2": "npm:netmask@2.0.1"
+  }
+}

@@ -1,0 +1,25 @@
+case_id: PCBV2-0065
+public_name: activitypub-federation-rust-unspecified
+run_mode: real-app-http
+oracle_family: ssrf_sidecar
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/LemmyNet/activitypub-federation-rust.git
+  # bare tag 0.7.0-beta does not exist upstream; upstream has 0.7.0-beta.1..0.7.0-beta.11
+  # v1 = 0.7.0-beta.8 = last PUBLISHED release affected by CVE-2026-33693 (guard omits is_unspecified) [TARGET]
+  v0: 0.6.1
+  v1: 0.7.0-beta.8
+service:
+  readiness: http://127.0.0.1:8080/
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

@@ -1,0 +1,25 @@
+case_id: PCBV2-0142
+public_name: loofah_svg_animate_republish
+run_mode: real-app-http
+oracle_family: browser_xss
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/flavorjones/loofah.git
+  v0: 2.2.2
+  v1: 2.2.3
+service:
+  # Compose publishes ${PORT_V*_0}:80. start.sh waits on that host port plus
+  # victim/callback. Platform HTTP on container :80 would miss.
+  readiness: none
+  exposed_ports: [80, 8070, 9000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

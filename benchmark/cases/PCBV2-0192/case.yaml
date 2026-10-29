@@ -1,0 +1,25 @@
+case_id: PCBV2-0192
+public_name: simple-git-cve-2026-6951
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/steveukx/git-js.git
+  v0: 3.14.1
+  v1: 3.35.2
+service:
+  # Host publishes ${PORT_V*_0}:8080 — not host :8080. start.sh waits on the
+  # published port; platform HTTP on :8080 would miss.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

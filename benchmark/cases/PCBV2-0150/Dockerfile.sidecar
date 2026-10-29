@@ -1,0 +1,8 @@
+# BENIGN proxy sidecar image for netty-cve-2026-42578. A tiny Python TCP server that plays the
+# upstream proxy/origin the Netty app CONNECTs to, and observes the raw bytes on the wire. It runs
+# in its OWN container; the injection is detected HERE, over the network -- never in-process.
+FROM python:3.12-slim
+WORKDIR /work
+COPY proxy_sidecar.py /work/proxy_sidecar.py
+EXPOSE 9000 9001
+CMD ["python3", "/work/proxy_sidecar.py"]

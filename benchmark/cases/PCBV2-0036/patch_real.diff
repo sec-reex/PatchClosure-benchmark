@@ -1,0 +1,57 @@
+CVE: CVE-2026-30869
+upstream: https://github.com/siyuan-note/siyuan
+fix: 6feb2bc8ec2dc2d58d62faad68caeec705dbf62d (3.5.10 IsSensitivePath, ":lock:" commit for GHSA-2h2p-mvfx-868w, 2026-03-06)
+replaced 2026-10-11: previous content was only the v3.5.9->v3.5.10 release version
+bump (commit 297bd526708fcbd6f2657b06098f6dfdc0076c19 ":bookmark: Release v3.5.10",
+no security change; original backed up verbatim at
+benchmark/replacements_2026-10-11/PCBV2-0036/patch_real.diff). The diff below is the
+complete upstream security-fix commit, synced 2026-10-11 from
+https://github.com/siyuan-note/siyuan/commit/6feb2bc8ec2dc2d58d62faad68caeec705dbf62d.patch
+(verified: applies cleanly to v3.5.9 kernel/server/serve.go + kernel/util/path.go and
+reproduces the v3.5.10 blobs 81a217e23ca9... / 6e45255bf571... byte-for-byte).
+
+From 6feb2bc8ec2dc2d58d62faad68caeec705dbf62d Mon Sep 17 00:00:00 2001
+From: Daniel <845765@qq.com>
+Date: Fri, 6 Mar 2026 16:41:03 +0800
+Subject: [PATCH] :lock:
+ https://github.com/siyuan-note/siyuan/security/advisories/GHSA-2h2p-mvfx-868w
+
+Signed-off-by: Daniel <845765@qq.com>
+---
+ kernel/server/serve.go | 5 +++++
+ kernel/util/path.go    | 6 ++++++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/kernel/server/serve.go b/kernel/server/serve.go
+index 94897546f94..81a217e23ca 100644
+--- a/kernel/server/serve.go
++++ b/kernel/server/serve.go
+@@ -318,6 +318,11 @@ func serveExport(ginServer *gin.Engine) {
+ 		}
+ 
+ 		fullPath := filepath.Join(exportBaseDir, decodedPath)
++		if util.IsSensitivePath(fullPath) {
++			logging.LogErrorf("refuse to export sensitive file [%s]", c.Request.URL.Path)
++			c.Status(http.StatusForbidden)
++			return
++		}
+ 
+ 		fileInfo, err := os.Stat(fullPath)
+ 		if os.IsNotExist(err) {
+diff --git a/kernel/util/path.go b/kernel/util/path.go
+index c60d1eec1d3..6e45255bf57 100644
+--- a/kernel/util/path.go
++++ b/kernel/util/path.go
+@@ -391,6 +391,12 @@ func IsSensitivePath(p string) bool {
+ 		}
+ 	}
+ 
++	// 工作空间/conf 目录（小写比较）
++	workspaceConfPrefix := strings.ToLower(filepath.Join(WorkspaceDir, "conf"))
++	if strings.HasPrefix(pp, workspaceConfPrefix) {
++		return true
++	}
++
+ 	homePrefixes := []string{
+ 		strings.ToLower(filepath.Join(HomeDir, ".ssh")),
+ 		strings.ToLower(filepath.Join(HomeDir, ".config")),

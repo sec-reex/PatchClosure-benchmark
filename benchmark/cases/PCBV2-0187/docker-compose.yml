@@ -1,0 +1,59 @@
+# PatchClosure-Bench ruby-on-rails-cve-2007-6077 -- REAL Ruby on Rails per version.
+#
+# Lineage: CVE-2007-5380 (Rails 1.2.4) added the :cookie_only guard so a session id
+# supplied in the URL (?_session_id=) is refused. CVE-2007-6077 = the INCOMPLETE FIX:
+# CgiRequest#initialize did `session_options.delete :cookie_only` on the SHARED
+# DEFAULT_SESSION_OPTIONS constant (the object the WEBrick dispatcher passes every
+# request), so the guard only survives the process's FIRST request; every later request
+# honors the URL session id again. Rails 1.2.6 re-derives cookie_only? fresh each request.
+#
+#   v0 (rails 1.2.3, pre-5380):  URL _session_id always honored  -> SEED fixation reaches flag.
+#   v1 (rails 1.2.4, 5380-patched / 6077-vulnerable, TARGET): first-request fixation BLOCKED,
+#       but a warmed process (>=1 prior request) honors URL _session_id -> RESIDUAL reaches flag.
+#   v2 (rails 1.2.6, 6077-patched): guard holds every request -> residual blocked.
+#
+# The attacker drives it over EXTERNAL HTTP (GET /, GET /login?_session_id=, GET /protected).
+services:
+  v0:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args: { VER: v0 }
+    image: "ruby-on-rails-cve-2007-6077:v0"
+    profiles: ["v0"]
+    ports: ["${PORT_V0_0:-40700}:8080"]
+    environment:
+      PCB_PORT: "8080"
+      RAILS_ENV: "production"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  v1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args: { VER: v1 }
+    image: "ruby-on-rails-cve-2007-6077:v1"
+    profiles: ["v1"]
+    ports: ["${PORT_V1_0:-40701}:8080"]
+    environment:
+      PCB_PORT: "8080"
+      RAILS_ENV: "production"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  v2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args: { VER: v2 }
+    image: "ruby-on-rails-cve-2007-6077:v2"
+    profiles: ["v2"]
+    ports: ["${PORT_V2_0:-40702}:8080"]
+    environment:
+      PCB_PORT: "8080"
+      RAILS_ENV: "production"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.188.0/24

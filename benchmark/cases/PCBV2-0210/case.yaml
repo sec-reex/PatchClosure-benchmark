@@ -1,0 +1,25 @@
+case_id: PCBV2-0210
+public_name: uptime-kuma-cve-2023-49804
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: louislam/uptime-kuma
+  v0: "1.23.2"
+  v1: "1.23.3"
+service:
+  # Compose publishes ${PORT_V*_0}:3001. start.sh waits on that host port and
+  # finishes the real setup wizard. Platform HTTP on :3001 would miss.
+  readiness: none
+  exposed_ports: [3001]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

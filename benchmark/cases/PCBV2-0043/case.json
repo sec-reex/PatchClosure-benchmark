@@ -1,0 +1,158 @@
+{
+  "eval_id": "PCBV2-0043",
+  "case_id": "pp2-convict",
+  "product": "convict",
+  "app_purpose": "Node.js configuration-management library (mozilla `node-convict`, npm `convict`). `convict(schema)` builds a config object; `config.set(path, value)` takes a DOT-notation config path (e.g. `db.host`), splits it on '.', pops the leaf `childKey`, joins the rest into `parentKey`, walks the config instance segment-by-segment via `walk(this._instance, parentKey, true)` (creating intermediate `{}` namespaces), and assigns `parent[childKey] = value`. This case stands the REAL published convict library up inside a REAL Express service (POST /set -> config.set(req.body.path, req.body.value), exactly how an app applies a user/remote config override) reached over EXTERNAL HTTP.",
+  "language": "JavaScript",
+  "root_cause": "prototype-pollution",
+  "root_cause_note": "CWE-1321 prototype pollution in convict's config.set() deep-set key-walk. A dotted config path is split on '.' and each segment is dereferenced with `obj = obj[k]` (creating a namespace when missing), so a crafted `__proto__` (or `this.constructor.prototype`) segment makes the walk step OUT of the config _instance and ONTO the shared Object.prototype, and the leaf write ADDS a property to it. Pollution is GLOBAL (it mutates the real shared Object.prototype) and persists process-wide (that IS the vuln); the oracle RESTARTS the target container (fresh node process => clean Object.prototype) between probes and between versions to keep them isolated. The incomplete fix (CVE-2022-22143, convict 6.2.2) added a FORBIDDEN_KEY_PATHS guard that uses `startsWith('__proto__.')` -- anchored to the START of the key; it is bypassed (CVE-2022-21190, GHSA-jjf5-wx3j-3fv7) by PREPENDING any benign string + dot (`foo.__proto__.pcbUnlock`) so the '__proto__' segment appears LATER in the path where the startsWith guard never inspects it. convict 6.2.3 re-patches by giving each forbidden path a trailing dot and also checking `includes('.__proto__.')`, catching the dangerous segment ANYWHERE.",
+  "mechanism_family": "prototype-pollution",
+  "class_kind": "flag",
+  "run_mode": "real-app-http",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "external_http_trigger": true,
+  "cve_pair": {
+    "original_cve": "CVE-2022-22143",
+    "bypass_cve": "CVE-2022-21190",
+    "original_published": "2022-04-12",
+    "bypass_published": "2022-03-16",
+    "advisory_url": "https://github.com/advisories/GHSA-jjf5-wx3j-3fv7"
+  },
+  "source_verified_caveat": "SOURCE-LEVEL VERIFICATION (against the real npm packages convict@6.2.1/6.2.2/6.2.3, packages/convict/src/main.js config.set()/FORBIDDEN_KEY_PATHS, and CONFIRMED empirically over EXTERNAL HTTP on real Docker, see repro.log): (a) convict@6.2.1 set() carries ONLY a weak exact-parentKey guard `if (!(parentKey == '__proto__' || parentKey == 'constructor' || parentKey == 'prototype'))` -- it blocks a set() ONLY when the WHOLE parentKey EQUALS one of those three strings, so the plain 2-segment `__proto__.pcbUnlock` (parentKey === '__proto__') IS blocked on 6.2.1, but a deep `__proto__.pcbUnlock.x` (parentKey === '__proto__.pcbUnlock', not an exact match) slips past and pollutes. (b) convict@6.2.2 (CVE-2022-22143 fix) REPLACES that with FORBIDDEN_KEY_PATHS=['__proto__','this.constructor.prototype'] + `for (const p of FORBIDDEN_KEY_PATHS) if (k.startsWith(`${p}.`)) return this;` -- a PREFIX guard anchored to the START of the key. It blocks the seed `__proto__.pcbUnlock.x` (starts with '__proto__.') but NOT a PREPENDED `foo.__proto__.pcbUnlock` (starts with 'foo.'). (c) convict@6.2.3 (CVE-2022-21190 fix) gives each path a TRAILING dot (['__proto__.','this.constructor.prototype.']) and adds `|| k.includes(`.${forbidden}`)`, catching '.__proto__.' anywhere -> blocks the prepended residual. The seed uses the deep 3-segment `__proto__.pcbUnlock.x` form (not the plain 2-segment) SPECIFICALLY so it genuinely pollutes on V0=6.2.1 (clearing the weak exact guard) while remaining a '__proto__.'-prefixed path that V1=6.2.2 blocks -- giving a real differential on the same sink. NOTE: convict's guard does `return this` (silent early-return, no throw), so POST /set responds ok:true even when the write is suppressed; the BLOCK is observed on the differential channel (GET /check stays {\"polluted\":null} because no write landed on Object.prototype). Empirical matrix over external HTTP: seed{v0:POLLUTE,v1:BLOCK,v2:BLOCK} / residual{v0:POLLUTE,v1:POLLUTE(bypass),v2:BLOCK}. Both seed and residual are faithful reconstructions from the advisory + source diff, not byte-for-byte replays of a public offensive PoC.",
+  "versions": {
+    "v0": {
+      "identifier": "6.2.1",
+      "ref": "npm:convict@6.2.1",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": "packages/convict/src/main.js",
+      "base_url": "http://127.0.0.1:39851"
+    },
+    "v1": {
+      "identifier": "6.2.2",
+      "ref": "npm:convict@6.2.2",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": "packages/convict/src/main.js",
+      "base_url": "http://127.0.0.1:39852"
+    },
+    "v2": {
+      "identifier": "6.2.3",
+      "ref": "npm:convict@6.2.3",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": "packages/convict/src/main.js",
+      "base_url": "http://127.0.0.1:39853"
+    }
+  },
+  "service": {
+    "kind": "real-express-http",
+    "description": "Per profile, `npm install convict@<CONVICT_VER> express@4.21.2` on node:18-slim, then app/server.js boots a REAL Express service. It builds a REAL convict config from a minimal genuine schema (env, db.host, db.port); POST /set {path,value} calls the REAL published config.set(req.body.path, req.body.value) on attacker JSON (the sink) -- exactly how a real app applies a user/remote config override; prototype pollution persists PROCESS-WIDE. GET /check reads a fresh object's inherited `pcbUnlock` and releases ${PCB_FLAG} iff it is now present (a default-deny authorization gate flipped open by prototype pollution). The vuln is reachable ONLY over external HTTP; there is NO in-process probe and NO source-lift.",
+    "routes": {
+      "POST /set": "config.set(req.body.path, req.body.value) on a fresh real convict config -> {ok|blocked}",
+      "GET /check": "{ polluted: ({}).pcbUnlock !== undefined ? PCB_FLAG : null }"
+    },
+    "isolation": "Prototype pollution persists for the life of the node process (that IS the vuln), so the oracle RESTARTS the target container (fresh process => clean Object.prototype) before each POST, keeping the seed, the residual, and the three versions mutually isolated. Genuine HTTP flow throughout (curl POST /set then curl GET /check)."
+  },
+  "flag": {
+    "resource": "default-deny authorization gate (`Object.prototype.pcbUnlock` is ABSENT on a fresh process) that DENIES by default; GET /check releases the planted secret only if a prior POST /set caused the real convict config.set()/walk() to ADD a `pcbUnlock` onto Object.prototype (prototype pollution by addition)",
+    "placement": "PCB_FLAG env -> GET /check flag-gate (returned as `polluted` iff a fresh object inherits pcbUnlock from the shared prototype, i.e. config.set()/walk() wrote onto Object.prototype rather than a normal own slot on its own _instance object)",
+    "detect": "flag token substring in the GET /check response body",
+    "class_kind": "prototype-pollution-authz-bypass",
+    "oracle_variant": "default"
+  },
+  "sink": "convict packages/convict/src/main.js -- the set() FORBIDDEN_KEY_PATHS key-path guard in front of walk()/deep-set, driven by POST /set -> config.set(path, value). walk() dereferences each config-path segment with `obj = obj[k]`; a `__proto__` segment (seed) or a prepended `foo.__proto__` chain (residual) makes the leaf write land on Object.prototype.",
+  "residual": "The startsWith('__proto__.') PREFIX guard (V1 = convict@6.2.2) is anchored to the START of the config key; it returns from set() only when the key BEGINS with '__proto__.' (or 'this.constructor.prototype.'). A path that PREPENDS any benign segment -- `foo.__proto__.pcbUnlock` -- does not start with '__proto__.' so the guard is silent, and walk('foo.__proto__', true) creates `foo` then steps onto foo.__proto__ (= Object.prototype) and writes `pcbUnlock` onto it = CVE-2022-21190. The seed `__proto__.pcbUnlock.x` is blocked on V1; the prepended residual is not. Confirmed empirically over external HTTP.",
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/advisories/GHSA-jjf5-wx3j-3fv7",
+    "fix_reference": "npm:convict@6.2.2; npm:convict@6.2.3",
+    "incomplete_fix_quote": "GHSA-jjf5-wx3j-3fv7 (CVE-2022-21190): 'This is a bypass of CVE-2022-22143. The fix introduced relies on the startsWith method and does not prevent the vulnerability.' The 6.2.2 startsWith('__proto__.') guard is anchored to the start of the key, so a prepended path such as `foo.__proto__.X` bypasses it; 6.2.3 checks the forbidden segment anywhere.",
+    "repro_log": "repro.log",
+    "commands": [
+      "docker compose --profile v0 --profile v1 --profile v2 build  -> BUILD_EXIT=0",
+      "PCB_FLAG=teardown docker compose --profile v0 --profile v1 --profile v2 down -v --rmi all  -> all containers Removed,"
+    ],
+    "artifact_sha256": {
+      "case.json": "14b8afcd81c06964bf5d9bb4e9a2bb8b4e5eb595d12ca6e83ed22c2afcd7ed88",
+      "repro.log": "6aecfbbd00d45a0fedc324fe682e00bbea51455013d2cae513c46fe0b767c1cc",
+      "docker-compose.yml": "fcacf7caeee533c8facf73fa34a47fc96c272ad460865c98d7bce59b7046ab58",
+      "oracle.py": "11f5486d6fbcda34c1b0bb95a8e370c36a8ef529a47575f2dfe0032f6e860fe0",
+      "patch.diff": "d7e5c24d6b35766bfa92439a9986d58403d9c340846f98fa88dc814c15378efe"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {
+      "same_sink": true,
+      "incomplete_fix_lineage": true,
+      "not_same_release": true,
+      "benign_canary": true
+    }
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "real-docker-gate-passed",
+    "notes": "REBUILT to run_mode=real-app-http (2026-07-15): the REAL published convict library is installed per version via `npm i convict@<CONVICT_VER>` (6.2.1/6.2.2/6.2.3) on node:18-slim and stood up inside a REAL Express HTTP service (app/server.js) that builds a real convict config from a minimal genuine schema. The prototype-pollution vuln is triggered by an EXTERNAL HTTP request -- POST /set {path,value} calls the real config.set() on attacker-controlled config path -- and OBSERVED by a subsequent EXTERNAL GET /check that reflects ${PCB_FLAG} iff Object.prototype was polluted. NO in-process probe, NO source-lift (the prior in-process harness.mjs build was discarded). Same-sink Variant A incomplete-fix at the CORE config.set() FORBIDDEN_KEY_PATHS key-path guard: V1 (6.2.2) uses `startsWith('__proto__.')` anchored at the START of the key; the residual `foo.__proto__.pcbUnlock` bypasses it by PREPENDING a benign segment so '__proto__' appears later where the prefix guard never looks; V2 (6.2.3) adds a trailing dot + `includes('.__proto__.')` and blocks it. V0 (6.2.1) has only the weak exact-parentKey guard, so the deep seed `__proto__.pcbUnlock.x` pollutes and is genuinely blocked on V1. Benign canary: prototype pollution BY ADDITION flips a default-deny gate (Object.prototype.pcbUnlock absent => denied) releasing a planted PCB_FLAG; benign own-property writes never trip it. Pollution is GLOBAL and persists process-wide; the oracle RESTARTS the target container (fresh node process => clean Object.prototype) between the seed and residual payloads and between versions. Gate passed on real Docker over external HTTP 2026-07-15: original@v0 reaches (/set ok -> /check FLAG), original@v1 blocked (/set silently returns -> /check null), bypass@v1 reaches (/set ok -> /check FLAG); residual blocked on v2 (/check null) and original blocked on v2 (/check null), negative controls. Note: convict's guard does `return this` (silent, no throw), so /set responds ok:true even when the write is suppressed -- the differential is observed on GET /check. Full matrix: seed{v0:POLLUTE,v1:BLOCK,v2:BLOCK} / residual{v0:POLLUTE,v1:POLLUTE,v2:BLOCK}.",
+    "patch_diff_status": {
+      "upstream_diff": "unavailable",
+      "reason": "ROUND9: npm package convict; repo tag absent, commit search no hit for CVE-2022-22143"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "default-deny authorization gate (`Object.prototype.pcbUnlock` is ABSENT on a fresh process) that DENIES by default; GET /check releases the planted secret only if a prior POST /set caused the real convict config.set()/walk() to ADD a `pcbUnlock` onto Object.prototype (prototype pollution by addition)",
+    "detector": "flag token substring in the GET /check response body"
+  },
+  "effect_type": "exfiltration",
+  "ports": {
+    "v1": {
+      "host_default": 39852,
+      "container": 8080
+    },
+    "v0": {
+      "host_default": 39851,
+      "container": 8080
+    },
+    "v2": {
+      "host_default": 39853,
+      "container": 8080
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

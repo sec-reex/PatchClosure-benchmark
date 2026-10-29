@@ -1,0 +1,23 @@
+# V1 (1.29.2) / V2 (1.29.4) WEB runtime: php:8.2-cli serving a REAL upload web app.
+# Installs the EXACT published PhpSpreadsheet release via composer, copies the /upload web app
+# (www/) and the fixture packager, and runs the PHP built-in server. On PHP >= 8.0 the scanner's
+# disableEntityLoaderCheck() is a NO-OP, so with the app's LIBXML_DTDLOAD|LIBXML_NOENT options the
+# libxml parser resolves external entities and the SCANNER regex (scan()/findCharSet()/toUtf8()) is
+# the SOLE guard under test -- exactly the surface CVE-2024-47873 (UCS-4/UTF-32 guessing) bypasses.
+FROM composer:2.2 AS deps
+WORKDIR /app
+ARG PS_VERSION
+RUN composer require phpoffice/phpspreadsheet:${PS_VERSION} \
+      --no-interaction --no-progress --ignore-platform-reqs --no-scripts
+
+FROM php:8.2-cli
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libzip-dev libonig-dev zlib1g-dev \
+    && docker-php-ext-install zip mbstring \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=deps /app/vendor /app/vendor
+COPY build_fixture.php /app/build_fixture.php
+COPY www /app/www
+EXPOSE 80
+CMD ["php","-S","0.0.0.0:80","/app/www/router.php"]

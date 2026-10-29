@@ -1,0 +1,239 @@
+PCBV2-0192 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 6b3c631eadea81f80ed10f6dec7d19a9db4d7084
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0192/
+
+diff --git a/docs/PLUGIN-UNSAFE-ACTIONS.md b/docs/PLUGIN-UNSAFE-ACTIONS.md
+new file mode 100644
+index 0000000..3075638
+--- /dev/null
++++ b/docs/PLUGIN-UNSAFE-ACTIONS.md
+@@ -0,0 +1,38 @@
++## Unsafe Actions
++
++As `simple-git` passes generated arguments through to a child process of the calling node.js process, it is recommended
++that any parameter sourced from user input is validated before being passed to the `simple-git` api.
++
++In some cases where there is an elevated potential for harm `simple-git` will throw an exception unless you have
++explicitly opted in to the potentially unsafe action.
++
++### Overriding allowed protocols
++
++A standard installation of `git` permits `file`, `http` and `ssh` protocols for a remote. A range of 
++[git remote helpers](https://git-scm.com/docs/gitremote-helpers) other than these default few can be
++used by referring to te helper name in the remote protocol - for example the git file descriptor transport
++[git-remote-fd](https://git-scm.com/docs/git-remote-fd) would be used in a remote protocol such as:
++
++```
++git fetch "fd::<infd>[,<outfd>][/<anything>]"
++```
++
++To avoid accidentally triggering a helper transport by passing through unsanitised user input to a function
++that expects a remote, the use of `-c protocol.fd.allow=always` (or any variant of protocol permission changes)
++will cause `simple-git` to throw unless it has been configured with:
++
++```typescript
++import { simpleGit } from 'simple-git';
++
++// throws
++await simpleGit()
++   .raw('clone', 'ext::git-server-alias foo %G/repo', '-c', 'protocol.ext.allow=always');
++
++// allows calling clone with a helper transport
++await simpleGit({ unsafe: { allowUnsafeProtocolOverride: true } })
++   .raw('clone', 'ext::git-server-alias foo %G/repo', '-c', 'protocol.ext.allow=always');
++```
++
++> *Be advised* helper transports can be used to call arbitrary binaries on the host machine.
++> Do not allow them in applications where you are not in control of the input parameters.
++
+diff --git a/simple-git/readme.md b/simple-git/readme.md
+index 8c13638..a0af0bd 100644
+--- a/simple-git/readme.md
++++ b/simple-git/readme.md
+@@ -111,6 +111,9 @@ await git.pull();
+ - [Timeout](https://github.com/steveukx/git-js/blob/main/docs/PLUGIN-TIMEOUT.md)
+    Automatically kill the wrapped `git` process after a rolling timeout.
+ 
++- [Unsafe](https://github.com/steveukx/git-js/blob/main/docs/PLUGIN-UNSAFE-ACTIONS.md)
++   Selectively opt out of `simple-git` safety precautions - for advanced users and use cases.
++
+ ## Using Task Promises
+ 
+ Each task in the API returns the `simpleGit` instance for chaining together multiple tasks, and each
+@@ -436,7 +439,8 @@ application hasn't been making use of non-documented APIs by importing from a su
+ 
+ See also:
+ 
+--  [release notes v2](https://github.com/steveukx/git-js/blob/main/docs/RELEASE-NOTES-V2.md)
++- [release notes v3](https://github.com/steveukx/git-js/blob/main/simple-git/CHANGELOG.md)
++- [release notes v2](https://github.com/steveukx/git-js/blob/main/docs/RELEASE-NOTES-V2.md)
+ 
+ # Concurrent / Parallel Requests
+ 
+diff --git a/simple-git/src/lib/git-factory.ts b/simple-git/src/lib/git-factory.ts
+index 7034da0..a00f618 100644
+--- a/simple-git/src/lib/git-factory.ts
++++ b/simple-git/src/lib/git-factory.ts
+@@ -3,6 +3,7 @@ import { SimpleGitFactory } from '../../typings';
+ import * as api from './api';
+ import {
+    abortPlugin,
++   blockUnsafeOperationsPlugin,
+    commandConfigPrefixingPlugin,
+    completionDetectionPlugin,
+    errorDetectionHandler,
+@@ -55,6 +56,7 @@ export function gitInstanceFactory(
+       plugins.add(commandConfigPrefixingPlugin(config.config));
+    }
+ 
++   plugins.add(blockUnsafeOperationsPlugin(config.unsafe));
+    plugins.add(completionDetectionPlugin(config.completion));
+    config.abort && plugins.add(abortPlugin(config.abort));
+    config.progress && plugins.add(progressMonitorPlugin(config.progress));
+diff --git a/simple-git/src/lib/plugins/block-unsafe-operations-plugin.ts b/simple-git/src/lib/plugins/block-unsafe-operations-plugin.ts
+new file mode 100644
+index 0000000..86aded6
+--- /dev/null
++++ b/simple-git/src/lib/plugins/block-unsafe-operations-plugin.ts
+@@ -0,0 +1,41 @@
++import type { SimpleGitPlugin } from './simple-git-plugin';
++
++import { GitPluginError } from '../errors/git-plugin-error';
++import type { SimpleGitPluginConfig } from '../types';
++
++function isConfigSwitch(arg: string) {
++   return arg.trim().toLowerCase() === '-c';
++}
++
++function preventProtocolOverride(arg: string, next: string) {
++   if (!isConfigSwitch(arg)) {
++      return;
++   }
++
++   if (!/^\s*protocol(.[a-z]+)?.allow/.test(next)) {
++      return;
++   }
++
++   throw new GitPluginError(
++      undefined,
++      'unsafe',
++      'Configuring protocol.allow is not permitted without enabling allowUnsafeExtProtocol'
++   );
++}
++
++export function blockUnsafeOperationsPlugin({
++   allowUnsafeProtocolOverride = false,
++}: SimpleGitPluginConfig['unsafe'] = {}): SimpleGitPlugin<'spawn.args'> {
++   return {
++      type: 'spawn.args',
++      action(args, _context) {
++         args.forEach((current, index) => {
++            const next = index < args.length ? args[index + 1] : '';
++
++            allowUnsafeProtocolOverride || preventProtocolOverride(current, next);
++         });
++
++         return args;
++      },
++   };
++}
+diff --git a/simple-git/src/lib/plugins/index.ts b/simple-git/src/lib/plugins/index.ts
+index bf89bdc..8b0c121 100644
+--- a/simple-git/src/lib/plugins/index.ts
++++ b/simple-git/src/lib/plugins/index.ts
+@@ -1,4 +1,5 @@
+ export * from './abort-plugin';
++export * from './block-unsafe-operations-plugin';
+ export * from './command-config-prefixing-plugin';
+ export * from './completion-detection.plugin';
+ export * from './error-detection.plugin';
+diff --git a/simple-git/src/lib/types/index.ts b/simple-git/src/lib/types/index.ts
+index 0368b01..2285622 100644
+--- a/simple-git/src/lib/types/index.ts
++++ b/simple-git/src/lib/types/index.ts
+@@ -108,6 +108,22 @@ export interface SimpleGitPluginConfig {
+    };
+ 
+    spawnOptions: Pick<SpawnOptions, 'uid' | 'gid'>;
++
++   unsafe: {
++      /**
++       * By default `simple-git` prevents the use of inline configuration
++       * options to override the protocols available for the `git` child
++       * process to prevent accidental security vulnerabilities when
++       * unsanitised user data is passed directly into operations such as
++       * `git.addRemote`, `git.clone` or `git.raw`.
++       *
++       * Enable this override to use the `ext::` protocol (see examples on
++       * [git-scm.com](https://git-scm.com/docs/git-remote-ext#_examples)).
++       *
++       * See documentation for use in
++       */
++      allowUnsafeProtocolOverride?: boolean;
++   };
+ }
+ 
+ /**
+diff --git a/simple-git/test/integration/plugin.unsafe.spec.ts b/simple-git/test/integration/plugin.unsafe.spec.ts
+new file mode 100644
+index 0000000..e4b72f7
+--- /dev/null
++++ b/simple-git/test/integration/plugin.unsafe.spec.ts
+@@ -0,0 +1,56 @@
++import { promiseError, promiseResult } from '@kwsites/promise-result';
++import {
++   assertGitError,
++   createTestContext,
++   newSimpleGit,
++   SimpleGitTestContext,
++} from '@simple-git/test-utils';
++
++import { GitPluginError } from '../..';
++
++describe('add', () => {
++   let context: SimpleGitTestContext;
++
++   beforeEach(async () => (context = await createTestContext()));
++
++   it('allows overriding protocol when opting in to unsafe practices', async () => {
++      const { threw } = await promiseResult(
++         newSimpleGit(context.root, { unsafe: { allowUnsafeProtocolOverride: true } }).raw(
++            '-c',
++            'protocol.ext.allow=always',
++            'init'
++         )
++      );
++
++      expect(threw).toBe(false);
++   });
++
++   it('prevents overriding protocol.ext.allow before the method of a command', async () => {
++      assertGitError(
++         await promiseError(context.git.raw('-c', 'protocol.ext.allow=always', 'init')),
++         'Configuring protocol.allow is not permitted',
++         GitPluginError
++      );
++   });
++
++   it('prevents overriding protocol.ext.allow after the method of a command', async () => {
++      assertGitError(
++         await promiseError(context.git.raw('init', '-c', 'protocol.ext.allow=always')),
++         'Configuring protocol.allow is not permitted',
++         GitPluginError
++      );
++   });
++
++   it('prevents adding a remote with vulnerable ext transport', async () => {
++      assertGitError(
++         await promiseError(
++            context.git.clone(`ext::sh -c touch% /tmp/pwn% >&2`, '/tmp/example-new-repo', [
++               '-c',
++               'protocol.ext.allow=always',
++            ])
++         ),
++         'Configuring protocol.allow is not permitted',
++         GitPluginError
++      );
++   });
++});

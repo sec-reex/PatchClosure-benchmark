@@ -1,0 +1,65 @@
+# PatchClosure-Bench REAL-SERVER-TCP recipe for apache-dubbo-serializer-switch-cve-2021-25641
+# (CVE-2020-1948 [Dubbo Hessian2 deser RCE; 2.7.8 adds an opt-in hessian2 type ALLOWLIST]
+#  -> CVE-2021-25641 [the allowlist is INCOMPLETE: flip the frame serialization-id byte to
+#  native-hessian (id 10) to route around the hessian2 allowlist; 2.7.12 +
+#  serialization.security.check locks the serializer], CWE-502). Genuine incomplete fix.
+#
+# Dubbo is a NETWORK RPC framework. v0/v1/v2 each run a REAL, UNMODIFIED Dubbo provider
+# (app/Provider.java) built from the shared Dockerfile pinning org.apache.dubbo:dubbo at DUBBO_VER,
+# exporting DemoService on the dubbo:// TCP port 20880 (published to the host for parity/debugging).
+# DUBBO_PROPS enables the version's opt-in guards.
+#
+# The `client` service (profile "client") is the EXTERNAL attacker: a SEPARATE container running the
+# REAL Dubbo consumer (app/Client.java) that connects to a provider over the REAL docker network by
+# service name (dubbo://<v0|v1|v2>:20880) and SELECTS the serializer (sets the frame serialization-id
+# byte). This is a genuine external network trigger -- NOT `docker compose exec` inside the provider.
+#
+# Canary = rce-oob (read): ${PCB_FLAG} (random per-run) is written to /canary/flag.txt at start; the
+# benign shadow bean com.pcb.PcbFlagProbe, if the provider INSTANTIATES it while deserializing the
+# RPC argument, echoes the token to the provider's service log. SUCCESS = token in provider log.
+services:
+  v0:
+    profiles: ["v0"]
+    restart: always
+    init: true
+    build: {context: ".", dockerfile: "Dockerfile", args: {DUBBO_VER: "2.7.6"}}
+    image: "pcb/dubbo-serializer-switch:2.7.6"
+    ports: ["${PORT_V0_0:-20886}:20880"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      DUBBO_PROPS: ""   # pre-CVE-2020-1948: no hessian2 whitelist, no security-check
+
+  v1:
+    profiles: ["v1"]
+    restart: always
+    init: true
+    build: {context: ".", dockerfile: "Dockerfile", args: {DUBBO_VER: "2.7.8"}}
+    image: "pcb/dubbo-serializer-switch:2.7.8"
+    ports: ["${PORT_V1_0:-20888}:20880"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      # CVE-2020-1948 fix ENABLED: hessian2 allowlist on (whitelist mode -> only java.* allowed).
+      # NO serialization.security.check (does not exist on 2.7.8) -> serializer switch still open.
+      DUBBO_PROPS: "-Ddubbo.application.hessian2.whitelist=true"
+
+  v2:
+    profiles: ["v2"]
+    restart: always
+    init: true
+    build: {context: ".", dockerfile: "Dockerfile", args: {DUBBO_VER: "2.7.12"}}
+    image: "pcb/dubbo-serializer-switch:2.7.12"
+    ports: ["${PORT_V2_0:-20892}:20880"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      # CVE-2021-25641 fix ENABLED: keep the hessian2 allowlist AND turn on the serializer-id check.
+      DUBBO_PROPS: "-Ddubbo.application.hessian2.whitelist=true -Dserialization.security.check=true"
+
+  # External attacker consumer. Same 2.7.8 image as v1 (native-hessian id 10). No extra Maven
+  # build — a second tag used to cache-miss and OOM-kill the provider after PROVIDER_READY.
+  # verify uses `docker run --network <compose>_default` so compose run cannot stop the provider.
+  client:
+    profiles: ["client"]
+    image: "pcb/dubbo-serializer-switch:2.7.8"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:-noflag}"
+    command: ["true"]

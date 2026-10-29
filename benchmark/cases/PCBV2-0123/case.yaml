@@ -1,0 +1,23 @@
+case_id: PCBV2-0123
+public_name: gradio-file-endpoint-is-in-or-equal-bypass
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/gradio-app/gradio.git
+  v0: 4.10.0
+  v1: 4.11.0
+service:
+  readiness: http://127.0.0.1:7860/
+  exposed_ports: [7860]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

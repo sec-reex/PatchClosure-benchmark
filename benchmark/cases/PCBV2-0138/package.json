@@ -1,0 +1,11 @@
+{
+  "name": "pcb-locutus-parsestr-core",
+  "private": true,
+  "type": "commonjs",
+  "description": "Faithful-core prototype-pollution guard using the REAL npm `locutus` parse_str per version (CVE-2026-25521 -> CVE-2026-33994). npm aliases hold all three versions side-by-side; the harness selects one by HARNESS_VER.",
+  "dependencies": {
+    "locutus-v0": "npm:locutus@2.0.38",
+    "locutus-v1": "npm:locutus@2.0.39",
+    "locutus-v2": "npm:locutus@3.0.25"
+  }
+}

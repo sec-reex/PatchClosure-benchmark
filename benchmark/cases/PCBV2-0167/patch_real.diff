@@ -1,0 +1,29 @@
+# CVE-2026-54540
+# https://github.com/pheditor/pheditor.git
+# fix: 62b43df7cb8956a9b0deb9bec278ca8676c890c5, e538f05b6faec99e5b23726bc9c17d6b57774297
+diff --git a/pheditor.php b/pheditor.php
+index 4b0aa70..b5ec7d2 100755
+--- a/pheditor.php
++++ b/pheditor.php
+@@ -583,7 +583,7 @@ if (isset($_GET['path'])) {
+                     exit;
+                 }
+ 
+-                $output = shell_exec((empty($dir) ? null : 'cd ' . $dir . ' && ') . $command . ' && echo \ ; pwd');
++                $output = shell_exec((empty($dir) ? null : 'cd ' . escapeshellarg($dir) . ' && ') . $command . ' && echo \ ; pwd');
+                 $output = trim($output);
+ 
+                 if (empty($output)) {
+diff --git a/pheditor.php b/pheditor.php
+index dacf372..91657b5 100755
+--- a/pheditor.php
++++ b/pheditor.php
+@@ -554,7 +554,7 @@ if (isset($_GET['path'])) {
+                 $command  = $_POST['command'];
+                 $dir = $_POST['dir'];
+ 
+-                if (strpos($command, '&') !== false || strpos($command, ';') !== false || strpos($command, '||') !== false) {
++                if (strpos($command, '&') !== false || strpos($command, ';') !== false || strpos($command, '||') !== false || strpos($command, '$') !== false) {
+                     echo json_error("Illegal character(s) in command (& ; ||)\n");
+ 
+                     exit;

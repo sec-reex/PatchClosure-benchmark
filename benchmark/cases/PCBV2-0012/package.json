@@ -1,0 +1,11 @@
+{
+  "name": "pcb-shell-quote-core",
+  "private": true,
+  "type": "commonjs",
+  "description": "Faithful-core OS-command-injection sink using the REAL npm `shell-quote` quote() per version (pre-CVE-2021-42740 1.7.2 -> CVE-2021-42740 fix 1.7.3 [backtick via [A-z] escaped, TARGET] -> CVE-2026-9277 fix 1.8.4 [op line-terminator allowlist]). npm aliases hold all three versions side-by-side; the harness selects one by HARNESS_VER and builds a shell command with the REAL published quote(), then runs it via child_process.exec('/bin/sh -c ...').",
+  "dependencies": {
+    "sq-v0": "npm:shell-quote@1.7.2",
+    "sq-v1": "npm:shell-quote@1.7.3",
+    "sq-v2": "npm:shell-quote@1.8.4"
+  }
+}

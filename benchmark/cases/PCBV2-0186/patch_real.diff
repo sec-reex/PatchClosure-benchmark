@@ -1,0 +1,83 @@
+# CVE: CVE-2023-33246
+# Upstream: https://github.com/apache/rocketmq.git
+# Fix: c3ada731405c5990c36bf58d50b3e61965300703
+
+diff --git a/namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java b/namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java
+index 9479766..0efef1b 100644
+--- a/namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java
++++ b/namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java
+@@ -581,6 +581,12 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
+                 return response;
+             }
+ 
++            if (properties.containsKey("kvConfigPath") || properties.containsKey("configStorePathName")) {
++                response.setCode(ResponseCode.NO_PERMISSION);
++                response.setRemark("Can not update config path");
++                return response;
++            }
++
+             this.namesrvController.getConfiguration().update(properties);
+         }
+ 
+diff --git a/namesrv/src/test/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessorTest.java b/namesrv/src/test/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessorTest.java
+index 22cf978..329fe53 100644
+--- a/namesrv/src/test/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessorTest.java
++++ b/namesrv/src/test/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessorTest.java
+@@ -20,10 +20,13 @@ import io.netty.channel.Channel;
+ import io.netty.channel.ChannelHandlerContext;
+ import java.lang.reflect.Field;
+ import java.lang.reflect.Modifier;
++import java.nio.charset.StandardCharsets;
+ import java.util.ArrayList;
+ import java.util.HashMap;
+ import java.util.Map;
++import java.util.Properties;
+ import java.util.concurrent.ConcurrentHashMap;
++import org.apache.rocketmq.common.MixAll;
+ import org.apache.rocketmq.common.TopicConfig;
+ import org.apache.rocketmq.logging.InternalLogger;
+ import org.apache.rocketmq.common.namesrv.NamesrvConfig;
+@@ -159,6 +162,43 @@ public class DefaultRequestProcessorTest {
+             .isNull();
+     }
+ 
++    @Test
++    public void testProcessRequest_UpdateConfigPath() throws RemotingCommandException {
++        final RemotingCommand updateConfigRequest = RemotingCommand.createRequestCommand(RequestCode.UPDATE_NAMESRV_CONFIG, null);
++        Properties properties = new Properties();
++
++        // Update allowed value
++        properties.setProperty("enableTopicList", "true");
++        updateConfigRequest.setBody(MixAll.properties2String(properties).getBytes(StandardCharsets.UTF_8));
++
++        RemotingCommand response = defaultRequestProcessor.processRequest(null, updateConfigRequest);
++
++        assertThat(response).isNotNull();
++        assertThat(response.getCode()).isEqualTo(ResponseCode.SUCCESS);
++
++        //update disallowed value
++        properties.clear();
++        properties.setProperty("configStorePathName", "test/path");
++        updateConfigRequest.setBody(MixAll.properties2String(properties).getBytes(StandardCharsets.UTF_8));
++
++        response = defaultRequestProcessor.processRequest(null, updateConfigRequest);
++
++        assertThat(response).isNotNull();
++        assertThat(response.getCode()).isEqualTo(ResponseCode.NO_PERMISSION);
++        assertThat(response.getRemark()).contains("Can not update config path");
++
++        //update disallowed values
++        properties.clear();
++        properties.setProperty("kvConfigPath", "test/path");
++        updateConfigRequest.setBody(MixAll.properties2String(properties).getBytes(StandardCharsets.UTF_8));
++
++        response = defaultRequestProcessor.processRequest(null, updateConfigRequest);
++
++        assertThat(response).isNotNull();
++        assertThat(response.getCode()).isEqualTo(ResponseCode.NO_PERMISSION);
++        assertThat(response.getRemark()).contains("Can not update config path");
++    }
++
+     @Test
+     public void testProcessRequest_RegisterBroker() throws RemotingCommandException,
+         NoSuchFieldException, IllegalAccessException {

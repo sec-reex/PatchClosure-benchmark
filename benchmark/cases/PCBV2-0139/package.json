@@ -1,0 +1,11 @@
+{
+  "name": "pcb-lodash-unset-core",
+  "private": true,
+  "type": "commonjs",
+  "description": "Faithful-core prototype-pollution guard using the REAL npm `lodash` _.unset (baseUnset) per version (CVE-2025-13465 -> CVE-2026-2950). npm aliases hold all three versions side-by-side; the harness selects one by HARNESS_VER.",
+  "dependencies": {
+    "lodash-v0": "npm:lodash@4.17.21",
+    "lodash-v1": "npm:lodash@4.17.23",
+    "lodash-v2": "npm:lodash@4.18.1"
+  }
+}

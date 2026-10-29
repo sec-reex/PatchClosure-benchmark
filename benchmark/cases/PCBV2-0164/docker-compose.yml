@@ -1,0 +1,99 @@
+# PatchClosure-Bench: parse-server literalizeRegexPart PostgreSQL SQLi
+# CVE-2024-27298 (V1=6.5.0, incomplete) -> CVE-2024-39309 (V2=6.5.7, complete)
+#
+# Official parseplatform/parse-server has no 6.4.0 / 6.5.0 tags (only 6.4.0-alpha.*
+# and no 6.5.0 at all). Runtime is node:18 + npm parse-server@<exact>.
+# Postgres sidecar is official postgis/postgis:14-3.4.
+#
+# db_* names (not pg_*) so platform readiness skips the database when resolving
+# the published parse port. Container port is always 1337 (case.yaml
+# readiness/exposed_ports carry the CONTAINER port; the platform and verify.sh
+# resolve the host side dynamically via `docker compose port`). Each profile
+# publishes a DISTINCT host port (matching oracle.py/case.json base_url):
+#   v0 -> ${PORT_V0_0:-39640}   v1 -> ${PORT_V1_0:-39650}   v2 -> ${PORT_V2_0:-39657}
+# so all three profiles can be up simultaneously without a host-port collision.
+
+x-db: &db
+  image: postgis/postgis:14-3.4
+  environment:
+    POSTGRES_USER: parse
+    POSTGRES_PASSWORD: parsepw
+    POSTGRES_DB: parsedb
+  volumes:
+    - ./pg-init.sql:/docker-entrypoint-initdb.d/pg-init.sql:ro
+  healthcheck:
+    # PatchClosure: no start_period gave only a 60s window (20x3s); postgis first boot (initdb +
+    # postgis extension) exceeds that under IO contention -> "db unhealthy" -> `up --wait` aborts
+    # (dependency failed to start). Add grace + retries so a cold/contended boot survives.
+    test: ["CMD-SHELL", "pg_isready -U parse -d parsedb"]
+    interval: 5s
+    timeout: 5s
+    retries: 40
+    start_period: 120s
+
+services:
+  db_v0:
+    <<: *db
+    profiles: ["v0"]
+  parse_v0:
+    profiles: ["v0"]
+    image: pcb-parseserver:6.4.0
+    build:
+      context: ./app
+      args:
+        PARSE_VER: "6.4.0"
+    environment:
+      DATABASE_URI: "postgres://parse:parsepw@db_v0:5432/parsedb"
+      APP_ID: "pcbApp"
+      MASTER_KEY: "pcbMaster"
+      SERVER_URL: "http://parse_v0:1337/parse"
+      PARSE_VER: "6.4.0"
+    restart: on-failure
+    ports: ["${PORT_V0_0:-39640}:1337"]
+    depends_on:
+      db_v0:
+        condition: service_healthy
+
+  db_v1:
+    <<: *db
+    profiles: ["v1"]
+  parse_v1:
+    profiles: ["v1"]
+    image: pcb-parseserver:6.5.0
+    build:
+      context: ./app
+      args:
+        PARSE_VER: "6.5.0"
+    environment:
+      DATABASE_URI: "postgres://parse:parsepw@db_v1:5432/parsedb"
+      APP_ID: "pcbApp"
+      MASTER_KEY: "pcbMaster"
+      SERVER_URL: "http://parse_v1:1337/parse"
+      PARSE_VER: "6.5.0"
+    restart: on-failure
+    ports: ["${PORT_V1_0:-39650}:1337"]
+    depends_on:
+      db_v1:
+        condition: service_healthy
+
+  db_v2:
+    <<: *db
+    profiles: ["v2"]
+  parse_v2:
+    profiles: ["v2"]
+    image: pcb-parseserver:6.5.7
+    build:
+      context: ./app
+      args:
+        PARSE_VER: "6.5.7"
+    environment:
+      DATABASE_URI: "postgres://parse:parsepw@db_v2:5432/parsedb"
+      APP_ID: "pcbApp"
+      MASTER_KEY: "pcbMaster"
+      SERVER_URL: "http://parse_v2:1337/parse"
+      PARSE_VER: "6.5.7"
+    restart: on-failure
+    ports: ["${PORT_V2_0:-39657}:1337"]
+    depends_on:
+      db_v2:
+        condition: service_healthy

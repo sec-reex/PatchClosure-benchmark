@@ -1,0 +1,41 @@
+upstream: https://github.com/janl/node-jsonpointer
+fix: 234e3437019c6c07537ed2ad1e03b3e132b85e34 (v4.0.1 -> v4.1.0, 2020-07-03 "fix: prototype pollution" = CVE-2020-7709 fix)
+replaced/synced: 2026-10-11 — the previous content of this file was the V1->V2 fix (commit
+027457f7222eef6ae37592d7cbf2aabb85aaaea5, 2021-09-27, pre-5.0.0: removes the setter() top-guards,
+adds the per-segment loop guard + compilePointer array coercion) mislabeled as "(4.1.0
+fix-prototype-pollution)". The real 4.0.1->4.1.0 fix (this diff) ADDS the setter() top-guards
+`pointer[1] === 'constructor' && pointer[2] === 'prototype'` and `pointer[1] === '__proto__'`
+BEFORE the loop; test.js gains string-form regression cases only. Original file preserved at
+benchmark/replacements_2026-10-11/PCBV2-0044/patch_real.diff.orig (see MANIFEST.md there).
+
+diff --git a/jsonpointer.js b/jsonpointer.js
+index 7cfaec0..3635882 100644
+--- a/jsonpointer.js
++++ b/jsonpointer.js
+@@ -17,6 +17,9 @@ function setter (obj, pointer, value) {
+   var part
+   var hasNextPart
+ 
++  if (pointer[1] === 'constructor' && pointer[2] === 'prototype') return obj
++  if (pointer[1] === '__proto__') return obj
++
+   for (var p = 1, len = pointer.length; p < len;) {
+     part = untilde(pointer[p++])
+     hasNextPart = len > p
+diff --git a/test.js b/test.js
+index e3d9963..746148c 100644
+--- a/test.js
++++ b/test.js
+@@ -128,4 +128,12 @@ assert.equal(pointer.set(a, 'test'), 'bar')
+ assert.equal(pointer.get(a), 'test')
+ assert.deepEqual(a, {foo: 'test'})
+ 
++var b = {}
++jsonpointer.set({}, '/constructor/prototype/boo', 'polluted')
++assert(!b.boo, 'should not boo')
++
++var c = {}
++jsonpointer.set({}, '/__proto__/boo', 'polluted')
++assert(!c.boo, 'should not boo')
++
+ console.log('All tests pass.')

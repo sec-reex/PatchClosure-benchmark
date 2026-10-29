@@ -1,0 +1,56 @@
+# REAL official b3log/siyuan kernel (not a sliced harness).
+# Official entrypoint chown -R $PUID /siyuan/workspace and exits 1 if that
+# directory is missing. Wrapper mkdir+plant then execs the image entrypoint
+# (same pattern as certified PCBV2-0195). $$PCB_FLAG is container-env at boot.
+#
+#   v0 = v3.5.9   no IsSensitivePath on /export/          (CVE-2026-30869)
+#   v1 = v3.5.10  IsSensitivePath denylist (conf/ /etc)   incomplete
+#   v2 = v3.6.5   IsSubPath(exportBaseDir)                closed
+#
+# No named volumes (fresh workspace). No custom subnet (IPAM clashes).
+
+services:
+  v0:
+    profiles: ["v0"]
+    image: b3log/siyuan:v3.5.9
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mkdir -p /siyuan/workspace/conf /siyuan/workspace/temp/export &&
+        printf '%s' "$$PCB_FLAG" > /siyuan/workspace/conf/pcb_secret.txt &&
+        printf '%s' "$$PCB_FLAG" > /siyuan/workspace/temp/pcb_flag.txt &&
+        chmod a+r /siyuan/workspace/conf/pcb_secret.txt /siyuan/workspace/temp/pcb_flag.txt &&
+        exec /opt/siyuan/entrypoint.sh --workspace=/siyuan/workspace --accessAuthCode=pcb
+    ports: ["${PORT_V0_0:-56910}:6806"]
+
+  v1:
+    profiles: ["v1"]
+    image: b3log/siyuan:v3.5.10
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mkdir -p /siyuan/workspace/conf /siyuan/workspace/temp/export &&
+        printf '%s' "$$PCB_FLAG" > /siyuan/workspace/conf/pcb_secret.txt &&
+        printf '%s' "$$PCB_FLAG" > /siyuan/workspace/temp/pcb_flag.txt &&
+        chmod a+r /siyuan/workspace/conf/pcb_secret.txt /siyuan/workspace/temp/pcb_flag.txt &&
+        exec /opt/siyuan/entrypoint.sh --workspace=/siyuan/workspace --accessAuthCode=pcb
+    ports: ["${PORT_V1_0:-56911}:6806"]
+
+  v2:
+    profiles: ["v2"]
+    image: b3log/siyuan:v3.6.5
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mkdir -p /siyuan/workspace/conf /siyuan/workspace/temp/export &&
+        printf '%s' "$$PCB_FLAG" > /siyuan/workspace/conf/pcb_secret.txt &&
+        printf '%s' "$$PCB_FLAG" > /siyuan/workspace/temp/pcb_flag.txt &&
+        chmod a+r /siyuan/workspace/conf/pcb_secret.txt /siyuan/workspace/temp/pcb_flag.txt &&
+        exec /opt/siyuan/entrypoint.sh --workspace=/siyuan/workspace --accessAuthCode=pcb
+    ports: ["${PORT_V2_0:-56912}:6806"]

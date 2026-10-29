@@ -1,0 +1,86 @@
+# PatchClosure-Bench recipe for october-cms-cve-2020-26231.
+# Recipe-based: NO committed images / source. October CMS is installed via
+# composer at build time (pinned to the exact build number); only small text
+# files live in this dir.
+#
+# Profiles:
+#   v0 = October CMS Build 468 (1.0.468) — no SecurityPolicy, both addDynamicMethod
+#        and bindEvent work -> vulnerable to CVE-2020-15247.
+#   v1 = October CMS Build 469 (1.0.469) — SecurityPolicy blocks addDynamicMethod
+#        + addDynamicProperty, but bindEvent still works -> CVE-2020-15247 fixed
+#        but CVE-2020-26231 bypass still open (TARGET).
+#   v2 = October CMS Build 470 (1.0.470) — SecurityPolicy also blocks bindEvent
+#        + bindEventOnce -> CVE-2020-26231 fixed.
+#
+# The canary (a random per-run token) is planted at /var/canary.txt by the
+# entrypoint from ${PCB_FLAG}. CMS pages use Twig sandbox escapes to read it;
+# if the escape succeeds the flag appears in the HTTP response.
+
+x-october-common: &october-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  depends_on:
+    db:
+      condition: service_healthy
+  environment:
+    PCB_FLAG: "${PCB_FLAG}"
+    DB_HOST: db
+    DB_DATABASE: october
+    DB_USERNAME: october
+    DB_PASSWORD: october
+  healthcheck:
+    test: ["CMD", "curl", "-sf", "http://127.0.0.1:80/", "-o", "/dev/null"]
+    interval: 5s
+    timeout: 5s
+    retries: 30
+    start_period: 60s
+
+services:
+  db:
+    image: "mysql:8.0"
+    command: ["--default-authentication-plugin=mysql_native_password"]
+    profiles: ["v0", "v1", "v2"]
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: october
+      MYSQL_USER: october
+      MYSQL_PASSWORD: october
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 40s
+
+  v0:
+    <<: *october-common
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        OCTOBER_VERSION: "1.0.468"
+    ports: ["${PORT_V0_0:-39468}:80"]
+
+  v1:
+    <<: *october-common
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        OCTOBER_VERSION: "1.0.469"
+    ports: ["${PORT_V1_0:-39469}:80"]
+
+  v2:
+    <<: *october-common
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        OCTOBER_VERSION: "1.0.470"
+    ports: ["${PORT_V2_0:-39470}:80"]

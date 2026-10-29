@@ -1,0 +1,110 @@
+{
+  "eval_id": "PCBV2-0022",
+  "case_id": "freescout-cve-2026-41903",
+  "product": "FreeScout",
+  "app_purpose": "help_desk",
+  "language": "PHP",
+  "root_cause": "Missing_Authorization_Check",
+  "mechanism_family": "authz_mute_attach_then_notifications_idor",
+  "cve_pair": {
+    "original_cve": "CVE-2025-48472",
+    "bypass_cve": "CVE-2026-41903",
+    "original_published": "2025-05-17",
+    "bypass_published": "2026-05-28"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "1.8.178",
+      "ref": "git tag 1.8.178 (github.com/freescout-help-desk/freescout)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": "https://github.com/freescout-help-desk/freescout",
+      "base_url": "http://127.0.0.1:33670"
+    },
+    "v1": {
+      "identifier": "1.8.216",
+      "ref": "git tag 1.8.216 (CVE-2025-48472 fix: can('view') check in Mailbox mute)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": "https://github.com/freescout-help-desk/freescout",
+      "base_url": "http://127.0.0.1:33671"
+    },
+    "v2": {
+      "identifier": "1.8.217",
+      "ref": "git tag 1.8.217 (CVE-2026-41903 fix: self-only check in notifications/update policy)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": "https://github.com/freescout-help-desk/freescout",
+      "base_url": "http://127.0.0.1:33672"
+    }
+  },
+  "flag": {
+    "resource": "admin last_name + admin-only mailbox name",
+    "placement": "planted by seed.php from $PCB_FLAG (environment, not app code)",
+    "detect": "flag token in the mailbox page title/body (seed) and in the notifications page title/body (residual)",
+    "class_kind": "authz"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out_from_method": [
+    "v2 source",
+    "bypass_poc.py",
+    "v0/v2 env (profiles v0/v2)"
+  ],
+  "provenance": {
+    "source": "public:NVD_fix_pattern",
+    "verified": "runtime_gate_passed",
+    "notes": "CVE-2025-48472: any user can mute (attach) any mailbox via POST /mailbox/ajax action=mute; fixed 1.8.179 by adding mailbox access check. Residual: MailboxController::notifications (GET /users/notifications/{id}) is reachable by any user with PERM_EDIT_USERS for ANY user; fixed 1.8.217 by adding self-only check. Built 2026-08-01. seed=agent mute attach -> read mailbox name; residual=editor reads admin notifications page. Flag truncated to 24 chars due to users.last_name varchar(30).",
+    "patch_diff_fix": {
+      "audit": "ROUND6-2026-08-05",
+      "issue": "patch.diff contained the V1->V2 (bypass) fix instead of V0->V1; held-out markers leaked",
+      "replaced_with": "upstream V0->V1 diff (sha256 aedac53c0c810639) aligned with benchmark_v2 inputs/PCBV2-0022"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_repository",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "admin last_name / admin-only mailbox name",
+    "detector": "flag token in mailbox page (seed) / notifications page title (residual)"
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "[2026-08-02 LLM freeze audit: oracle 4-way all True + Phase-B real gate repro]",
+    "frozen_2026-08-02": "strict_gold"
+  },
+  "evidence": {
+    "artifact_sha256": {
+      "case.json": "c73a391def38df5ab0a9935a1846aed04c856ef41df56c8550ddf114adc5e28e",
+      "repro.log": "be84e81554f4e0a6848033af8f6377b8747854d950806ee8d903732f89b96bd7",
+      "docker-compose.yml": "f57542dd4c42b9c81f72f56d1213060d3825de9340f65b92461ebefcff670e25",
+      "oracle.py": "af3b8084b45cac26c09b22b8557d5713f71ef5f6ded4e2e934dd5e23715b5b3e",
+      "original_poc.py": "fa191cfd68046867bfcae67e3974de584bbff865e5ce1cc1a1e317df25c243be",
+      "patch.diff": "ea29f6e90eb61864d143247a5c96f0eb3f13e9213eb47c68fc0409dae4accb1c",
+      "Dockerfile": "279013743948e26cb71d7bc6282fb497514ed08f52955e9c1439a2ef8d1fedc6",
+      "_heldout/bypass_poc.py": "afa16f1c092f16f81f9f33c2151a410c23fc73ffc1d86ccd30882104a48e792d",
+      "entrypoint.sh": "d78e77f650dccbf9616112d3635fb33a648e8b139ca69dc0ae7e7ad608be2d4a",
+      "README.md": "e809e68cab9ba8df8a8c39e007f41747f6771b6ff2b0a840a78612d649a6dbb7"
+    }
+  }
+}

@@ -1,0 +1,76 @@
+# PatchClosure-Bench recipe for froxlor-cve-2026-41234.
+# Profiles:
+#   v0 = Froxlor 2.3.4  (CVE-2026-30932 unfixed: LOC/RP/SSHFP/TLSA newline injection open)
+#   v1 = Froxlor 2.3.5  (30932 fixed: LOC/RP/SSHFP/TLSA validated; TXT newline injection open) <- target
+#   v2 = Froxlor 2.3.7  (41234 fixed: TXT content sanitized too)
+# Shared MariaDB. The PCB_FLAG is embedded in the injected DNS content by the PoC and
+# observed in the generated BIND zone file (docker exec read of /etc/bind/domains/pcb.local.zone).
+services:
+  mysql:
+    image: "mariadb:10.6"
+    environment:
+      MYSQL_ROOT_PASSWORD: "root"
+      MYSQL_DATABASE: "froxlor"
+      MYSQL_USER: "froxlor"
+      MYSQL_PASSWORD: "froxlor"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  v0:
+    profiles: ["v0"]
+    build: { context: ., args: { FROXLOR_REF: "2.3.4" } }
+    image: "pcb-froxlor-dns:v0"
+    container_name: pcb-froxlor-dns-v0
+    environment:
+      DB_HOST: "mysql"
+      DB_DATABASE: "froxlor_v0"
+      DB_USERNAME: "froxlor"
+      DB_PASSWORD: "froxlor"
+      DB_ROOT_PASSWORD: "root"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports: ["${PORT_V0_0:-41820}:80"]
+    volumes: ["appv0:/var/www/html"]
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  v1:
+    profiles: ["v1"]
+    build: { context: ., args: { FROXLOR_REF: "2.3.5" } }
+    image: "pcb-froxlor-dns:v1"
+    container_name: pcb-froxlor-dns-v1
+    environment:
+      DB_HOST: "mysql"
+      DB_DATABASE: "froxlor_v1"
+      DB_USERNAME: "froxlor"
+      DB_PASSWORD: "froxlor"
+      DB_ROOT_PASSWORD: "root"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports: ["${PORT_V1_0:-41821}:80"]
+    volumes: ["appv1:/var/www/html"]
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  v2:
+    profiles: ["v2"]
+    build: { context: ., args: { FROXLOR_REF: "2.3.7" } }
+    image: "pcb-froxlor-dns:v2"
+    container_name: pcb-froxlor-dns-v2
+    environment:
+      DB_HOST: "mysql"
+      DB_DATABASE: "froxlor_v2"
+      DB_USERNAME: "froxlor"
+      DB_PASSWORD: "froxlor"
+      DB_ROOT_PASSWORD: "root"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports: ["${PORT_V2_0:-41822}:80"]
+    volumes: ["appv2:/var/www/html"]
+    depends_on:
+      mysql: { condition: service_healthy }
+
+volumes:
+  appv0:
+  appv1:
+  appv2:

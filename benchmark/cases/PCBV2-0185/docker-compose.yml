@@ -1,0 +1,55 @@
+# PatchClosure-Bench recipe for resteasy-jboss-cve-2014-3490 -- REAL RESTEasy JAX-RS web app over HTTP.
+# (CVE-2012-0818 [XXE via external GENERAL entity] -> CVE-2014-3490 [XXE via external PARAMETER entity;
+#  INCOMPLETE fix], RESTEasy JAXB provider XXE, CWE-611). Genuine incomplete fix.
+#
+# Each service builds the shared multi-stage Dockerfile at a pinned RESTEasy version, deploys the WAR
+# to real Apache Tomcat, and serves POST /app/xml over HTTP. The oracle drives the sink with an
+# EXTERNAL HTTP request; the XXE-read ${PCB_FLAG} (planted at /flag) surfaces in the HTTP response.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = resteasy 3.0.8.Final. CVE-2012-0818 FIXED (ExternalEntityUnmarshaller
+#        sets external-general-entities=false -> original general-entity XXE blocked) but INCOMPLETELY:
+#        it does NOT set external-parameter-entities=false, so an external PARAMETER entity still
+#        resolves -> the CVE-2014-3490 residual XXE stays open. Target.
+#   v0 (gate)     = resteasy 2.3.0.GA. Pre-CVE-2012-0818: JAXB provider fully resolves external general
+#        entities -> original XXE fires.
+#   v2 (negative) = resteasy 3.0.9.Final. CVE-2014-3490 FIXED (RESTEASY-1073): ExternalEntityUnmarshaller
+#        also sets external-parameter-entities=false -> residual blocked.
+#
+# Canary = read-exfil: ${PCB_FLAG} (random per-run token) is written to /flag at container start; the
+# XXE external entity reads that file. SUCCESS = token reflected into the HTTP response body.
+services:
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {RESTEASY_VERSION: "2.3.0.GA"}}
+    image: "pcb/resteasy-xxe-web:2.3.0.GA"
+    ports: ["${PORT_V0_0:-18960}:8080"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    command: ["sh","-c","printf '%s' \"$PCB_FLAG\" > /flag && chmod 644 /flag && exec catalina.sh run"]
+
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {RESTEASY_VERSION: "3.0.8.Final"}}
+    image: "pcb/resteasy-xxe-web:3.0.8.Final"
+    ports: ["${PORT_V1_0:-18961}:8080"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    command: ["sh","-c","printf '%s' \"$PCB_FLAG\" > /flag && chmod 644 /flag && exec catalina.sh run"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {RESTEASY_VERSION: "3.0.9.Final"}}
+    image: "pcb/resteasy-xxe-web:3.0.9.Final"
+    ports: ["${PORT_V2_0:-18962}:8080"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    command: ["sh","-c","printf '%s' \"$PCB_FLAG\" > /flag && chmod 644 /flag && exec catalina.sh run"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.185.0/24

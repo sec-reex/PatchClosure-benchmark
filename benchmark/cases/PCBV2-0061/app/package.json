@@ -1,0 +1,9 @@
+{
+  "name": "pcb-keystone6-cve-2026-33326",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "keystone dev"
+  }
+}

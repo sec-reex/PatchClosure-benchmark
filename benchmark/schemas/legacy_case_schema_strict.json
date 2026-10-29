@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://patchclosure-bench/strict-case.schema.json",
+  "title": "PatchClosure-Bench strict paper-core case",
+  "description": "Canonical manifest used after migration. Historical case.json files remain readable through the legacy schema until individually migrated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "cve_pair",
+    "product",
+    "versions",
+    "execution",
+    "oracle",
+    "evidence",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {"const": "strict-1"},
+    "case_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$"},
+    "product": {"type": "string", "minLength": 1},
+    "cve_pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["original_cve", "bypass_cve"],
+      "properties": {
+        "original_cve": {"type": "string", "pattern": "^CVE-[0-9]{4}-[0-9]+$"},
+        "bypass_cve": {"type": "string", "pattern": "^CVE-[0-9]{4}-[0-9]+$"},
+        "original_published": {"type": ["string", "null"], "format": "date"},
+        "bypass_published": {"type": ["string", "null"], "format": "date"}
+      }
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v0", "v1", "v2"],
+      "properties": {
+        "v0": {"$ref": "#/$defs/version"},
+        "v1": {"$ref": "#/$defs/version"},
+        "v2": {"$ref": "#/$defs/version"}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_mode", "software_origin", "full_application", "source_lift", "external_trigger"],
+      "properties": {
+        "run_mode": {"enum": ["real-app-http", "real-server-http", "real-service-http", "real-server-tcp", "real-cli-nonhttp"]},
+        "software_origin": {"enum": ["official_image", "official_repository", "official_release", "official_package"]},
+        "full_application": {"const": true},
+        "source_lift": {"const": false},
+        "external_trigger": {"enum": ["http", "tcp", "cli"]},
+        "image_digest": {"type": ["string", "null"]},
+        "source_commit": {"type": ["string", "null"]}
+      }
+    },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variant", "seed", "residual", "checks"],
+      "properties": {
+        "variant": {"enum": ["same_sink", "sibling_sink", "dos_threshold"]},
+        "seed": {"type": "string", "minLength": 1},
+        "residual": {"type": "string", "minLength": 1},
+        "checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["seed_v0_reaches", "seed_v1_blocked", "residual_v1_reaches", "residual_v2_blocked"],
+          "properties": {
+            "seed_v0_reaches": {"const": true},
+            "seed_v1_blocked": {"const": true},
+            "residual_v1_reaches": {"const": true},
+            "residual_v2_blocked": {"const": true},
+            "seed_v0_control": {"type": "string"},
+            "seed_v1_control": {"type": "string"},
+            "residual_v1_control": {"type": "string"},
+            "residual_v2_control": {"type": "string"}
+          }
+        },
+        "flag_resource": {"type": "string", "minLength": 1},
+        "detector": {"type": "string", "minLength": 1}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["advisory_url", "fix_reference", "repro_log", "commands"],
+      "properties": {
+        "advisory_url": {"type": "string", "format": "uri"},
+        "fix_reference": {"type": "string", "minLength": 1},
+        "incomplete_fix_quote": {"type": "string"},
+        "repro_log": {"type": "string", "minLength": 1},
+        "commands": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "artifact_sha256": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification"],
+      "properties": {
+        "classification": {"enum": ["strict_gold", "needs_manual_review", "positive_only", "invalid"]},
+        "review_reason": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identifier", "ref", "compose_profile"],
+      "properties": {
+        "identifier": {"type": "string", "minLength": 1},
+        "ref": {"type": "string", "minLength": 1},
+        "compose_profile": {"type": "string", "enum": ["v0", "v1", "v2"]},
+        "image": {"type": ["string", "null"]},
+        "source_url": {"type": ["string", "null"]},
+        "base_url": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

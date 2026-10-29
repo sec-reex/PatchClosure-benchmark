@@ -1,0 +1,24 @@
+case_id: PCBV2-0154
+public_name: nukesentinel-php-nuke-security-addon-cve-2007-1493
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: local_tgz
+  repo: https://sourceforge.net/projects/nukescripts/files/NukeSentinel(tm)/
+  v0: "2.5.05"
+  v1: "2.5.06"
+service:
+  # start.sh / reset.sh wait until GET / answers on the published host port.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

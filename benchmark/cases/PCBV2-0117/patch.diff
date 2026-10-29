@@ -1,0 +1,534 @@
+PCBV2-0117 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 56051d9b3bd58284a1b50c3d974fab3bd0acacaa (v1.22.3; full multi-line annotation in patch_real.diff header)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0117/
+
+diff --git a/models/user/user.go b/models/user/user.go
+index 6848d1be95be0..cff83702c745d 100644
+--- a/models/user/user.go
++++ b/models/user/user.go
+@@ -398,6 +398,10 @@ func (u *User) IsIndividual() bool {
+ 	return u.Type == UserTypeIndividual
+ }
+ 
++func (u *User) IsUser() bool {
++	return u.Type == UserTypeIndividual || u.Type == UserTypeBot
++}
++
+ // IsBot returns whether or not the user is of type bot
+ func (u *User) IsBot() bool {
+ 	return u.Type == UserTypeBot
+diff --git a/routers/api/packages/api.go b/routers/api/packages/api.go
+index 5e3cbac8f9cb1..6aa4c5511421d 100644
+--- a/routers/api/packages/api.go
++++ b/routers/api/packages/api.go
+@@ -63,6 +63,20 @@ func reqPackageAccess(accessMode perm.AccessMode) func(ctx *context.Context) {
+ 					ctx.Error(http.StatusUnauthorized, "reqPackageAccess", "user should have specific permission or be a site admin")
+ 					return
+ 				}
++
++				// check if scope only applies to public resources
++				publicOnly, err := scope.PublicOnly()
++				if err != nil {
++					ctx.Error(http.StatusForbidden, "tokenRequiresScope", "parsing public resource scope failed: "+err.Error())
++					return
++				}
++
++				if publicOnly {
++					if ctx.Package != nil && ctx.Package.Owner.Visibility.IsPrivate() {
++						ctx.Error(http.StatusForbidden, "reqToken", "token scope is limited to public packages")
++						return
++					}
++				}
+ 			}
+ 		}
+ 
+diff --git a/routers/api/v1/api.go b/routers/api/v1/api.go
+index d7da5427582cd..19b643135665d 100644
+--- a/routers/api/v1/api.go
++++ b/routers/api/v1/api.go
+@@ -235,6 +235,62 @@ func reqPackageAccess(accessMode perm.AccessMode) func(ctx *context.APIContext)
+ 	}
+ }
+ 
++func checkTokenPublicOnly() func(ctx *context.APIContext) {
++	return func(ctx *context.APIContext) {
++		if !ctx.PublicOnly {
++			return
++		}
++
++		requiredScopeCategories, ok := ctx.Data["requiredScopeCategories"].([]auth_model.AccessTokenScopeCategory)
++		if !ok || len(requiredScopeCategories) == 0 {
++			return
++		}
++
++		// public Only permission check
++		switch {
++		case auth_model.ContainsCategory(requiredScopeCategories, auth_model.AccessTokenScopeCategoryRepository):
++			if ctx.Repo.Repository != nil && ctx.Repo.Repository.IsPrivate {
++				ctx.Error(http.StatusForbidden, "reqToken", "token scope is limited to public repos")
++				return
++			}
++		case auth_model.ContainsCategory(requiredScopeCategories, auth_model.AccessTokenScopeCategoryIssue):
++			if ctx.Repo.Repository != nil && ctx.Repo.Repository.IsPrivate {
++				ctx.Error(http.StatusForbidden, "reqToken", "token scope is limited to public issues")
++				return
++			}
++		case auth_model.ContainsCategory(requiredScopeCategories, auth_model.AccessTokenScopeCategoryOrganization):
++			if ctx.Org.Organization != nil && ctx.Org.Organization.Visibility != api.VisibleTypePublic {
++				ctx.Error(http.StatusForbidden, "reqToken", "token scope is limited to public orgs")
++				return
++			}
++			if ctx.ContextUser != nil && ctx.ContextUser.IsOrganization() && ctx.ContextUser.Visibility != api.VisibleTypePublic {
++				ctx.Error(http.StatusForbidden, "reqToken", "token scope is limited to public orgs")
++				return
++			}
++		case auth_model.ContainsCategory(requiredScopeCategories, auth_model.AccessTokenScopeCategoryUser):
++			if ctx.ContextUser != nil && ctx.ContextUser.IsUser() && ctx.ContextUser.Visibility != api.VisibleTypePublic {
++				ctx.Error(http.StatusForbidden, "reqToken", "token scope is limited to public users")
++				return
++			}
++		case auth_model.ContainsCategory(requiredScopeCategories, auth_model.AccessTokenScopeCategoryActivityPub):
++			if ctx.ContextUser != nil && ctx.ContextUser.IsUser() && ctx.ContextUser.Visibility != api.VisibleTypePublic {
++				ctx.Error(http.StatusForbidden, "reqToken", "token scope is limited to public activitypub")
++				return
++			}
++		case auth_model.ContainsCategory(requiredScopeCategories, auth_model.AccessTokenScopeCategoryNotification):
++			if ctx.Repo.Repository != nil && ctx.Repo.Repository.IsPrivate {
++				ctx.Error(http.StatusForbidden, "reqToken", "token scope is limited to public notifications")
++				return
++			}
++		case auth_model.ContainsCategory(requiredScopeCategories, auth_model.AccessTokenScopeCategoryPackage):
++			if ctx.Package != nil && ctx.Package.Owner.Visibility.IsPrivate() {
++				ctx.Error(http.StatusForbidden, "reqToken", "token scope is limited to public packages")
++				return
++			}
++		}
++	}
++}
++
+ // if a token is being used for auth, we check that it contains the required scope
+ // if a token is not being used, reqToken will enforce other sign in methods
+ func tokenRequiresScopes(requiredScopeCategories ...auth_model.AccessTokenScopeCategory) func(ctx *context.APIContext) {
+@@ -250,9 +306,6 @@ func tokenRequiresScopes(requiredScopeCategories ...auth_model.AccessTokenScopeC
+ 			return
+ 		}
+ 
+-		ctx.Data["ApiTokenScopePublicRepoOnly"] = false
+-		ctx.Data["ApiTokenScopePublicOrgOnly"] = false
+-
+ 		// use the http method to determine the access level
+ 		requiredScopeLevel := auth_model.Read
+ 		if ctx.Req.Method == "POST" || ctx.Req.Method == "PUT" || ctx.Req.Method == "PATCH" || ctx.Req.Method == "DELETE" {
+@@ -261,29 +314,28 @@ func tokenRequiresScopes(requiredScopeCategories ...auth_model.AccessTokenScopeC
+ 
+ 		// get the required scope for the given access level and category
+ 		requiredScopes := auth_model.GetRequiredScopes(requiredScopeLevel, requiredScopeCategories...)
+-
+-		// check if scope only applies to public resources
+-		publicOnly, err := scope.PublicOnly()
++		allow, err := scope.HasScope(requiredScopes...)
+ 		if err != nil {
+-			ctx.Error(http.StatusForbidden, "tokenRequiresScope", "parsing public resource scope failed: "+err.Error())
++			ctx.Error(http.StatusForbidden, "tokenRequiresScope", "checking scope failed: "+err.Error())
+ 			return
+ 		}
+ 
+-		// this context is used by the middleware in the specific route
+-		ctx.Data["ApiTokenScopePublicRepoOnly"] = publicOnly && auth_model.ContainsCategory(requiredScopeCategories, auth_model.AccessTokenScopeCategoryRepository)
+-		ctx.Data["ApiTokenScopePublicOrgOnly"] = publicOnly && auth_model.ContainsCategory(requiredScopeCategories, auth_model.AccessTokenScopeCategoryOrganization)
+-
+-		allow, err := scope.HasScope(requiredScopes...)
+-		if err != nil {
+-			ctx.Error(http.StatusForbidden, "tokenRequiresScope", "checking scope failed: "+err.Error())
++		if !allow {
++			ctx.Error(http.StatusForbidden, "tokenRequiresScope", fmt.Sprintf("token does not have at least one of required scope(s): %v", requiredScopes))
+ 			return
+ 		}
+ 
+-		if allow {
++		ctx.Data["requiredScopeCategories"] = requiredScopeCategories
++
++		// check if scope only applies to public resources
++		publicOnly, err := scope.PublicOnly()
++		if err != nil {
++			ctx.Error(http.StatusForbidden, "tokenRequiresScope", "parsing public resource scope failed: "+err.Error())
+ 			return
+ 		}
+ 
+-		ctx.Error(http.StatusForbidden, "tokenRequiresScope", fmt.Sprintf("token does not have at least one of required scope(s): %v", requiredScopes))
++		// assign to true so that those searching should only filter public repositories/users/organizations
++		ctx.PublicOnly = publicOnly
+ 	}
+ }
+ 
+@@ -295,25 +347,6 @@ func reqToken() func(ctx *context.APIContext) {
+ 			return
+ 		}
+ 
+-		if true == ctx.Data["IsApiToken"] {
+-			publicRepo, pubRepoExists := ctx.Data["ApiTokenScopePublicRepoOnly"]
+-			publicOrg, pubOrgExists := ctx.Data["ApiTokenScopePublicOrgOnly"]
+-
+-			if pubRepoExists && publicRepo.(bool) &&
+-				ctx.Repo.Repository != nil && ctx.Repo.Repository.IsPrivate {
+-				ctx.Error(http.StatusForbidden, "reqToken", "token scope is limited to public repos")
+-				return
+-			}
+-
+-			if pubOrgExists && publicOrg.(bool) &&
+-				ctx.Org.Organization != nil && ctx.Org.Organization.Visibility != api.VisibleTypePublic {
+-				ctx.Error(http.StatusForbidden, "reqToken", "token scope is limited to public orgs")
+-				return
+-			}
+-
+-			return
+-		}
+-
+ 		if ctx.IsSigned {
+ 			return
+ 		}
+@@ -879,11 +912,11 @@ func Routes() *web.Route {
+ 				m.Group("/user/{username}", func() {
+ 					m.Get("", activitypub.Person)
+ 					m.Post("/inbox", activitypub.ReqHTTPSignature(), activitypub.PersonInbox)
+-				}, context.UserAssignmentAPI())
++				}, context.UserAssignmentAPI(), checkTokenPublicOnly())
+ 				m.Group("/user-id/{user-id}", func() {
+ 					m.Get("", activitypub.Person)
+ 					m.Post("/inbox", activitypub.ReqHTTPSignature(), activitypub.PersonInbox)
+-				}, context.UserIDAssignmentAPI())
++				}, context.UserIDAssignmentAPI(), checkTokenPublicOnly())
+ 			}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryActivityPub))
+ 		}
+ 
+@@ -939,7 +972,7 @@ func Routes() *web.Route {
+ 				}, reqSelfOrAdmin(), reqBasicOrRevProxyAuth())
+ 
+ 				m.Get("/activities/feeds", user.ListUserActivityFeeds)
+-			}, context.UserAssignmentAPI(), individualPermsChecker)
++			}, context.UserAssignmentAPI(), checkTokenPublicOnly(), individualPermsChecker)
+ 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryUser))
+ 
+ 		// Users (requires user scope)
+@@ -957,7 +990,7 @@ func Routes() *web.Route {
+ 				m.Get("/starred", user.GetStarredRepos)
+ 
+ 				m.Get("/subscriptions", user.GetWatchedRepos)
+-			}, context.UserAssignmentAPI())
++			}, context.UserAssignmentAPI(), checkTokenPublicOnly())
+ 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryUser), reqToken())
+ 
+ 		// Users (requires user scope)
+@@ -1044,7 +1077,7 @@ func Routes() *web.Route {
+ 					m.Get("", user.IsStarring)
+ 					m.Put("", user.Star)
+ 					m.Delete("", user.Unstar)
+-				}, repoAssignment())
++				}, repoAssignment(), checkTokenPublicOnly())
+ 			}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryRepository))
+ 			m.Get("/times", repo.ListMyTrackedTimes)
+ 			m.Get("/stopwatches", repo.GetStopwatches)
+@@ -1069,18 +1102,20 @@ func Routes() *web.Route {
+ 					m.Get("", user.CheckUserBlock)
+ 					m.Put("", user.BlockUser)
+ 					m.Delete("", user.UnblockUser)
+-				}, context.UserAssignmentAPI())
++				}, context.UserAssignmentAPI(), checkTokenPublicOnly())
+ 			})
+ 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryUser), reqToken())
+ 
+ 		// Repositories (requires repo scope, org scope)
+ 		m.Post("/org/{org}/repos",
++			// FIXME: we need org in context
+ 			tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization, auth_model.AccessTokenScopeCategoryRepository),
+ 			reqToken(),
+ 			bind(api.CreateRepoOption{}),
+ 			repo.CreateOrgRepoDeprecated)
+ 
+ 		// requires repo scope
++		// FIXME: Don't expose repository id outside of the system
+ 		m.Combo("/repositories/{id}", reqToken(), tokenRequiresScopes(auth_model.AccessTokenScopeCategoryRepository)).Get(repo.GetByID)
+ 
+ 		// Repos (requires repo scope)
+@@ -1321,7 +1356,7 @@ func Routes() *web.Route {
+ 					m.Post("", bind(api.UpdateRepoAvatarOption{}), repo.UpdateAvatar)
+ 					m.Delete("", repo.DeleteAvatar)
+ 				}, reqAdmin(), reqToken())
+-			}, repoAssignment())
++			}, repoAssignment(), checkTokenPublicOnly())
+ 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryRepository))
+ 
+ 		// Notifications (requires notifications scope)
+@@ -1330,7 +1365,7 @@ func Routes() *web.Route {
+ 				m.Combo("/notifications", reqToken()).
+ 					Get(notify.ListRepoNotifications).
+ 					Put(notify.ReadRepoNotifications)
+-			}, repoAssignment())
++			}, repoAssignment(), checkTokenPublicOnly())
+ 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryNotification))
+ 
+ 		// Issue (requires issue scope)
+@@ -1444,7 +1479,7 @@ func Routes() *web.Route {
+ 						Patch(reqToken(), reqRepoWriter(unit.TypeIssues, unit.TypePullRequests), bind(api.EditMilestoneOption{}), repo.EditMilestone).
+ 						Delete(reqToken(), reqRepoWriter(unit.TypeIssues, unit.TypePullRequests), repo.DeleteMilestone)
+ 				})
+-			}, repoAssignment())
++			}, repoAssignment(), checkTokenPublicOnly())
+ 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryIssue))
+ 
+ 		// NOTE: these are Gitea package management API - see packages.CommonRoutes and packages.DockerContainerRoutes for endpoints that implement package manager APIs
+@@ -1455,14 +1490,14 @@ func Routes() *web.Route {
+ 				m.Get("/files", reqToken(), packages.ListPackageFiles)
+ 			})
+ 			m.Get("/", reqToken(), packages.ListPackages)
+-		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryPackage), context.UserAssignmentAPI(), context.PackageAssignmentAPI(), reqPackageAccess(perm.AccessModeRead))
++		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryPackage), context.UserAssignmentAPI(), context.PackageAssignmentAPI(), reqPackageAccess(perm.AccessModeRead), checkTokenPublicOnly())
+ 
+ 		// Organizations
+ 		m.Get("/user/orgs", reqToken(), tokenRequiresScopes(auth_model.AccessTokenScopeCategoryUser, auth_model.AccessTokenScopeCategoryOrganization), org.ListMyOrgs)
+ 		m.Group("/users/{username}/orgs", func() {
+ 			m.Get("", reqToken(), org.ListUserOrgs)
+ 			m.Get("/{org}/permissions", reqToken(), org.GetUserOrgsPermissions)
+-		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryUser, auth_model.AccessTokenScopeCategoryOrganization), context.UserAssignmentAPI())
++		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryUser, auth_model.AccessTokenScopeCategoryOrganization), context.UserAssignmentAPI(), checkTokenPublicOnly())
+ 		m.Post("/orgs", tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization), reqToken(), bind(api.CreateOrgOption{}), org.Create)
+ 		m.Get("/orgs", org.GetAll, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization))
+ 		m.Group("/orgs/{org}", func() {
+@@ -1520,7 +1555,7 @@ func Routes() *web.Route {
+ 					m.Delete("", org.UnblockUser)
+ 				})
+ 			}, reqToken(), reqOrgOwnership())
+-		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization), orgAssignment(true))
++		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization), orgAssignment(true), checkTokenPublicOnly())
+ 		m.Group("/teams/{teamid}", func() {
+ 			m.Combo("").Get(reqToken(), org.GetTeam).
+ 				Patch(reqToken(), reqOrgOwnership(), bind(api.EditTeamOption{}), org.EditTeam).
+@@ -1540,7 +1575,7 @@ func Routes() *web.Route {
+ 					Get(reqToken(), org.GetTeamRepo)
+ 			})
+ 			m.Get("/activities/feeds", org.ListTeamActivityFeeds)
+-		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization), orgAssignment(false, true), reqToken(), reqTeamMembership())
++		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization), orgAssignment(false, true), reqToken(), reqTeamMembership(), checkTokenPublicOnly())
+ 
+ 		m.Group("/admin", func() {
+ 			m.Group("/cron", func() {
+diff --git a/routers/api/v1/org/org.go b/routers/api/v1/org/org.go
+index e848d95181094..9e5874627298d 100644
+--- a/routers/api/v1/org/org.go
++++ b/routers/api/v1/org/org.go
+@@ -191,7 +191,7 @@ func GetAll(ctx *context.APIContext) {
+ 	//     "$ref": "#/responses/OrganizationList"
+ 
+ 	vMode := []api.VisibleType{api.VisibleTypePublic}
+-	if ctx.IsSigned {
++	if ctx.IsSigned && !ctx.PublicOnly {
+ 		vMode = append(vMode, api.VisibleTypeLimited)
+ 		if ctx.Doer.IsAdmin {
+ 			vMode = append(vMode, api.VisibleTypePrivate)
+diff --git a/routers/api/v1/repo/issue.go b/routers/api/v1/repo/issue.go
+index 95ed3823063e3..e4d95e9aa035e 100644
+--- a/routers/api/v1/repo/issue.go
++++ b/routers/api/v1/repo/issue.go
+@@ -149,7 +149,7 @@ func SearchIssues(ctx *context.APIContext) {
+ 			Actor:   ctx.Doer,
+ 		}
+ 		if ctx.IsSigned {
+-			opts.Private = true
++			opts.Private = !ctx.PublicOnly
+ 			opts.AllLimited = true
+ 		}
+ 		if ctx.FormString("owner") != "" {
+diff --git a/routers/api/v1/repo/repo.go b/routers/api/v1/repo/repo.go
+index 594f2d86f6a6c..644aa043f4277 100644
+--- a/routers/api/v1/repo/repo.go
++++ b/routers/api/v1/repo/repo.go
+@@ -129,6 +129,11 @@ func Search(ctx *context.APIContext) {
+ 	//   "422":
+ 	//     "$ref": "#/responses/validationError"
+ 
++	private := ctx.IsSigned && (ctx.FormString("private") == "" || ctx.FormBool("private"))
++	if ctx.PublicOnly {
++		private = false
++	}
++
+ 	opts := &repo_model.SearchRepoOptions{
+ 		ListOptions:        utils.GetListOptions(ctx),
+ 		Actor:              ctx.Doer,
+@@ -138,7 +143,7 @@ func Search(ctx *context.APIContext) {
+ 		TeamID:             ctx.FormInt64("team_id"),
+ 		TopicOnly:          ctx.FormBool("topic"),
+ 		Collaborate:        optional.None[bool](),
+-		Private:            ctx.IsSigned && (ctx.FormString("private") == "" || ctx.FormBool("private")),
++		Private:            private,
+ 		Template:           optional.None[bool](),
+ 		StarredByID:        ctx.FormInt64("starredBy"),
+ 		IncludeDescription: ctx.FormBool("includeDesc"),
+diff --git a/routers/api/v1/user/user.go b/routers/api/v1/user/user.go
+index 09147cd2ae00b..f016ef08175f4 100644
+--- a/routers/api/v1/user/user.go
++++ b/routers/api/v1/user/user.go
+@@ -9,6 +9,7 @@ import (
+ 
+ 	activities_model "code.gitea.io/gitea/models/activities"
+ 	user_model "code.gitea.io/gitea/models/user"
++	"code.gitea.io/gitea/modules/structs"
+ 	"code.gitea.io/gitea/routers/api/v1/utils"
+ 	"code.gitea.io/gitea/services/context"
+ 	"code.gitea.io/gitea/services/convert"
+@@ -67,11 +68,16 @@ func Search(ctx *context.APIContext) {
+ 		maxResults = 1
+ 		users = []*user_model.User{user_model.NewActionsUser()}
+ 	default:
++		var visible []structs.VisibleType
++		if ctx.PublicOnly {
++			visible = []structs.VisibleType{structs.VisibleTypePublic}
++		}
+ 		users, maxResults, err = user_model.SearchUsers(ctx, &user_model.SearchUserOptions{
+ 			Actor:       ctx.Doer,
+ 			Keyword:     ctx.FormTrim("q"),
+ 			UID:         uid,
+ 			Type:        user_model.UserTypeIndividual,
++			Visible:     visible,
+ 			ListOptions: listOptions,
+ 		})
+ 		if err != nil {
+diff --git a/services/context/api.go b/services/context/api.go
+index c684add297d13..8556458ed0c38 100644
+--- a/services/context/api.go
++++ b/services/context/api.go
+@@ -35,9 +35,10 @@ type APIContext struct {
+ 
+ 	ContextUser *user_model.User // the user which is being visited, in most cases it differs from Doer
+ 
+-	Repo    *Repository
+-	Org     *APIOrganization
+-	Package *Package
++	Repo       *Repository
++	Org        *APIOrganization
++	Package    *Package
++	PublicOnly bool // Whether the request is for a public endpoint
+ }
+ 
+ func init() {
+diff --git a/tests/integration/api_issue_test.go b/tests/integration/api_issue_test.go
+index 8bfb6fabe2a49..5b9f16ef96dc7 100644
+--- a/tests/integration/api_issue_test.go
++++ b/tests/integration/api_issue_test.go
+@@ -75,6 +75,34 @@ func TestAPIListIssues(t *testing.T) {
+ 	}
+ }
+ 
++func TestAPIListIssuesPublicOnly(t *testing.T) {
++	defer tests.PrepareTestEnv(t)()
++
++	repo1 := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
++	owner1 := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: repo1.OwnerID})
++
++	session := loginUser(t, owner1.Name)
++	token := getTokenForLoggedInUser(t, session, auth_model.AccessTokenScopeReadIssue)
++	link, _ := url.Parse(fmt.Sprintf("/api/v1/repos/%s/%s/issues", owner1.Name, repo1.Name))
++	link.RawQuery = url.Values{"state": {"all"}}.Encode()
++	req := NewRequest(t, "GET", link.String()).AddTokenAuth(token)
++	MakeRequest(t, req, http.StatusOK)
++
++	repo2 := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 2})
++	owner2 := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: repo2.OwnerID})
++
++	session = loginUser(t, owner2.Name)
++	token = getTokenForLoggedInUser(t, session, auth_model.AccessTokenScopeReadIssue)
++	link, _ = url.Parse(fmt.Sprintf("/api/v1/repos/%s/%s/issues", owner2.Name, repo2.Name))
++	link.RawQuery = url.Values{"state": {"all"}}.Encode()
++	req = NewRequest(t, "GET", link.String()).AddTokenAuth(token)
++	MakeRequest(t, req, http.StatusOK)
++
++	publicOnlyToken := getTokenForLoggedInUser(t, session, auth_model.AccessTokenScopeReadIssue, auth_model.AccessTokenScopePublicOnly)
++	req = NewRequest(t, "GET", link.String()).AddTokenAuth(publicOnlyToken)
++	MakeRequest(t, req, http.StatusForbidden)
++}
++
+ func TestAPICreateIssue(t *testing.T) {
+ 	defer tests.PrepareTestEnv(t)()
+ 	const body, title = "apiTestBody", "apiTestTitle"
+@@ -243,6 +271,12 @@ func TestAPISearchIssues(t *testing.T) {
+ 	DecodeJSON(t, resp, &apiIssues)
+ 	assert.Len(t, apiIssues, expectedIssueCount)
+ 
++	publicOnlyToken := getUserToken(t, "user1", auth_model.AccessTokenScopeReadIssue, auth_model.AccessTokenScopePublicOnly)
++	req = NewRequest(t, "GET", link.String()).AddTokenAuth(publicOnlyToken)
++	resp = MakeRequest(t, req, http.StatusOK)
++	DecodeJSON(t, resp, &apiIssues)
++	assert.Len(t, apiIssues, 15) // 15 public issues
++
+ 	since := "2000-01-01T00:50:01+00:00" // 946687801
+ 	before := time.Unix(999307200, 0).Format(time.RFC3339)
+ 	query.Add("since", since)
+diff --git a/tests/integration/api_repo_branch_test.go b/tests/integration/api_repo_branch_test.go
+index b0ac2286c9426..63080b308cfec 100644
+--- a/tests/integration/api_repo_branch_test.go
++++ b/tests/integration/api_repo_branch_test.go
+@@ -28,9 +28,13 @@ func TestAPIRepoBranchesPlain(t *testing.T) {
+ 		repo3 := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 3})
+ 		user1 := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+ 		session := loginUser(t, user1.LowerName)
+-		token := getTokenForLoggedInUser(t, session, auth_model.AccessTokenScopeWriteRepository)
+ 
++		// public only token should be forbidden
++		publicOnlyToken := getTokenForLoggedInUser(t, session, auth_model.AccessTokenScopePublicOnly, auth_model.AccessTokenScopeWriteRepository)
+ 		link, _ := url.Parse(fmt.Sprintf("/api/v1/repos/org3/%s/branches", repo3.Name)) // a plain repo
++		MakeRequest(t, NewRequest(t, "GET", link.String()).AddTokenAuth(publicOnlyToken), http.StatusForbidden)
++
++		token := getTokenForLoggedInUser(t, session, auth_model.AccessTokenScopeWriteRepository)
+ 		resp := MakeRequest(t, NewRequest(t, "GET", link.String()).AddTokenAuth(token), http.StatusOK)
+ 		bs, err := io.ReadAll(resp.Body)
+ 		assert.NoError(t, err)
+@@ -42,6 +46,8 @@ func TestAPIRepoBranchesPlain(t *testing.T) {
+ 		assert.EqualValues(t, "master", branches[1].Name)
+ 
+ 		link2, _ := url.Parse(fmt.Sprintf("/api/v1/repos/org3/%s/branches/test_branch", repo3.Name))
++		MakeRequest(t, NewRequest(t, "GET", link2.String()).AddTokenAuth(publicOnlyToken), http.StatusForbidden)
++
+ 		resp = MakeRequest(t, NewRequest(t, "GET", link2.String()).AddTokenAuth(token), http.StatusOK)
+ 		bs, err = io.ReadAll(resp.Body)
+ 		assert.NoError(t, err)
+@@ -49,6 +55,8 @@ func TestAPIRepoBranchesPlain(t *testing.T) {
+ 		assert.NoError(t, json.Unmarshal(bs, &branch))
+ 		assert.EqualValues(t, "test_branch", branch.Name)
+ 
++		MakeRequest(t, NewRequest(t, "POST", link.String()).AddTokenAuth(publicOnlyToken), http.StatusForbidden)
++
+ 		req := NewRequest(t, "POST", link.String()).AddTokenAuth(token)
+ 		req.Header.Add("Content-Type", "application/json")
+ 		req.Body = io.NopCloser(bytes.NewBufferString(`{"new_branch_name":"test_branch2", "old_branch_name": "test_branch", "old_ref_name":"refs/heads/test_branch"}`))
+@@ -73,6 +81,7 @@ func TestAPIRepoBranchesPlain(t *testing.T) {
+ 
+ 		link3, _ := url.Parse(fmt.Sprintf("/api/v1/repos/org3/%s/branches/test_branch2", repo3.Name))
+ 		MakeRequest(t, NewRequest(t, "DELETE", link3.String()), http.StatusNotFound)
++		MakeRequest(t, NewRequest(t, "DELETE", link3.String()).AddTokenAuth(publicOnlyToken), http.StatusForbidden)
+ 
+ 		MakeRequest(t, NewRequest(t, "DELETE", link3.String()).AddTokenAuth(token), http.StatusNoContent)
+ 		assert.NoError(t, err)
+diff --git a/tests/integration/api_user_search_test.go b/tests/integration/api_user_search_test.go
+index f776b35325768..aab35198b3335 100644
+--- a/tests/integration/api_user_search_test.go
++++ b/tests/integration/api_user_search_test.go
+@@ -38,6 +38,19 @@ func TestAPIUserSearchLoggedIn(t *testing.T) {
+ 		assert.Contains(t, user.UserName, query)
+ 		assert.NotEmpty(t, user.Email)
+ 	}
++
++	publicToken := getTokenForLoggedInUser(t, session, auth_model.AccessTokenScopeReadUser, auth_model.AccessTokenScopePublicOnly)
++	req = NewRequestf(t, "GET", "/api/v1/users/search?q=%s", query).
++		AddTokenAuth(publicToken)
++	resp = MakeRequest(t, req, http.StatusOK)
++	results = SearchResults{}
++	DecodeJSON(t, resp, &results)
++	assert.NotEmpty(t, results.Data)
++	for _, user := range results.Data {
++		assert.Contains(t, user.UserName, query)
++		assert.NotEmpty(t, user.Email)
++		assert.True(t, user.Visibility == "public")
++	}
+ }
+ 
+ func TestAPIUserSearchNotLoggedIn(t *testing.T) {

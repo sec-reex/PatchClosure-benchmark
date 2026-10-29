@@ -1,0 +1,8 @@
+{
+  "name": "pcb-simple-git-6951-v0",
+  "private": true,
+  "description": "V0 = REAL published simple-git@3.14.1 -- PRE CVE-2022-25912. No block-unsafe-operations config guard exists yet, so an injected `-c protocol.ext.allow=always` + an `ext::` clone source reaches git's ext transport and runs the (benign canary) command.",
+  "dependencies": {
+    "simple-git": "3.14.1"
+  }
+}

@@ -1,0 +1,59 @@
+# PatchClosure-Bench recipe for deser_keras_safe_mode
+# (CVE-2025-1550 [Keras v3 model/config load: attacker config.json Lambda `function` node resolved
+#  via serialization_lib._retrieve_class_or_fn -> Lambda gadget invokes an in-scope Python callable
+#  even with safe_mode=True] -> CVE-2025-8747 [the 3.9.0 package-allowlist fix is INCOMPLETE: an
+#  IN-ALLOWLIST keras function (keras.utils.get_file) is still reachable + invokable -> "bypass the
+#  mitigation introduced in response to CVE-2025-1550"; 3.11.0 closes it], CWE-502).
+#
+# REAL app, EXTERNAL HTTP trigger: each service runs a REAL Flask/gunicorn HTTP service (app.py)
+# that pip-installs the EXACT published keras at a pinned version and exposes
+#   POST /load (application/json) -> keras.saving.load_model(safe_mode=True) of the attacker config.
+# The oracle drives the differential over REAL external HTTP (requests to the mapped host port);
+# no in-process import, no `docker compose exec`. Mirrors an ML service loading a user model.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = keras 3.9.0. CVE-2025-1550 FIXED: _retrieve_class_or_fn gates
+#        module import on `package in {keras,keras_hub,keras_cv,keras_nlp}` -> the OUT-OF-TREE original
+#        (module=pcb_leak) is BLOCKED. But INCOMPLETELY: an IN-ALLOWLIST function keras.utils.get_file
+#        still resolves + is invoked by the Lambda gadget -> the CVE-2025-8747 residual stays open.
+#   v0 (gate)     = keras 3.8.0. Pre-CVE-2025-1550: NO allowlist -> importlib.import_module on ANY
+#        attacker module -> the out-of-tree pcb_leak.leak gadget resolves + runs -> flag copied.
+#   v2 (negative) = keras 3.11.0. CVE-2025-8747 FIXED: a LOADING_APIS denylist raises on
+#        keras.utils.get_file, and the package-import branch requires a KerasSaveable subclass ->
+#        the get_file residual is blocked at load; the out-of-tree original stays blocked.
+#
+# Canary = rce-oob (read/exfil): ${PCB_FLAG} (random per-run token) is written to /canary/flag.txt
+# OUTSIDE the model dir at container start; the invoked callable copies it into /out (benign local
+# file:// copy, no network, no payload). SUCCESS = token echoed in the POST /load HTTP response.
+services:
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {KERAS_VER: "3.9.0"}}
+    image: "pcb/keras-deser-http:3.9.0"
+    ports: ["${PORT_V1_0:-18851}:8000"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    entrypoint: ["sh","-c","mkdir -p /canary /out && printf '%s\\n' \"$PCB_FLAG\" > /canary/flag.txt && chmod 644 /canary/flag.txt && exec gunicorn -w 1 -t 180 -b 0.0.0.0:8000 app:app"]
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {KERAS_VER: "3.8.0"}}
+    image: "pcb/keras-deser-http:3.8.0"
+    ports: ["${PORT_V0_0:-18850}:8000"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    entrypoint: ["sh","-c","mkdir -p /canary /out && printf '%s\\n' \"$PCB_FLAG\" > /canary/flag.txt && chmod 644 /canary/flag.txt && exec gunicorn -w 1 -t 180 -b 0.0.0.0:8000 app:app"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {KERAS_VER: "3.11.0"}}
+    image: "pcb/keras-deser-http:3.11.0"
+    ports: ["${PORT_V2_0:-18852}:8000"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    entrypoint: ["sh","-c","mkdir -p /canary /out && printf '%s\\n' \"$PCB_FLAG\" > /canary/flag.txt && chmod 644 /canary/flag.txt && exec gunicorn -w 1 -t 180 -b 0.0.0.0:8000 app:app"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.99.0/24

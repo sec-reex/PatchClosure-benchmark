@@ -1,0 +1,43 @@
+# PHPMailer 5.2.17 / 5.2.18 / 5.2.20 from Packagist as a whole package.
+# Thin HTTP consumer (harness.php) require()s vendor/autoload.php.
+# sendmail_shim.sh is a benign MTA stand-in (effect channel), not PHPMailer source.
+
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args:
+        PM_VER: "5.2.17"
+    image: "pcb-phpmailer:5.2.17"
+    environment:
+      HARNESS_VER: "v0"
+      PM_VER: "5.2.17"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-39710}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args:
+        PM_VER: "5.2.18"
+    image: "pcb-phpmailer:5.2.18"
+    environment:
+      HARNESS_VER: "v1"
+      PM_VER: "5.2.18"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-39711}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        PM_VER: "5.2.20"
+    image: "pcb-phpmailer:5.2.20"
+    environment:
+      HARNESS_VER: "v2"
+      PM_VER: "5.2.20"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-39712}:8080"]

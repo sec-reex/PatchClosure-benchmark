@@ -1,0 +1,294 @@
+# CVE-2026-46678
+# upstream: https://github.com/pydantic/pydantic-ai
+# fix: e64d2bf82839a02d4fad98736ff9a87fdb5bf1ca (v1.99.0 / #5528 / GHSA-cqp8-fcvh-x7r3)
+diff --git a/pydantic_ai_slim/pydantic_ai/_ssrf.py b/pydantic_ai_slim/pydantic_ai/_ssrf.py
+index ad5df63e9a..63ad83ad03 100644
+--- a/pydantic_ai_slim/pydantic_ai/_ssrf.py
++++ b/pydantic_ai_slim/pydantic_ai/_ssrf.py
+@@ -29,13 +29,31 @@
+     ipaddress.IPv4Network('169.254.0.0/16'),  # Link-local (includes cloud metadata)
+     ipaddress.IPv4Network('0.0.0.0/8'),  # "This" network
+     ipaddress.IPv4Network('100.64.0.0/10'),  # CGNAT (RFC 6598), includes Alibaba Cloud metadata
+-    # IPv6 private ranges
++    # IPv4 IANA-reserved / special-purpose ranges (not globally routable)
++    ipaddress.IPv4Network('192.0.0.0/24'),  # IETF Protocol Assignments (RFC 6890)
++    ipaddress.IPv4Network('192.0.2.0/24'),  # TEST-NET-1 (RFC 5737)
++    ipaddress.IPv4Network('198.18.0.0/15'),  # Network benchmarking (RFC 2544)
++    ipaddress.IPv4Network('198.51.100.0/24'),  # TEST-NET-2 (RFC 5737)
++    ipaddress.IPv4Network('203.0.113.0/24'),  # TEST-NET-3 (RFC 5737)
++    ipaddress.IPv4Network('224.0.0.0/4'),  # Multicast (RFC 5771)
++    ipaddress.IPv4Network('240.0.0.0/4'),  # Reserved + limited broadcast 255.255.255.255 (RFC 1112)
++    # IPv6 private ranges (6to4 — 2002::/16 — is handled via normalization in _normalize_ip)
+     ipaddress.IPv6Network('::1/128'),  # Loopback
+     ipaddress.IPv6Network('fe80::/10'),  # Link-local
+     ipaddress.IPv6Network('fc00::/7'),  # Unique local address
+-    ipaddress.IPv6Network('2002::/16'),  # 6to4 (can embed private IPv4 addresses)
++    # IPv6 IANA-reserved / special-purpose ranges
++    ipaddress.IPv6Network('::/128'),  # Unspecified address
++    ipaddress.IPv6Network('100::/64'),  # Discard prefix (RFC 6666)
++    ipaddress.IPv6Network('2001::/32'),  # Teredo tunneling (RFC 4380)
++    ipaddress.IPv6Network('2001:db8::/32'),  # Documentation (RFC 3849)
++    ipaddress.IPv6Network('ff00::/8'),  # Multicast (RFC 4291)
+ )
+ 
++# NAT64 well-known prefix (RFC 6052): 64:ff9b::/96 embeds an IPv4 address in
++# its low 32 bits and, in NAT64-configured networks, transparently translates
++# to that IPv4 endpoint. We normalize these so the embedded IPv4 is checked.
++_NAT64_WELL_KNOWN_PREFIX = ipaddress.IPv6Network('64:ff9b::/96')
++
+ # Cloud metadata IPs - always blocked, even with allow_local=True
+ # These need to be checked explicitly because when allow_local=True,
+ # we skip the private IP check but still need to block metadata endpoints.
+@@ -72,12 +90,41 @@ class ResolvedUrl:
+     """The path including query string and fragment."""
+ 
+ 
++def _normalize_ip(ip_str: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
++    """Parse `ip_str`, unwrapping IPv6 transition addresses to their embedded IPv4 form.
++
++    Dual-stack and translated networks route the IPv6 forms below to the underlying
++    IPv4 endpoint, so the IPv6 wrapper must not be allowed to disguise an
++    otherwise-blocked IPv4 address. Handles:
++
++    - IPv4-mapped IPv6 (e.g., `::ffff:1.2.3.4`) — RFC 4291 §2.5.5.2
++    - 6to4 (e.g., `2002:0102:0304::`) — RFC 3056
++    - NAT64 well-known prefix (e.g., `64:ff9b::1.2.3.4`) — RFC 6052
++
++    Raises:
++        ValueError: If `ip_str` is not a valid IP address.
++    """
++    ip = ipaddress.ip_address(ip_str)
++    if isinstance(ip, ipaddress.IPv6Address):
++        if ip.ipv4_mapped:
++            return ip.ipv4_mapped
++        if ip.sixtofour:
++            return ip.sixtofour
++        if ip in _NAT64_WELL_KNOWN_PREFIX:
++            return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
++    return ip
++
++
+ def is_cloud_metadata_ip(ip_str: str) -> bool:
+     """Check if an IP address is a cloud metadata endpoint.
+ 
+     These are always blocked for security reasons, even with allow_local=True.
+     """
+-    return ip_str in _CLOUD_METADATA_IPS
++    try:
++        ip = _normalize_ip(ip_str)
++    except ValueError:
++        return False
++    return str(ip) in _CLOUD_METADATA_IPS
+ 
+ 
+ def is_private_ip(ip_str: str) -> bool:
+@@ -86,16 +133,11 @@ def is_private_ip(ip_str: str) -> bool:
+     Handles both IPv4 and IPv6 addresses, including IPv4-mapped IPv6 addresses.
+     """
+     try:
+-        ip = ipaddress.ip_address(ip_str)
+-
+-        # Handle IPv4-mapped IPv6 addresses (e.g., ::ffff:192.168.1.1)
+-        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+-            ip = ip.ipv4_mapped
+-
+-        return any(ip in network for network in _PRIVATE_NETWORKS)
++        ip = _normalize_ip(ip_str)
+     except ValueError:
+         # Invalid IP address, treat as potentially dangerous
+         return True
++    return any(ip in network for network in _PRIVATE_NETWORKS)
+ 
+ 
+ async def resolve_hostname(hostname: str) -> list[str]:
+diff --git a/tests/test_ssrf.py b/tests/test_ssrf.py
+index cc4ac8f3ea..8239f1cbdc 100644
+--- a/tests/test_ssrf.py
++++ b/tests/test_ssrf.py
+@@ -82,6 +82,18 @@ class TestIsPrivateIp:
+             '100.64.0.1',
+             '100.127.255.255',
+             '100.100.100.200',  # Alibaba Cloud metadata
++            # IPv4 IANA-reserved / special-purpose ranges
++            '192.0.0.1',  # IETF Protocol Assignments (RFC 6890)
++            '192.0.0.170',  # NAT64 well-known address
++            '192.0.2.1',  # TEST-NET-1
++            '198.18.0.1',  # Network benchmarking (RFC 2544)
++            '198.19.255.255',
++            '198.51.100.1',  # TEST-NET-2
++            '203.0.113.1',  # TEST-NET-3
++            '224.0.0.1',  # Multicast (RFC 5771)
++            '239.255.255.255',
++            '240.0.0.1',  # Reserved for future use
++            '255.255.255.255',  # Limited broadcast
+             # IPv6 loopback
+             '::1',
+             # IPv6 link-local
+@@ -94,6 +106,15 @@ class TestIsPrivateIp:
+             '2002::1',
+             '2002:c0a8:0101::1',  # Embeds 192.168.1.1
+             '2002:0a00:0001::1',  # Embeds 10.0.0.1
++            # IPv6 IANA-reserved / special-purpose ranges
++            '::',  # Unspecified
++            '100::1',  # Discard prefix (RFC 6666)
++            '2001::1',  # Teredo tunneling (RFC 4380)
++            '2001:db8::1',  # Documentation (RFC 3849)
++            'ff02::1',  # Multicast (RFC 4291)
++            # NAT64 well-known prefix (RFC 6052) wrapping a private IPv4
++            '64:ff9b::192.168.1.1',
++            '64:ff9b::a9fe:a9fe',  # Wraps 169.254.169.254
+         ],
+     )
+     def test_private_ips_detected(self, ip: str) -> None:
+@@ -105,8 +126,8 @@ def test_private_ips_detected(self, ip: str) -> None:
+             # Public IPv4
+             '8.8.8.8',
+             '1.1.1.1',
+-            '203.0.113.50',
+-            '198.51.100.1',
++            '93.184.215.14',  # example.com
++            '140.82.114.4',  # github.com
+             # Public IPv6
+             '2001:4860:4860::8888',
+             '2606:4700:4700::1111',
+@@ -173,6 +194,58 @@ def test_cloud_metadata_ips_detected(self, ip: str) -> None:
+     def test_non_metadata_ips(self, ip: str) -> None:
+         assert is_cloud_metadata_ip(ip) is False
+ 
++    @pytest.mark.parametrize(
++        'ip',
++        [
++            '::ffff:169.254.169.254',  # IPv4-mapped form of AWS/GCP/Azure metadata
++            '::ffff:a9fe:a9fe',  # Same IP, hex-encoded last 32 bits
++            '::ffff:100.100.100.200',  # IPv4-mapped form of Alibaba metadata
++        ],
++    )
++    def test_ipv4_mapped_ipv6_metadata_detected(self, ip: str) -> None:
++        """IPv4-mapped IPv6 forms of metadata IPs must be blocked.
++
++        Dual-stack hosts route `::ffff:a.b.c.d` to the underlying IPv4 address,
++        so allowing these would bypass the cloud-metadata blocklist when callers
++        opt into `allow_local=True`. Regression test for the incomplete fix of
++        GHSA-2jrp-274c-jhv3.
++        """
++        assert is_cloud_metadata_ip(ip) is True
++
++    @pytest.mark.parametrize(
++        'ip',
++        [
++            '64:ff9b::169.254.169.254',  # NAT64 wrap of AWS/GCP/Azure metadata
++            '64:ff9b::a9fe:a9fe',  # Same, hex form of low 32 bits
++            '64:ff9b::100.100.100.200',  # NAT64 wrap of Alibaba metadata
++        ],
++    )
++    def test_nat64_metadata_detected(self, ip: str) -> None:
++        """NAT64-wrapped (RFC 6052) metadata IPs must be blocked.
++
++        In NAT64-configured networks, `64:ff9b::a.b.c.d` translates transparently
++        to the IPv4 endpoint, so the wrapper must not disguise a metadata IP.
++        """
++        assert is_cloud_metadata_ip(ip) is True
++
++    @pytest.mark.parametrize(
++        'ip',
++        [
++            '2002:a9fe:a9fe::',  # 6to4 embedding 169.254.169.254 (AWS/GCP/Azure)
++            '2002:6464:64c8::',  # 6to4 embedding 100.100.100.200 (Alibaba)
++        ],
++    )
++    def test_6to4_metadata_detected(self, ip: str) -> None:
++        """6to4-encoded (RFC 3056) metadata IPs must be blocked.
++
++        On hosts with 6to4 routing, `2002:WWXX:YYZZ::` translates to the embedded
++        IPv4 `W.X.Y.Z`, so the wrapper must not disguise a metadata IP.
++        """
++        assert is_cloud_metadata_ip(ip) is True
++
++    def test_invalid_ip_not_metadata(self) -> None:
++        assert is_cloud_metadata_ip('not-an-ip') is False
++
+ 
+ class TestValidateUrlProtocol:
+     """Tests for validate_url_protocol function."""
+@@ -378,6 +451,45 @@ async def test_alibaba_cloud_metadata_always_blocked(self, mock_dns: AsyncMock)
+         with pytest.raises(ValueError, match='Access to cloud metadata service'):
+             await validate_and_resolve_url('http://metadata.aliyun.internal/path', allow_local=True)
+ 
++    @pytest.mark.parametrize(
++        'url',
++        [
++            'http://[::ffff:169.254.169.254]/latest/meta-data/',  # IPv4-mapped IPv6 literal
++            'http://[::ffff:a9fe:a9fe]/latest/meta-data/',  # Same address, hex form
++            'http://[::ffff:100.100.100.200]/latest/meta-data/',  # Alibaba via IPv4-mapped IPv6
++            'http://[64:ff9b::169.254.169.254]/latest/meta-data/',  # NAT64 wrap of metadata IP
++            'http://[64:ff9b::a9fe:a9fe]/latest/meta-data/',  # Same, hex form
++            'http://[2002:a9fe:a9fe::]/latest/meta-data/',  # 6to4 wrap of metadata IP
++        ],
++    )
++    async def test_transition_address_metadata_url_blocked_with_allow_local(self, url: str) -> None:
++        """IPv6-encoded transition forms of metadata URLs must be blocked even with `allow_local=True`.
++
++        Regression test for the incomplete fix of GHSA-2jrp-274c-jhv3: previously the
++        cloud-metadata check did a string-only comparison, so IPv6 wrappers (IPv4-mapped
++        IPv6, NAT64 well-known prefix) bypassed it while dual-stack / NAT64 routing
++        still delivered the request to the underlying IPv4 metadata endpoint.
++        """
++        with pytest.raises(ValueError, match='Access to cloud metadata service'):
++            await validate_and_resolve_url(url, allow_local=True)
++
++    async def test_ipv4_mapped_ipv6_metadata_dns_blocked_with_allow_local(self, mock_dns: AsyncMock) -> None:
++        """A hostname that resolves to the IPv4-mapped IPv6 form of a metadata IP is still blocked."""
++        mock_dns.return_value = [(10, 1, 6, '', ('::ffff:169.254.169.254', 0, 0, 0))]
++        with pytest.raises(ValueError, match='Access to cloud metadata service'):
++            await validate_and_resolve_url('http://attacker.example.com/path', allow_local=True)
++
++    async def test_iana_reserved_ipv4_blocked(self, mock_dns: AsyncMock) -> None:
++        """IANA-reserved IPv4 ranges (TEST-NETs, benchmarking, etc.) are blocked by default."""
++        mock_dns.return_value = [(2, 1, 6, '', ('198.18.0.1', 0))]
++        with pytest.raises(ValueError, match='Access to private/internal IP address'):
++            await validate_and_resolve_url('http://benchmark.example.com/path', allow_local=False)
++
++    async def test_nat64_private_ipv4_blocked(self) -> None:
++        """NAT64-wrapped private IPv4 addresses are blocked by default."""
++        with pytest.raises(ValueError, match='Access to private/internal IP address'):
++            await validate_and_resolve_url('http://[64:ff9b::192.168.1.1]/path', allow_local=False)
++
+     async def test_literal_ip_address_in_url(self) -> None:
+         resolved = await validate_and_resolve_url('http://8.8.8.8/path', allow_local=False)
+         assert resolved.resolved_ip == '8.8.8.8'
+@@ -442,7 +554,7 @@ async def test_redirect_followed(self, mock_dns: AsyncMock, mock_ssrf_client: Ma
+ 
+         mock_dns.side_effect = [
+             [(2, 1, 6, '', ('93.184.215.14', 0))],
+-            [(2, 1, 6, '', ('203.0.113.50', 0))],
++            [(2, 1, 6, '', ('140.82.114.4', 0))],
+         ]
+ 
+         mock_client = AsyncMock()
+@@ -532,7 +644,7 @@ async def test_protocol_relative_redirect(self, mock_dns: AsyncMock, mock_ssrf_c
+ 
+         mock_dns.side_effect = [
+             [(2, 1, 6, '', ('93.184.215.14', 0))],
+-            [(2, 1, 6, '', ('203.0.113.50', 0))],
++            [(2, 1, 6, '', ('140.82.114.4', 0))],
+         ]
+ 
+         mock_client = AsyncMock()
+@@ -691,7 +803,7 @@ async def test_redirect_to_blocked_domain_rejected(self, mock_dns: AsyncMock, mo
+         """Test that redirects to blocked domains are caught."""
+         mock_dns.side_effect = [
+             [(2, 1, 6, '', ('93.184.215.14', 0))],
+-            [(2, 1, 6, '', ('198.51.100.1', 0))],
++            [(2, 1, 6, '', ('140.82.114.4', 0))],
+         ]
+         redirect_response = AsyncMock()
+         redirect_response.is_redirect = True
+@@ -709,7 +821,7 @@ async def test_redirect_to_non_allowed_domain_rejected(
+         """Test that redirects to non-allowed domains are caught."""
+         mock_dns.side_effect = [
+             [(2, 1, 6, '', ('93.184.215.14', 0))],
+-            [(2, 1, 6, '', ('198.51.100.1', 0))],
++            [(2, 1, 6, '', ('140.82.114.4', 0))],
+         ]
+         redirect_response = AsyncMock()
+         redirect_response.is_redirect = True

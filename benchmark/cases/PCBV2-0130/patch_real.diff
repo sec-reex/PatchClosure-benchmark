@@ -1,0 +1,367 @@
+From f2eb8ebd24da05230d66c854c953c83b1ba0212a Mon Sep 17 00:00:00 2001
+From: Daniel Beck <daniel-beck@users.noreply.github.com>
+Date: Thu, 20 Feb 2025 11:39:59 +0000
+Subject: [PATCH] [SECURITY-3495][SECURITY-3496]
+
+---
+ .../main/java/hudson/cli/GetNodeCommand.java  |  14 +-
+ .../main/java/hudson/cli/GetViewCommand.java  |  15 +-
+ core/src/main/java/hudson/model/Computer.java |  14 +-
+ core/src/main/java/hudson/model/View.java     |  13 +-
+ test/src/test/java/lib/form/PasswordTest.java | 152 ++++++++++++++++++
+ 5 files changed, 204 insertions(+), 4 deletions(-)
+
+diff --git a/core/src/main/java/hudson/cli/GetNodeCommand.java b/core/src/main/java/hudson/cli/GetNodeCommand.java
+index 62dd21826029..6b62729d2f3d 100644
+--- a/core/src/main/java/hudson/cli/GetNodeCommand.java
++++ b/core/src/main/java/hudson/cli/GetNodeCommand.java
+@@ -27,8 +27,11 @@
+ import hudson.Extension;
+ import hudson.model.Computer;
+ import hudson.model.Node;
++import java.io.ByteArrayOutputStream;
+ import java.io.IOException;
++import java.nio.charset.StandardCharsets;
+ import jenkins.model.Jenkins;
++import jenkins.security.ExtendedReadRedaction;
+ import org.kohsuke.args4j.Argument;
+ 
+ /**
+@@ -52,7 +55,16 @@ protected int run() throws IOException {
+ 
+         node.checkPermission(Computer.EXTENDED_READ);
+ 
+-        Jenkins.XSTREAM2.toXMLUTF8(node, stdout);
++        if (node.hasPermission(Computer.CONFIGURE)) {
++            Jenkins.XSTREAM2.toXMLUTF8(node, stdout);
++        } else {
++            var baos = new ByteArrayOutputStream();
++            Jenkins.XSTREAM2.toXMLUTF8(node, baos);
++            String xml = baos.toString(StandardCharsets.UTF_8);
++
++            xml = ExtendedReadRedaction.applyAll(xml);
++            org.apache.commons.io.IOUtils.write(xml, stdout, StandardCharsets.UTF_8);
++        }
+ 
+         return 0;
+     }
+diff --git a/core/src/main/java/hudson/cli/GetViewCommand.java b/core/src/main/java/hudson/cli/GetViewCommand.java
+index e94bb7947a81..020b55f71962 100644
+--- a/core/src/main/java/hudson/cli/GetViewCommand.java
++++ b/core/src/main/java/hudson/cli/GetViewCommand.java
+@@ -26,6 +26,9 @@
+ 
+ import hudson.Extension;
+ import hudson.model.View;
++import java.io.ByteArrayOutputStream;
++import java.nio.charset.StandardCharsets;
++import jenkins.security.ExtendedReadRedaction;
+ import org.kohsuke.args4j.Argument;
+ 
+ /**
+@@ -48,7 +51,17 @@ public String getShortDescription() {
+     protected int run() throws Exception {
+ 
+         view.checkPermission(View.READ);
+-        view.writeXml(stdout);
++
++        if (view.hasPermission(View.CONFIGURE)) {
++            view.writeXml(stdout);
++        } else {
++            var baos = new ByteArrayOutputStream();
++            view.writeXml(baos);
++            String xml = baos.toString(StandardCharsets.UTF_8);
++
++            xml = ExtendedReadRedaction.applyAll(xml);
++            org.apache.commons.io.IOUtils.write(xml, stdout, StandardCharsets.UTF_8);
++        }
+ 
+         return 0;
+     }
+diff --git a/core/src/main/java/hudson/model/Computer.java b/core/src/main/java/hudson/model/Computer.java
+index 0c525dfabe84..6539fa33ca5a 100644
+--- a/core/src/main/java/hudson/model/Computer.java
++++ b/core/src/main/java/hudson/model/Computer.java
+@@ -74,6 +74,7 @@
+ import hudson.util.RemotingDiagnostics.HeapDump;
+ import hudson.util.RunList;
+ import jakarta.servlet.ServletException;
++import java.io.ByteArrayOutputStream;
+ import java.io.File;
+ import java.io.IOException;
+ import java.io.InputStream;
+@@ -83,6 +84,7 @@
+ import java.net.InetAddress;
+ import java.net.NetworkInterface;
+ import java.nio.charset.Charset;
++import java.nio.charset.StandardCharsets;
+ import java.nio.file.Files;
+ import java.nio.file.InvalidPathException;
+ import java.nio.file.StandardCopyOption;
+@@ -110,6 +112,7 @@
+ import jenkins.model.IComputer;
+ import jenkins.model.IDisplayExecutor;
+ import jenkins.model.Jenkins;
++import jenkins.security.ExtendedReadRedaction;
+ import jenkins.security.ImpersonatingExecutorService;
+ import jenkins.security.MasterToSlaveCallable;
+ import jenkins.security.stapler.StaplerDispatchable;
+@@ -1526,7 +1529,16 @@ public void doConfigDotXml(StaplerRequest2 req, StaplerResponse2 rsp)
+             if (node == null) {
+                 throw HttpResponses.notFound();
+             }
+-            Jenkins.XSTREAM2.toXMLUTF8(node, rsp.getOutputStream());
++            if (hasPermission(CONFIGURE)) {
++                Jenkins.XSTREAM2.toXMLUTF8(node, rsp.getOutputStream());
++            } else {
++                var baos = new ByteArrayOutputStream();
++                Jenkins.XSTREAM2.toXMLUTF8(node, baos);
++                String xml = baos.toString(StandardCharsets.UTF_8);
++
++                xml = ExtendedReadRedaction.applyAll(xml);
++                org.apache.commons.io.IOUtils.write(xml, rsp.getOutputStream(), StandardCharsets.UTF_8);
++            }
+             return;
+         }
+         if (req.getMethod().equals("POST")) {
+diff --git a/core/src/main/java/hudson/model/View.java b/core/src/main/java/hudson/model/View.java
+index 722254572c0c..56aa42744b7b 100644
+--- a/core/src/main/java/hudson/model/View.java
++++ b/core/src/main/java/hudson/model/View.java
+@@ -62,6 +62,7 @@
+ import jakarta.servlet.http.HttpServletResponse;
+ import java.io.BufferedInputStream;
+ import java.io.ByteArrayInputStream;
++import java.io.ByteArrayOutputStream;
+ import java.io.IOException;
+ import java.io.InputStream;
+ import java.io.OutputStream;
+@@ -94,6 +95,7 @@
+ import jenkins.model.item_category.Categories;
+ import jenkins.model.item_category.Category;
+ import jenkins.model.item_category.ItemCategory;
++import jenkins.security.ExtendedReadRedaction;
+ import jenkins.security.stapler.StaplerNotDispatchable;
+ import jenkins.util.xml.XMLUtils;
+ import jenkins.widgets.HasWidgets;
+@@ -983,7 +985,16 @@ private HttpResponse doConfigDotXmlImpl(StaplerRequest2 req) throws IOException
+                 @Override
+                 public void generateResponse(StaplerRequest2 req, StaplerResponse2 rsp, Object node) throws IOException, ServletException {
+                     rsp.setContentType("application/xml");
+-                    View.this.writeXml(rsp.getOutputStream());
++                    if (hasPermission(CONFIGURE)) {
++                        View.this.writeXml(rsp.getOutputStream());
++                    } else {
++                        var baos = new ByteArrayOutputStream();
++                        View.this.writeXml(baos);
++                        String xml = baos.toString(StandardCharsets.UTF_8);
++
++                        xml = ExtendedReadRedaction.applyAll(xml);
++                        org.apache.commons.io.IOUtils.write(xml, rsp.getOutputStream(), StandardCharsets.UTF_8);
++                    }
+                 }
+             };
+         }
+diff --git a/test/src/test/java/lib/form/PasswordTest.java b/test/src/test/java/lib/form/PasswordTest.java
+index 526ef1586ae9..c3d6f7f17c9a 100644
+--- a/test/src/test/java/lib/form/PasswordTest.java
++++ b/test/src/test/java/lib/form/PasswordTest.java
+@@ -24,6 +24,7 @@
+ 
+ package lib.form;
+ 
++import static java.nio.file.Files.readString;
+ import static org.hamcrest.MatcherAssert.assertThat;
+ import static org.hamcrest.Matchers.containsString;
+ import static org.hamcrest.Matchers.is;
+@@ -40,6 +41,8 @@
+ import hudson.Launcher;
+ import hudson.cli.CopyJobCommand;
+ import hudson.cli.GetJobCommand;
++import hudson.cli.GetNodeCommand;
++import hudson.cli.GetViewCommand;
+ import hudson.model.AbstractProject;
+ import hudson.model.Action;
+ import hudson.model.Computer;
+@@ -48,25 +51,35 @@
+ import hudson.model.Job;
+ import hudson.model.JobProperty;
+ import hudson.model.JobPropertyDescriptor;
++import hudson.model.ListView;
++import hudson.model.Node;
+ import hudson.model.RootAction;
+ import hudson.model.Run;
+ import hudson.model.TaskListener;
+ import hudson.model.User;
++import hudson.model.View;
++import hudson.model.ViewProperty;
++import hudson.security.ACL;
++import hudson.slaves.DumbSlave;
++import hudson.slaves.NodeProperty;
+ import hudson.tasks.BuildStepDescriptor;
+ import hudson.tasks.Builder;
+ import hudson.util.FormValidation;
+ import hudson.util.Secret;
+ import java.io.ByteArrayOutputStream;
++import java.io.File;
+ import java.io.IOException;
+ import java.io.PrintStream;
+ import java.util.Arrays;
+ import java.util.Collection;
+ import java.util.List;
+ import java.util.Locale;
++import java.util.Map;
+ import java.util.regex.Pattern;
+ import jenkins.model.GlobalConfiguration;
+ import jenkins.model.Jenkins;
+ import jenkins.model.TransientActionFactory;
++import jenkins.security.ExtendedReadRedaction;
+ import jenkins.security.ExtendedReadSecretRedaction;
+ import jenkins.tasks.SimpleBuildStep;
+ import org.htmlunit.Page;
+@@ -124,6 +137,145 @@ public String getUrlName() {
+         }
+     }
+ 
++    @For({ExtendedReadRedaction.class, ExtendedReadSecretRedaction.class})
++    @Issue("SECURITY-3495")
++    @Test
++    public void testNodeSecrets() throws Exception {
++        Computer.EXTENDED_READ.setEnabled(true);
++        j.jenkins.setSecurityRealm(j.createDummySecurityRealm());
++        j.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy().grant(Jenkins.ADMINISTER).everywhere().to("alice").grant(Jenkins.READ, Computer.EXTENDED_READ).everywhere().to("bob"));
++
++        final DumbSlave onlineSlave = j.createOnlineSlave();
++        final String secretText = "t0ps3cr3td4t4_node";
++        final Secret encryptedSecret = Secret.fromString(secretText);
++        final String encryptedSecretText = encryptedSecret.getEncryptedValue();
++
++        onlineSlave.getNodeProperties().add(new NodePropertyWithSecret(encryptedSecret));
++        onlineSlave.save();
++
++        assertThat(readString(new File(onlineSlave.getRootDir(), "config.xml").toPath()), containsString(encryptedSecretText));
++
++
++        { // admin can see encrypted value
++            GetNodeCommand command = new GetNodeCommand();
++            try (JenkinsRule.WebClient wc = j.createWebClient().login("alice")) {
++                final Page page = wc.goTo(onlineSlave.getComputer().getUrl() + "config.xml", "application/xml");
++                final String content = page.getWebResponse().getContentAsString();
++
++                assertThat(content, not(containsString(secretText)));
++                assertThat(content, containsString(encryptedSecretText));
++                assertThat(content, containsString("<secret>" + encryptedSecretText + "</secret>"));
++
++                var baos = new ByteArrayOutputStream();
++                try (var unused = ACL.as(User.get("alice", true, Map.of()))) {
++                    command.setTransportAuth2(Jenkins.getAuthentication2());
++                    command.main(List.of(onlineSlave.getNodeName()), Locale.US, System.in, new PrintStream(baos), System.err);
++                }
++                assertEquals(content, baos.toString(page.getWebResponse().getContentCharset()));
++            }
++        }
++
++        { // extended reader gets only redacted value
++            GetNodeCommand command = new GetNodeCommand();
++            try (JenkinsRule.WebClient wc = j.createWebClient().login("bob")) {
++                final Page page = wc.goTo(onlineSlave.getComputer().getUrl() + "config.xml", "application/xml");
++                final String content = page.getWebResponse().getContentAsString();
++
++                assertThat(content, not(containsString(secretText)));
++                assertThat(content, not(containsString(encryptedSecretText)));
++                assertThat(content, containsString("<secret>********</secret>"));
++
++                var baos = new ByteArrayOutputStream();
++                try (var unused = ACL.as(User.get("bob", true, Map.of()))) {
++                    command.setTransportAuth2(Jenkins.getAuthentication2());
++                    command.main(List.of(onlineSlave.getNodeName()), Locale.US, System.in, new PrintStream(baos), System.err);
++                }
++                assertEquals(content, baos.toString(page.getWebResponse().getContentCharset()));
++            }
++        }
++    }
++
++    public static class NodePropertyWithSecret extends NodeProperty<Node> {
++        private final Secret secret;
++
++        public NodePropertyWithSecret(Secret secret) {
++            this.secret = secret;
++        }
++
++        public Secret getSecret() {
++            return secret;
++        }
++    }
++
++    @For({ExtendedReadRedaction.class, ExtendedReadSecretRedaction.class})
++    @Issue("SECURITY-3496")
++    @Test
++    public void testViewSecrets() throws Exception {
++        j.jenkins.setSecurityRealm(j.createDummySecurityRealm());
++        j.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy().grant(Jenkins.ADMINISTER).everywhere().to("alice").grant(Jenkins.READ, View.READ).everywhere().to("bob"));
++
++        final String secretText = "t0ps3cr3td4t4_view";
++        final Secret encryptedSecret = Secret.fromString(secretText);
++        final String encryptedSecretText = encryptedSecret.getEncryptedValue();
++
++        final ListView v = new ListView("security-3496");
++        v.getProperties().add(new ViewPropertyWithSecret(encryptedSecret));
++        j.jenkins.addView(v);
++
++        assertThat(readString(new File(j.jenkins.getRootDir(), "config.xml").toPath()), containsString(encryptedSecretText));
++
++
++        { // admin can see encrypted value
++            var command = new GetViewCommand();
++            try (JenkinsRule.WebClient wc = j.createWebClient().login("alice")) {
++                final Page page = wc.goTo(v.getUrl() + "config.xml", "application/xml");
++                final String content = page.getWebResponse().getContentAsString();
++
++                assertThat(content, not(containsString(secretText)));
++                assertThat(content, containsString(encryptedSecretText));
++                assertThat(content, containsString("<secret>" + encryptedSecretText + "</secret>"));
++
++                var baos = new ByteArrayOutputStream();
++                try (var unused = ACL.as(User.get("alice", true, Map.of()))) {
++                    command.setTransportAuth2(Jenkins.getAuthentication2());
++                    command.main(List.of(v.getViewName()), Locale.US, System.in, new PrintStream(baos), System.err);
++                }
++                assertEquals(content, baos.toString(page.getWebResponse().getContentCharset()));
++            }
++        }
++
++        { // extended reader gets only redacted value
++            var command = new GetViewCommand();
++            try (JenkinsRule.WebClient wc = j.createWebClient().login("bob")) {
++                final Page page = wc.goTo(v.getUrl() + "config.xml", "application/xml");
++                final String content = page.getWebResponse().getContentAsString();
++
++                assertThat(content, not(containsString(secretText)));
++                assertThat(content, not(containsString(encryptedSecretText)));
++                assertThat(content, containsString("<secret>********</secret>"));
++
++                var baos = new ByteArrayOutputStream();
++                try (var unused = ACL.as(User.get("bob", true, Map.of()))) {
++                    command.setTransportAuth2(Jenkins.getAuthentication2());
++                    command.main(List.of(v.getViewName()), Locale.US, System.in, new PrintStream(baos), System.err);
++                }
++                assertEquals(content, baos.toString(page.getWebResponse().getContentCharset()));
++            }
++        }
++    }
++
++    public static class ViewPropertyWithSecret extends ViewProperty {
++        private final Secret secret;
++
++        public ViewPropertyWithSecret(Secret secret) {
++            this.secret = secret;
++        }
++
++        public Secret getSecret() {
++            return secret;
++        }
++    }
++
+     @Issue({"SECURITY-266", "SECURITY-304"})
+     @Test
+     @For(ExtendedReadSecretRedaction.class)

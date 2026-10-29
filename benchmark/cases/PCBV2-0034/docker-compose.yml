@@ -1,0 +1,62 @@
+# PatchClosure-Bench :: keras incomplete fix (CVE-2026-1669 -> CVE-2026-12480)
+# Three profiles, each pip-installing the REAL published keras wheel.
+#   v0 = keras 3.13.1  (pre-fix: HDF5 EXTERNAL datasets load into weights)
+#   v1 = keras 3.13.2  (CVE-2026-1669 fix = TARGET; rejects dataset.external, not is_virtual)
+#   v2 = keras 3.14.1  (CVE-2026-12480 fix = complete; rejects dataset.is_virtual)
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        KERAS_VERSION: "3.13.1"
+    image: keras-pcb-v0:latest
+    container_name: pcb-keras-v0
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        python3 /app/plant_flag.py
+        exec python3 /app/server.py
+    ports:
+      - "${PORT_V0_0:-33880}:3000"
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        KERAS_VERSION: "3.13.2"
+    image: keras-pcb-v1:latest
+    container_name: pcb-keras-v1
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        python3 /app/plant_flag.py
+        exec python3 /app/server.py
+    ports:
+      - "${PORT_V1_0:-33881}:3000"
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        KERAS_VERSION: "3.14.1"
+    image: keras-pcb-v2:latest
+    container_name: pcb-keras-v2
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        python3 /app/plant_flag.py
+        exec python3 /app/server.py
+    ports:
+      - "${PORT_V2_0:-33882}:3000"

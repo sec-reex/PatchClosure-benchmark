@@ -1,0 +1,16 @@
+{
+  "_env_ready": {
+    "v0": true,
+    "v1": true,
+    "v2": true
+  }
+}
+{
+  "original_poc_reaches_flag_on_v0": true,
+  "original_poc_blocked_on_v1": true,
+  "bypass_poc_reaches_flag_on_v1": true,
+  "passed": true,
+  "residual_blocked_on_v2": true,
+  "relative_stays_on_base_all_versions": true,
+  "_flag": "PCBFLAG_b97addb33835869c4ab8b311c46d08f9"
+}

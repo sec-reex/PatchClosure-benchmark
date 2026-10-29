@@ -1,0 +1,331 @@
+PCBV2-0067 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 7c35ed9ae5465d77c69f60ceb3aaa59cb569e5f9
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0067/
+
+diff --git a/src/main/java/hudson/remoting/AbstractByteArrayCommandTransport.java b/src/main/java/hudson/remoting/AbstractByteArrayCommandTransport.java
+index f137fc79a..f9f1ef563 100644
+--- a/src/main/java/hudson/remoting/AbstractByteArrayCommandTransport.java
++++ b/src/main/java/hudson/remoting/AbstractByteArrayCommandTransport.java
+@@ -60,7 +60,7 @@ public void handle(byte[] payload) {
+                 try {
+                     receiver.handle(Command.readFrom(channel, new ObjectInputStreamEx(
+                             new ByteArrayInputStream(payload),
+-                            channel.baseClassLoader)));
++                            channel.classFilter.decorate(channel.baseClassLoader))));
+                 } catch (IOException e) {
+                     LOGGER.log(Level.WARNING, "Failed to construct Command", e);
+                 } catch (ClassNotFoundException e) {
+diff --git a/src/main/java/hudson/remoting/AbstractSynchronousByteArrayCommandTransport.java b/src/main/java/hudson/remoting/AbstractSynchronousByteArrayCommandTransport.java
+index 347bb2763..b95e04d0f 100644
+--- a/src/main/java/hudson/remoting/AbstractSynchronousByteArrayCommandTransport.java
++++ b/src/main/java/hudson/remoting/AbstractSynchronousByteArrayCommandTransport.java
+@@ -33,7 +33,7 @@ public abstract class AbstractSynchronousByteArrayCommandTransport extends Synch
+     public Command read() throws IOException, ClassNotFoundException {
+         return Command.readFrom(channel,new ObjectInputStreamEx(
+                 new ByteArrayInputStream(readBlock(channel)),
+-                channel.baseClassLoader));
++                channel.classFilter.decorate(channel.baseClassLoader)));
+     }
+ 
+     @Override
+diff --git a/src/main/java/hudson/remoting/Capability.java b/src/main/java/hudson/remoting/Capability.java
+index 3a2cb3640..62874d6e5 100644
+--- a/src/main/java/hudson/remoting/Capability.java
++++ b/src/main/java/hudson/remoting/Capability.java
+@@ -2,6 +2,7 @@
+ 
+ import hudson.remoting.Channel.Mode;
+ 
++import java.io.ObjectStreamClass;
+ import java.io.Serializable;
+ import java.io.UnsupportedEncodingException;
+ import java.io.ObjectOutputStream;
+@@ -121,7 +122,17 @@ void writePreamble(OutputStream os) throws IOException {
+      */
+     public static Capability read(InputStream is) throws IOException {
+         try {
+-            ObjectInputStream ois = new ObjectInputStream(Mode.TEXT.wrap(is));
++            ObjectInputStream ois = new ObjectInputStream(Mode.TEXT.wrap(is)) {
++                // during deserialization, only accept Capability to protect ourselves
++                // from malicious payload
++                @Override
++                protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
++                    String n = desc.getName();
++                    if (n.startsWith("java.lang.") || n.startsWith("hudson.remoting."))
++                        return super.resolveClass(desc);
++                    throw new ClassNotFoundException(n);
++                }
++            };
+             return (Capability)ois.readObject();
+         } catch (ClassNotFoundException e) {
+             throw (Error)new NoClassDefFoundError(e.getMessage()).initCause(e);
+diff --git a/src/main/java/hudson/remoting/Channel.java b/src/main/java/hudson/remoting/Channel.java
+index d0cab758b..2a268b258 100644
+--- a/src/main/java/hudson/remoting/Channel.java
++++ b/src/main/java/hudson/remoting/Channel.java
+@@ -299,6 +299,8 @@ public class Channel implements VirtualChannel, IChannel, Closeable {
+ 
+     short maximumBytecodeLevel = Short.MAX_VALUE;
+ 
++    /*package*/ @Nonnull final ClassFilter classFilter;
++
+     /**
+      * Communication mode used in conjunction with {@link ClassicCommandTransport}.
+      * 
+@@ -473,6 +475,7 @@ protected Channel(ChannelBuilder settings, CommandTransport transport) throws IO
+         this.jarCache = settings.getJarCache();
+ 
+         this.baseClassLoader = settings.getBaseLoader();
++        this.classFilter = settings.getClassFilter();
+ 
+         if(internalExport(IChannel.class, this, false)!=1)
+             throw new AssertionError(); // export number 1 is reserved for the channel itself
+diff --git a/src/main/java/hudson/remoting/ChannelBuilder.java b/src/main/java/hudson/remoting/ChannelBuilder.java
+index 0c82de2d4..52903a825 100644
+--- a/src/main/java/hudson/remoting/ChannelBuilder.java
++++ b/src/main/java/hudson/remoting/ChannelBuilder.java
+@@ -43,6 +43,7 @@ public class ChannelBuilder {
+     private boolean arbitraryCallableAllowed = true;
+     private boolean remoteClassLoadingAllowed = true;
+     private final Hashtable<Object,Object> properties = new Hashtable<Object,Object>();
++    private ClassFilter filter = ClassFilter.DEFAULT;
+ 
+     /**
+      * Specify the minimum mandatory parameters.
+@@ -268,6 +269,19 @@ public Map<Object,Object> getProperties() {
+         return properties;
+     }
+ 
++    /**
++     * Replaces the {@link ClassFilter} used by the channel.
++     */
++    public ChannelBuilder withClassFilter(ClassFilter filter) {
++        if (filter==null)   filter = ClassFilter.NONE;
++        this.filter = filter;
++        return this;
++    }
++
++    public ClassFilter getClassFilter() {
++        return this.filter;
++    }
++
+     /**
+      * Performs a handshake over the communication channel and builds a {@link Channel}.
+      *
+@@ -390,7 +404,7 @@ protected CommandTransport makeTransport(InputStream is, OutputStream os, Mode m
+             oos.flush();    // make sure that stream preamble is sent to the other end. avoids dead-lock
+ 
+             return new ClassicCommandTransport(
+-                    new ObjectInputStreamEx(mode.wrap(fis),getBaseLoader()),
++                    new ObjectInputStreamEx(mode.wrap(fis),getClassFilter().decorate(getBaseLoader())),
+                     oos,fis,os,cap);
+         }
+     }
+diff --git a/src/main/java/hudson/remoting/ClassFilter.java b/src/main/java/hudson/remoting/ClassFilter.java
+new file mode 100644
+index 000000000..9b73e0a17
+--- /dev/null
++++ b/src/main/java/hudson/remoting/ClassFilter.java
+@@ -0,0 +1,130 @@
++package hudson.remoting;
++
++import javax.annotation.Nullable;
++
++/**
++ * Restricts what classes can be received through remoting.
++ *
++ * @author Kohsuke Kawaguchi
++ * @since 2.53
++ */
++public abstract class ClassFilter {
++    protected boolean isBlacklisted(String name) {
++        return false;
++    }
++
++    protected boolean isBlacklisted(Class c) {
++        return false;
++    }
++
++    /**
++     * Wraps a given {@link ClassLoader} into one that does filtering.
++     */
++    public ClassLoader decorate(final @Nullable ClassLoader actual) {
++        return new ClassLoader(/*not passing in 'actual' to prevent accidental bypassing of a filter*/) {
++            @Override
++            public Class<?> loadClass(String name) throws ClassNotFoundException {
++                if (isBlacklisted(name)) throw new ClassNotFoundException(name);
++                Class<?> c = Class.forName(name, false, actual);
++                if (isBlacklisted(c)) throw new ClassNotFoundException(name);
++                return c;
++            }
++        };
++    }
++
++
++    /**
++     * A set of sensible default filtering rules to apply,
++     * unless the context guarantees the trust between two channels.
++     */
++    public static final ClassFilter DEFAULT = new ClassFilter() {
++        @Override
++        protected boolean isBlacklisted(String name) {
++            // these are coming from libraries, so protecting it by name is better as
++            // some plugins might be bundling them and choosing to mask ones from core.
++            if (name.startsWith("org.codehaus.groovy.runtime."))
++                return true;    // ConvertedClosure is named in exploit
++            if (name.startsWith("org.apache.commons.collections.functors."))
++                return true;    // InvokerTransformer, InstantiateFactory, InstantiateTransformer are particularly scary
++
++            // this package can appear in ordinary xalan.jar or com.sun.org.apache.xalan
++            // the target is trax.TemplatesImpl
++            if (name.contains("org.apache.xalan"))
++                return true;
++            return false;
++        }
++    };
++
++    /**
++     * No filtering whatsoever.
++     */
++    public static final ClassFilter NONE = new ClassFilter() {
++    };
++}
++
++/*
++    Publicized attack payload:
++
++		ObjectInputStream.readObject()
++			PriorityQueue.readObject()
++				Comparator.compare() (Proxy)
++					ConvertedClosure.invoke()
++						MethodClosure.call()
++							...
++						  		Method.invoke()
++									Runtime.exec()
++
++
++		ObjectInputStream.readObject()
++			AnnotationInvocationHandler.readObject()
++				Map(Proxy).entrySet()
++					AnnotationInvocationHandler.invoke()
++						LazyMap.get()
++							ChainedTransformer.transform()
++								ConstantTransformer.transform()
++								InvokerTransformer.transform()
++									Method.invoke()
++										Class.getMethod()
++								InvokerTransformer.transform()
++									Method.invoke()
++										Runtime.getRuntime()
++								InvokerTransformer.transform()
++									Method.invoke()
++										Runtime.exec()
++
++
++		ObjectInputStream.readObject()
++			PriorityQueue.readObject()
++				...
++					TransformingComparator.compare()
++						InvokerTransformer.transform()
++							Method.invoke()
++								Runtime.exec()
++
++
++		ObjectInputStream.readObject()
++			SerializableTypeWrapper.MethodInvokeTypeProvider.readObject()
++				SerializableTypeWrapper.TypeProvider(Proxy).getType()
++					AnnotationInvocationHandler.invoke()
++						HashMap.get()
++				ReflectionUtils.findMethod()
++				SerializableTypeWrapper.TypeProvider(Proxy).getType()
++					AnnotationInvocationHandler.invoke()
++						HashMap.get()
++				ReflectionUtils.invokeMethod()
++					Method.invoke()
++						Templates(Proxy).newTransformer()
++							AutowireUtils.ObjectFactoryDelegatingInvocationHandler.invoke()
++								ObjectFactory(Proxy).getObject()
++									AnnotationInvocationHandler.invoke()
++										HashMap.get()
++								Method.invoke()
++									TemplatesImpl.newTransformer()
++										TemplatesImpl.getTransletInstance()
++											TemplatesImpl.defineTransletClasses()
++												TemplatesImpl.TransletClassLoader.defineClass()
++													Pwner*(Javassist-generated).<static init>
++														Runtime.exec()
++
++ */
++
+diff --git a/src/main/java/hudson/remoting/FilteringClassLoader.java b/src/main/java/hudson/remoting/FilteringClassLoader.java
+new file mode 100644
+index 000000000..df9a60f8a
+--- /dev/null
++++ b/src/main/java/hudson/remoting/FilteringClassLoader.java
+@@ -0,0 +1,33 @@
++package hudson.remoting;
++
++/**
++ * Filter classes that can be seen.
++ *
++ * @author Kohsuke Kawaguchi
++ * @since 2.53
++ */
++class FilteringClassLoader extends ClassLoader {
++    private final ClassLoader actual;
++
++    public FilteringClassLoader(ClassLoader actual) {
++        // intentionally not passing 'actual' as the parent classloader to the super type
++        // to prevent accidental bypassing of a filter.
++        this.actual = actual;
++    }
++
++    @Override
++    public Class<?> loadClass(String name) throws ClassNotFoundException {
++        if (isBlacklisted(name))    throw new ClassNotFoundException(name);
++        Class<?> c = actual.loadClass(name);
++        if (isBlacklisted(c))       throw new ClassNotFoundException(name);
++        return c;
++    }
++
++    protected boolean isBlacklisted(String name) {
++        return false;
++    }
++
++    protected boolean isBlacklisted(Class c) {
++        return false;
++    }
++}
+diff --git a/src/main/java/hudson/remoting/MultiClassLoaderSerializer.java b/src/main/java/hudson/remoting/MultiClassLoaderSerializer.java
+index 327a00bb2..594f004e4 100644
+--- a/src/main/java/hudson/remoting/MultiClassLoaderSerializer.java
++++ b/src/main/java/hudson/remoting/MultiClassLoaderSerializer.java
+@@ -93,12 +93,12 @@ private ClassLoader readClassLoader() throws IOException, ClassNotFoundException
+ 
+             case TAG_LOCAL_CLASSLOADER:
+                 cl = ((RemoteClassLoader.ClassLoaderProxy)channel.getExportedObject(readInt())).cl;
+-                classLoaders.add(cl);
++                classLoaders.add(channel.classFilter.decorate(cl));
+                 return cl;
+ 
+             case TAG_EXPORTED_CLASSLOADER:
+                 cl = channel.importedClassLoaders.get(readInt());
+-                classLoaders.add(cl);
++                classLoaders.add(channel.classFilter.decorate(cl));
+                 return cl;
+             default:
+                 return classLoaders.get(code);
+diff --git a/src/main/java/hudson/remoting/UserRequest.java b/src/main/java/hudson/remoting/UserRequest.java
+index fbc65d4e0..c1d24eb6c 100644
+--- a/src/main/java/hudson/remoting/UserRequest.java
++++ b/src/main/java/hudson/remoting/UserRequest.java
+@@ -180,7 +180,7 @@ private byte[] serialize(Object o, Channel localChannel) throws IOException {
+             // this code is coupled with the ObjectOutputStream subtype above
+             ois = new MultiClassLoaderSerializer.Input(channel, in);
+         } else {
+-            ois = new ObjectInputStreamEx(in, defaultClassLoader);
++            ois = new ObjectInputStreamEx(in, channel.classFilter.decorate(defaultClassLoader));
+         }
+         return ois.readObject();
+     }

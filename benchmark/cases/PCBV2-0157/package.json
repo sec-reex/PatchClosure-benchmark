@@ -1,0 +1,11 @@
+{
+  "name": "pcb-object-path-core",
+  "private": true,
+  "type": "commonjs",
+  "description": "Faithful-core prototype-pollution guard using the REAL npm `object-path` deep-set per version (pre-guard 0.11.4 -> string-only `=== '__proto__'` guard 0.11.5 [CVE-2020-15256 fix, still bypassable] -> type-coercion 0.11.6 [CVE-2021-23434 fix]). npm aliases hold all three versions side-by-side; the harness selects one by HARNESS_VER and drives the REAL published objectPath.withInheritedProps.set() on the crafted key path.",
+  "dependencies": {
+    "object-path-v0": "npm:object-path@0.11.4",
+    "object-path-v1": "npm:object-path@0.11.5",
+    "object-path-v2": "npm:object-path@0.11.6"
+  }
+}

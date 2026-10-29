@@ -1,0 +1,31 @@
+PCBV2-0167 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 62b43df7cb8956a9b0deb9bec278ca8676c890c5, e538f05b6faec99e5b23726bc9c17d6b57774297
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0167/
+
+diff --git a/pheditor.php b/pheditor.php
+index 4b0aa70..b5ec7d2 100755
+--- a/pheditor.php
++++ b/pheditor.php
+@@ -583,7 +583,7 @@ if (isset($_GET['path'])) {
+                     exit;
+                 }
+ 
+-                $output = shell_exec((empty($dir) ? null : 'cd ' . $dir . ' && ') . $command . ' && echo \ ; pwd');
++                $output = shell_exec((empty($dir) ? null : 'cd ' . escapeshellarg($dir) . ' && ') . $command . ' && echo \ ; pwd');
+                 $output = trim($output);
+ 
+                 if (empty($output)) {
+diff --git a/pheditor.php b/pheditor.php
+index dacf372..91657b5 100755
+--- a/pheditor.php
++++ b/pheditor.php
+@@ -554,7 +554,7 @@ if (isset($_GET['path'])) {
+                 $command  = $_POST['command'];
+                 $dir = $_POST['dir'];
+ 
+-                if (strpos($command, '&') !== false || strpos($command, ';') !== false || strpos($command, '||') !== false) {
++                if (strpos($command, '&') !== false || strpos($command, ';') !== false || strpos($command, '||') !== false || strpos($command, '$') !== false) {
+                     echo json_error("Illegal character(s) in command (& ; ||)\n");
+ 
+                     exit;

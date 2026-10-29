@@ -1,0 +1,67 @@
+# PatchClosure-Bench recipe for nuxt-og-image-isblockedurl
+# (GHSA-pqhr-mp3f-hrpp / V1 = 6.2.5 incomplete-fix TARGET -> CVE-2026-44589 / V2 = 6.4.9).
+# run_mode = real-app-http.  GHSA-pqhr-mp3f-hrpp has NO CVE alias ("No known CVE").
+#
+# Each profile builds and boots a REAL Nuxt 4 app with the REAL nuxt-og-image module
+# (version by OGI_VER build-arg). The SSRF is triggered EXTERNALLY over HTTP through the
+# module's own og-image endpoint: GET /ssrf?avatar=<vector> makes the page bake <vector>
+# into its generated og:image URL; fetching that og image URL drives the module to
+# server-fetch <vector> (gated only by isBlockedUrl). A co-located loopback-only flag
+# sidecar (FLAG_PORT=9111, bound to ::, NO published host port) serves ${PCB_FLAG}; it is
+# reachable only if this version's isBlockedUrl let the loopback fetch through.
+#
+# IP-representation arithmetic against the REAL isBlockedUrl:
+#   seed  (GHSA-pqhr-mp3f-hrpp): avatar=http://[::1]:9111/          (bare IPv6 loopback)
+#       V0 6.2.4  no denylist       -> reaches loopback flag.
+#       V1 6.2.5  bare==="::1"       -> BLOCKED (GHSA fix).
+#   residual (CVE-2026-44589): avatar=http://[::ffff:7f00:1]:9111/  (hex IPv4-mapped loopback)
+#       V1 6.2.5  RE_MAPPED_V4 needs dotted-quad; not ::1/fc/fd/fe80 -> ALLOWED -> flag (bypass).
+#       V2 6.4.9  expandIPv6 -> 127.0.0.1 -> isPrivateIPv6 -> BLOCKED (CVE-2026-44589 fix).
+services:
+  server-v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args: { OGI_VER: "6.2.4" }
+    image: "pcb-nuxt-ogi-ssrf:6.2.4"
+    environment:
+      APP_PORT: "8080"
+      FLAG_PORT: "9111"
+      # Force the module's self-origin (font asset fetch + og:image base) to the
+      # container's OWN listen address so offline font loading works in Docker.
+      NUXT_SITE_HOST_OVERRIDE: "127.0.0.1"
+      NUXT_SITE_PORT_OVERRIDE: "8080"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_SERVER_V0_0:-39610}:8080"]
+
+  server-v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args: { OGI_VER: "6.2.5" }
+    image: "pcb-nuxt-ogi-ssrf:6.2.5"
+    environment:
+      APP_PORT: "8080"
+      FLAG_PORT: "9111"
+      # Force the module's self-origin (font asset fetch + og:image base) to the
+      # container's OWN listen address so offline font loading works in Docker.
+      NUXT_SITE_HOST_OVERRIDE: "127.0.0.1"
+      NUXT_SITE_PORT_OVERRIDE: "8080"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_SERVER_V1_0:-39611}:8080"]
+
+  server-v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args: { OGI_VER: "6.4.9" }
+    image: "pcb-nuxt-ogi-ssrf:6.4.9"
+    environment:
+      APP_PORT: "8080"
+      FLAG_PORT: "9111"
+      # Force the module's self-origin (font asset fetch + og:image base) to the
+      # container's OWN listen address so offline font loading works in Docker.
+      NUXT_SITE_HOST_OVERRIDE: "127.0.0.1"
+      NUXT_SITE_PORT_OVERRIDE: "8080"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_SERVER_V2_0:-39612}:8080"]

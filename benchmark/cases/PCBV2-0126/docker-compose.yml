@@ -1,0 +1,59 @@
+# PatchClosure-Bench recipe: handlebars proto-access incomplete-fix pair.
+#   CVE-2019-20920 (lookup helper)  ->  CVE-2021-23369 (strict-mode terminal lookup)
+#
+# Each profile builds node:18-slim + a PINNED handlebars version (build-arg):
+#   v0 = handlebars 4.5.2  (pre-CVE-2019-20920: lookup helper + strict both reach proto)
+#   v1 = handlebars 4.7.6  (CVE-2019-20920 fixed: lookup helper routed through
+#        lookupProperty guard, BUT strict-mode terminal lookup still `obj[name]`
+#        unguarded -> CVE-2021-23369 residual)  <-- THE TARGET
+#   v2 = handlebars 4.7.7  (CVE-2021-23369 fixed: strict routes through lookupProperty)
+#
+# The canary (${PCB_FLAG}) is injected via the container ENVIRONMENT and planted
+# by the harness on the context object's PROTOTYPE (a non-own secret). Only a
+# template that bypasses the proto-access guard can read it. No app/business
+# code is modified; only the untrusted TEMPLATE (the probe) varies.
+x-common: &common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment:
+    PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+services:
+  v0:
+    <<: *common
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HB_VERSION: "4.5.2"
+    image: pcb-handlebars-23369-v0
+    ports: ["${PORT_V0_0:-39696}:8080"]
+
+  v1:
+    <<: *common
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HB_VERSION: "4.7.6"
+    image: pcb-handlebars-23369-v1
+    ports: ["${PORT_V1_0:-39697}:8080"]
+
+  v2:
+    <<: *common
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HB_VERSION: "4.7.7"
+    image: pcb-handlebars-23369-v2
+    ports: ["${PORT_V2_0:-39698}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.127.0/24

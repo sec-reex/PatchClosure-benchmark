@@ -1,0 +1,23 @@
+{
+  "realm": "pcb",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "clients": [
+    {
+      "clientId": "poc",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "consentRequired": false,
+      "redirectUris": [
+        "http://127.0.0.1:40052/allowed/*"
+      ],
+      "webOrigins": [
+        "*"
+      ]
+    }
+  ]
+}

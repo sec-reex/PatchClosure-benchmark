@@ -1,0 +1,11 @@
+{
+  "name": "pcb-simple-git-6951-v1",
+  "private": true,
+  "description": "V1 = REAL published simple-git@3.35.2 with @simple-git/argv-parser PINNED to 1.0.3 -- the CVE-2022-25912-patched but CVE-2026-6951-vulnerable state (the last pre-3.36.0 release, historically shipped with argv-parser 1.0.x). DATA-QUALITY NOTE: simple-git@3.35.2 declares argv-parser ^1.0.3, and caret-range floats a fresh install to the FIXED 1.1.x; the `overrides` below pins the genuine vulnerable 1.0.3 bytes whose config-key blocklist misses filter.<x>.smudge (and many others). The CVE-2026-6951 fix (3.36.0) is exactly the argv-parser 1.0.3 -> 1.1.0 bump that expands that blocklist.",
+  "dependencies": {
+    "simple-git": "3.35.2"
+  },
+  "overrides": {
+    "@simple-git/argv-parser": "1.0.3"
+  }
+}

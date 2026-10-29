@@ -1,0 +1,257 @@
+ Image mariadb:11 Pulling 
+ Image python:3.12-alpine Pulling 
+ Image python:3.12-alpine Pulling 
+ Image python:3.12-alpine Pulling 
+ 5de55e5ef9c0 Already exists 0B
+ 5de55e5ef9c0 Already exists 0B
+ 7165d099db60 Pulling fs layer 0B
+ 58091a72e5ff Pulling fs layer 0B
+ bbd8ab56026e Pulling fs layer 0B
+ 7165d099db60 Pulling fs layer 0B
+ 58091a72e5ff Pulling fs layer 0B
+ bbd8ab56026e Pulling fs layer 0B
+ 5de55e5ef9c0 Already exists 0B
+ 7165d099db60 Pulling fs layer 0B
+ 58091a72e5ff Pulling fs layer 0B
+ bbd8ab56026e Pulling fs layer 0B
+ 4b987da45db4 Already exists 0B
+ 6cf3101ec3a2 Pulling fs layer 0B
+ b4cf068dfc28 Pulling fs layer 0B
+ b2ec9063e701 Pulling fs layer 0B
+ 28555cace2f1 Pulling fs layer 0B
+ fe00f7547a97 Pulling fs layer 0B
+ ffb765d68c2b Pulling fs layer 0B
+ 9c120584cbd7 Pulling fs layer 0B
+ b4cf068dfc28 Waiting 0B
+ b2ec9063e701 Waiting 0B
+ 28555cace2f1 Waiting 0B
+ fe00f7547a97 Waiting 0B
+ 9c120584cbd7 Waiting 0B
+ ffb765d68c2b Waiting 0B
+ 6cf3101ec3a2 Waiting 0B
+ 58091a72e5ff Downloading 146.8kB
+ 58091a72e5ff Downloading 146.8kB
+ 58091a72e5ff Downloading 146.8kB
+ 58091a72e5ff Downloading 1.179MB
+ 58091a72e5ff Downloading 1.179MB
+ 58091a72e5ff Downloading 1.179MB
+ 58091a72e5ff Downloading 2.211MB
+ 58091a72e5ff Downloading 2.211MB
+ 58091a72e5ff Downloading 2.211MB
+ 58091a72e5ff Downloading 3.243MB
+ 58091a72e5ff Downloading 3.243MB
+ 58091a72e5ff Downloading 3.243MB
+ 58091a72e5ff Downloading 4.276MB
+ 58091a72e5ff Downloading 4.276MB
+ 58091a72e5ff Downloading 4.276MB
+ 58091a72e5ff Downloading 5.308MB
+ 58091a72e5ff Downloading 5.308MB
+ 58091a72e5ff Downloading 5.308MB
+ 58091a72e5ff Downloading 6.34MB
+ 58091a72e5ff Downloading 6.34MB
+ 58091a72e5ff Downloading 6.34MB
+ 58091a72e5ff Downloading 6.93MB
+ 58091a72e5ff Downloading 6.93MB
+ 58091a72e5ff Downloading 6.93MB
+ 58091a72e5ff Downloading 8.109MB
+ 58091a72e5ff Downloading 8.109MB
+ 58091a72e5ff Downloading 8.109MB
+ bbd8ab56026e Downloading 248B
+ bbd8ab56026e Verifying Checksum 0B
+ bbd8ab56026e Download complete 0B
+ bbd8ab56026e Downloading 248B
+ bbd8ab56026e Verifying Checksum 0B
+ bbd8ab56026e Download complete 0B
+ bbd8ab56026e Downloading 248B
+ bbd8ab56026e Verifying Checksum 0B
+ bbd8ab56026e Download complete 0B
+ 7165d099db60 Downloading 15.74kB
+ 7165d099db60 Downloading 15.74kB
+ 7165d099db60 Downloading 15.74kB
+ 7165d099db60 Verifying Checksum 0B
+ 7165d099db60 Download complete 0B
+ 7165d099db60 Verifying Checksum 0B
+ 7165d099db60 Download complete 0B
+ 7165d099db60 Extracting 32.77kB
+ 7165d099db60 Extracting 32.77kB
+ 7165d099db60 Extracting 32.77kB
+ 58091a72e5ff Downloading 8.257MB
+ 58091a72e5ff Downloading 8.257MB
+ 58091a72e5ff Downloading 8.257MB
+ 7165d099db60 Extracting 412.4kB
+ 7165d099db60 Extracting 412.4kB
+ 7165d099db60 Extracting 412.4kB
+ 7165d099db60 Extracting 412.4kB
+ 7165d099db60 Extracting 412.4kB
+ 7165d099db60 Extracting 412.4kB
+ 58091a72e5ff Verifying Checksum 0B
+ 58091a72e5ff Verifying Checksum 0B
+ 58091a72e5ff Download complete 0B
+ 58091a72e5ff Verifying Checksum 0B
+ 58091a72e5ff Download complete 0B
+ 58091a72e5ff Download complete 0B
+ 7165d099db60 Pull complete 0B
+ 7165d099db60 Pull complete 0B
+ 7165d099db60 Pull complete 0B
+ 58091a72e5ff Extracting 163.8kB
+ 58091a72e5ff Extracting 163.8kB
+ 58091a72e5ff Extracting 163.8kB
+ 58091a72e5ff Extracting 3.604MB
+ 58091a72e5ff Extracting 3.604MB
+ 58091a72e5ff Extracting 3.604MB
+ 6cf3101ec3a2 Downloading 1.343kB
+ 6cf3101ec3a2 Verifying Checksum 0B
+ 6cf3101ec3a2 Download complete 0B
+ 6cf3101ec3a2 Extracting 1.343kB
+ 6cf3101ec3a2 Extracting 1.343kB
+ 58091a72e5ff Extracting 8.52MB
+ 58091a72e5ff Extracting 8.52MB
+ 58091a72e5ff Extracting 8.52MB
+ 6cf3101ec3a2 Pull complete 0B
+ 58091a72e5ff Extracting 11.96MB
+ 58091a72e5ff Extracting 11.96MB
+ 58091a72e5ff Extracting 11.96MB
+ 58091a72e5ff Extracting 13.9MB
+ 58091a72e5ff Extracting 13.9MB
+ 58091a72e5ff Extracting 13.9MB
+ 58091a72e5ff Extracting 13.9MB
+ 58091a72e5ff Extracting 13.9MB
+ 58091a72e5ff Extracting 13.9MB
+ 58091a72e5ff Pull complete 0B
+ 58091a72e5ff Pull complete 0B
+ 58091a72e5ff Pull complete 0B
+ bbd8ab56026e Extracting 248B
+ bbd8ab56026e Extracting 248B
+ bbd8ab56026e Extracting 248B
+ bbd8ab56026e Extracting 248B
+ bbd8ab56026e Extracting 248B
+ bbd8ab56026e Extracting 248B
+ bbd8ab56026e Pull complete 0B
+ bbd8ab56026e Pull complete 0B
+ bbd8ab56026e Pull complete 0B
+ Image python:3.12-alpine Pulled 
+ Image python:3.12-alpine Pulled 
+ Image python:3.12-alpine Pulled 
+ b4cf068dfc28 Downloading 64.93kB
+ b4cf068dfc28 Downloading 1.106MB
+ b4cf068dfc28 Downloading 2.058MB
+ b4cf068dfc28 Downloading 3.029MB
+ b4cf068dfc28 Downloading 4.03MB
+ b4cf068dfc28 Downloading 5.043MB
+ b4cf068dfc28 Verifying Checksum 0B
+ b4cf068dfc28 Download complete 0B
+ b4cf068dfc28 Extracting 65.54kB
+ b2ec9063e701 Downloading 114B
+ b2ec9063e701 Verifying Checksum 0B
+ b2ec9063e701 Download complete 0B
+ b4cf068dfc28 Extracting 4.522MB
+ 28555cace2f1 Downloading 332B
+ 28555cace2f1 Verifying Checksum 0B
+ 28555cace2f1 Download complete 0B
+ b4cf068dfc28 Extracting 5.056MB
+ b4cf068dfc28 Pull complete 0B
+ b2ec9063e701 Extracting 114B
+ b2ec9063e701 Extracting 114B
+ b2ec9063e701 Pull complete 0B
+ 28555cace2f1 Extracting 332B
+ 28555cace2f1 Extracting 332B
+ 28555cace2f1 Pull complete 0B
+ fe00f7547a97 Downloading 537.5kB
+ fe00f7547a97 Downloading 1.604MB
+ fe00f7547a97 Downloading 2.666MB
+ fe00f7547a97 Downloading 3.741MB
+ fe00f7547a97 Downloading 4.81MB
+ ffb765d68c2b Downloading 3.497kB
+ ffb765d68c2b Downloading 4.035kB
+ ffb765d68c2b Verifying Checksum 0B
+ ffb765d68c2b Download complete 0B
+ fe00f7547a97 Downloading 5.347MB
+ fe00f7547a97 Downloading 6.411MB
+ 9c120584cbd7 Downloading 3.497kB
+ 9c120584cbd7 Downloading 8.494kB
+ 9c120584cbd7 Verifying Checksum 0B
+ 9c120584cbd7 Download complete 0B
+ fe00f7547a97 Downloading 6.936MB
+ fe00f7547a97 Downloading 12.24MB
+ fe00f7547a97 Downloading 14.9MB
+ fe00f7547a97 Downloading 15.97MB
+ fe00f7547a97 Downloading 17.04MB
+ fe00f7547a97 Downloading 18.11MB
+ fe00f7547a97 Downloading 19.18MB
+ fe00f7547a97 Downloading 20.79MB
+ fe00f7547a97 Downloading 21.86MB
+ fe00f7547a97 Downloading 28.82MB
+ fe00f7547a97 Downloading 29.89MB
+ fe00f7547a97 Downloading 30.97MB
+ fe00f7547a97 Downloading 32.03MB
+ fe00f7547a97 Downloading 33.1MB
+ fe00f7547a97 Downloading 34.17MB
+ fe00f7547a97 Downloading 35.77MB
+ fe00f7547a97 Downloading 37.38MB
+ fe00f7547a97 Downloading 43.8MB
+ fe00f7547a97 Downloading 44.87MB
+ fe00f7547a97 Downloading 45.94MB
+ fe00f7547a97 Downloading 47.01MB
+ fe00f7547a97 Downloading 48.08MB
+ fe00f7547a97 Downloading 48.61MB
+ fe00f7547a97 Downloading 49.67MB
+ fe00f7547a97 Downloading 51.29MB
+ fe00f7547a97 Downloading 56.62MB
+ fe00f7547a97 Downloading 57.7MB
+ fe00f7547a97 Downloading 58.76MB
+ fe00f7547a97 Downloading 59.83MB
+ fe00f7547a97 Downloading 60.9MB
+ fe00f7547a97 Downloading 61.97MB
+ fe00f7547a97 Downloading 63.04MB
+ fe00f7547a97 Downloading 63.57MB
+ fe00f7547a97 Downloading 64.65MB
+ fe00f7547a97 Verifying Checksum 0B
+ fe00f7547a97 Download complete 0B
+ fe00f7547a97 Extracting 557.1kB
+ fe00f7547a97 Extracting 8.913MB
+ fe00f7547a97 Extracting 18.38MB
+ fe00f7547a97 Extracting 25.07MB
+ fe00f7547a97 Extracting 31.2MB
+ fe00f7547a97 Extracting 35.09MB
+ fe00f7547a97 Extracting 39.55MB
+ fe00f7547a97 Extracting 40.67MB
+ fe00f7547a97 Extracting 51.25MB
+ fe00f7547a97 Extracting 57.93MB
+ fe00f7547a97 Extracting 64.62MB
+ fe00f7547a97 Extracting 67.4MB
+ fe00f7547a97 Extracting 69.63MB
+ fe00f7547a97 Extracting 70.32MB
+ fe00f7547a97 Pull complete 0B
+ ffb765d68c2b Extracting 4.035kB
+ ffb765d68c2b Extracting 4.035kB
+ ffb765d68c2b Pull complete 0B
+ 9c120584cbd7 Extracting 8.494kB
+ 9c120584cbd7 Extracting 8.494kB
+ 9c120584cbd7 Pull complete 0B
+ Image mariadb:11 Pulled 
+ Network admidio-cve-2026-42194_publicnet Creating 
+ Network admidio-cve-2026-42194_publicnet Created 
+ Network admidio-cve-2026-42194_internalnet Creating 
+ Network admidio-cve-2026-42194_internalnet Created 
+ Container admidio-cve-2026-42194-db-v1-1 Creating 
+ Container admidio-cve-2026-42194-canary-1 Creating 
+ Container admidio-cve-2026-42194-dns-1 Creating 
+ Container admidio-cve-2026-42194-decoy-1 Creating 
+ Container admidio-cve-2026-42194-decoy-1 Created 
+ Container admidio-cve-2026-42194-dns-1 Created 
+ Container admidio-cve-2026-42194-canary-1 Created 
+ Container admidio-cve-2026-42194-db-v1-1 Created 
+ Container admidio-cve-2026-42194-v1-1 Creating 
+ Container admidio-cve-2026-42194-v1-1 Created 
+ Container admidio-cve-2026-42194-decoy-1 Starting 
+ Container admidio-cve-2026-42194-dns-1 Starting 
+ Container admidio-cve-2026-42194-canary-1 Starting 
+ Container admidio-cve-2026-42194-db-v1-1 Starting 
+ Container admidio-cve-2026-42194-db-v1-1 Started 
+ Container admidio-cve-2026-42194-dns-1 Started 
+ Container admidio-cve-2026-42194-decoy-1 Started 
+ Container admidio-cve-2026-42194-canary-1 Started 
+ Container admidio-cve-2026-42194-db-v1-1 Waiting 
+ Container admidio-cve-2026-42194-db-v1-1 Healthy 
+ Container admidio-cve-2026-42194-v1-1 Starting 
+ Container admidio-cve-2026-42194-v1-1 Started 

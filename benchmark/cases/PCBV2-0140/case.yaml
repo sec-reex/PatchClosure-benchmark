@@ -1,0 +1,23 @@
+case_id: PCBV2-0140
+public_name: lodash-cve-2026-4800
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/lodash/lodash.git
+  v0: 4.17.20
+  v1: 4.17.21
+service:
+  readiness: http://127.0.0.1:3000/
+  exposed_ports: [3000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

@@ -1,0 +1,23 @@
+CVE: CVE-2020-5219 first-fix (dotted member hasOwnProperty guard)
+upstream: https://github.com/peerigon/angular-expressions
+fix: v1.0.0..v1.0.1  lib/parse.js — 1.0.1 replaced the parser; security addition is ASTCompiler.hasOwnProperty_
+
+diff --git a/lib/parse.js b/lib/parse.js
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@
+ 	or_: function(expr1, expr2) {
+ 		return "(" + expr1 + ") || (" + expr2 + ")";
+ 	},
++	hasOwnProperty_: function(obj, prop, computed) {
++		if (computed) {
++			return "(Object.prototype.hasOwnProperty.call(" + obj + "," + prop + "))";
++		} else {
++			return (
++				"(Object.prototype.hasOwnProperty.call(" + obj + ",'" + prop + "'))"
++			);
++		}
++	},
+ 	and_: function(expr1, expr2) {
+ 		return "(" + expr1 + ") && (" + expr2 + ")";
+ 	},

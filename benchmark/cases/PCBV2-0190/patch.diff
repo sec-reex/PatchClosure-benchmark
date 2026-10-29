@@ -1,0 +1,201 @@
+PCBV2-0190 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 95e9d9923f8a8b4a01da1ea138fcc39ec7b6b15f
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0190/
+
+diff --git a/.travis.yml b/.travis.yml
+index 1fd107d..cc7153d 100644
+--- a/.travis.yml
++++ b/.travis.yml
+@@ -2,9 +2,13 @@ sudo: false
+ os:
+   - linux
+   - osx
++  - windows
+ language: node_js
+ node_js:
+   - node
++  - '12'
++  - '11'
++  - '10'
+   - '9'
+   - '8'
+   - '7'
+diff --git a/.verb.md b/.verb.md
+index 095ead3..2de7271 100644
+--- a/.verb.md
++++ b/.verb.md
+@@ -1,7 +1,11 @@
++## Heads up!
++
++[Please update][update] to version 3.0.1 or later, a critical bug was fixed in that version.
++
+ ## Usage
+ 
+ ```js
+-var set = require('{%= name %}');
++const set = require('{%= name %}');
+ set(object, prop, value);
+ ```
+ 
+@@ -17,7 +21,7 @@ set(object, prop, value);
+ Updates and returns the given object:
+ 
+ ```js
+-var obj = {};
++const obj = {};
+ set(obj, 'a.b.c', 'd');
+ console.log(obj);
+ //=> { a: { b: { c: 'd' } } }
+@@ -104,4 +108,4 @@ These are just a few of the duplicate libraries on NPM.
+ - Adds support for escaping with double or single quotes. See [escaping](#escaping) for examples.
+ - Will no longer split inside brackets or braces. See [bracket support](#bracket-support) for examples.
+ 
+-If there are any regressions please create a [bug report](../../issues/new). Thanks!
++If there are any regressions please create a [bug report](../../issues/new). Thanks!
+\ No newline at end of file
+diff --git a/LICENSE b/LICENSE
+index d32ab44..9af4a67 100644
+--- a/LICENSE
++++ b/LICENSE
+@@ -1,6 +1,6 @@
+ The MIT License (MIT)
+ 
+-Copyright (c) 2014-2018, Jon Schlinkert.
++Copyright (c) 2014-present, Jon Schlinkert.
+ 
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+diff --git a/README.md b/README.md
+index e5a9d98..0a9905a 100644
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,4 @@
+-# set-value [![NPM version](https://img.shields.io/npm/v/set-value.svg?style=flat)](https://www.npmjs.com/package/set-value) [![NPM monthly downloads](https://img.shields.io/npm/dm/set-value.svg?style=flat)](https://npmjs.org/package/set-value) [![NPM total downloads](https://img.shields.io/npm/dt/set-value.svg?style=flat)](https://npmjs.org/package/set-value) [![Linux Build Status](https://img.shields.io/travis/jonschlinkert/set-value.svg?style=flat&label=Travis)](https://travis-ci.org/jonschlinkert/set-value)
++# set-value [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=W8YFZ425KND68) [![NPM version](https://img.shields.io/npm/v/set-value.svg?style=flat)](https://www.npmjs.com/package/set-value) [![NPM monthly downloads](https://img.shields.io/npm/dm/set-value.svg?style=flat)](https://npmjs.org/package/set-value) [![NPM total downloads](https://img.shields.io/npm/dt/set-value.svg?style=flat)](https://npmjs.org/package/set-value) [![Linux Build Status](https://img.shields.io/travis/jonschlinkert/set-value.svg?style=flat&label=Travis)](https://travis-ci.org/jonschlinkert/set-value)
+ 
+ > Create nested values and any intermediaries using dot notation (`'a.b.c'`) paths.
+ 
+@@ -12,10 +12,14 @@ Install with [npm](https://www.npmjs.com/):
+ $ npm install --save set-value
+ ```
+ 
++## Heads up!
++
++[Please update](https://github.com/update/update) to version 3.0.1 or later, a critical bug was fixed in that version.
++
+ ## Usage
+ 
+ ```js
+-var set = require('set-value');
++const set = require('set-value');
+ set(object, prop, value);
+ ```
+ 
+@@ -30,7 +34,7 @@ set(object, prop, value);
+ Updates and returns the given object:
+ 
+ ```js
+-var obj = {};
++const obj = {};
+ set(obj, 'a.b.c', 'd');
+ console.log(obj);
+ //=> { a: { b: { c: 'd' } } }
+@@ -210,25 +214,26 @@ You might also be interested in these projects:
+ 
+ ### Contributors
+ 
+-| **Commits** | **Contributor** | 
+-| --- | --- |
+-| 64 | [jonschlinkert](https://github.com/jonschlinkert) |
+-| 1 | [vadimdemedes](https://github.com/vadimdemedes) |
+-| 1 | [wtgtybhertgeghgtwtg](https://github.com/wtgtybhertgeghgtwtg) |
++| **Commits** | **Contributor** |  
++| --- | --- |  
++| 71 | [jonschlinkert](https://github.com/jonschlinkert) |  
++| 2  | [mbelsky](https://github.com/mbelsky) |  
++| 1  | [vadimdemedes](https://github.com/vadimdemedes) |  
++| 1  | [wtgtybhertgeghgtwtg](https://github.com/wtgtybhertgeghgtwtg) |  
+ 
+ ### Author
+ 
+ **Jon Schlinkert**
+ 
+-* [LinkedIn Profile](https://linkedin.com/in/jonschlinkert)
+ * [GitHub Profile](https://github.com/jonschlinkert)
+ * [Twitter Profile](https://twitter.com/jonschlinkert)
++* [LinkedIn Profile](https://linkedin.com/in/jonschlinkert)
+ 
+ ### License
+ 
+-Copyright © 2018, [Jon Schlinkert](https://github.com/jonschlinkert).
++Copyright © 2019, [Jon Schlinkert](https://github.com/jonschlinkert).
+ Released under the [MIT License](LICENSE).
+ 
+ ***
+ 
+-_This file was generated by [verb-generate-readme](https://github.com/verbose/verb-generate-readme), v0.6.0, on March 05, 2018._
+\ No newline at end of file
++_This file was generated by [verb-generate-readme](https://github.com/verbose/verb-generate-readme), v0.8.0, on June 19, 2019._
+\ No newline at end of file
+diff --git a/index.js b/index.js
+index 9c83869..9d9ffcd 100644
+--- a/index.js
++++ b/index.js
+@@ -25,7 +25,7 @@ function set(target, path, value, options) {
+     merge = Object.assign;
+   }
+ 
+-  const keys = isArray ? path : split(path, opts);
++  const keys = (isArray ? path : split(path, opts)).filter(isValidKey);
+   const len = keys.length;
+   const orig = target;
+ 
+@@ -98,16 +98,12 @@ function createKey(pattern, options) {
+   return id;
+ }
+ 
++function isValidKey(key) {
++  return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
++}
++
+ function isObject(val) {
+-  switch (typeof val) {
+-    case 'object':
+-      return val !== null;
+-    case 'function':
+-      return true;
+-    default: {
+-      return false;
+-    }
+-  }
++  return val !== null && (typeof val === 'object' || typeof val === 'function');
+ }
+ 
+ set.memo = {};
+diff --git a/package.json b/package.json
+index 77bfc3a..3a9674e 100644
+--- a/package.json
++++ b/package.json
+@@ -36,7 +36,7 @@
+     "dot-prop": "^4.2.0",
+     "dot2val": "^1.2.2",
+     "es5-dot-prop": "^4.1.1",
+-    "gulp-format-md": "^1.0.0",
++    "gulp-format-md": "^2.0.0",
+     "lodash.set": "^4.3.2",
+     "minimist": "^1.2.0",
+     "mocha": "^3.5.3",
+@@ -124,7 +124,9 @@
+       "set-deep",
+       "set-deep-prop",
+       "set-nested-prop",
+-      "setvalue"
++      "setvalue",
++      "split-string",
++      "update"
+     ]
+   }
+-}
++}
+\ No newline at end of file

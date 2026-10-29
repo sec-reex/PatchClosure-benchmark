@@ -1,0 +1,45 @@
+PCBV2-0052 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: v3.8.5..v3.8.6  aiohttp/http_parser.py get_content_length
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0052/
+
+diff --git a/aiohttp/http_parser.py b/aiohttp/http_parser.py
+index 5a66ce4b..91e01f43 100644
+--- a/aiohttp/http_parser.py
++++ b/aiohttp/http_parser.py
+@@ -322,15 +346,12 @@ class HttpParser(abc.ABC, Generic[_MsgT]):
+                             if length_hdr is None:
+                                 return None
+ 
+-                            try:
+-                                length = int(length_hdr)
+-                            except ValueError:
+-                                raise InvalidHeader(CONTENT_LENGTH)
+-
+-                            if length < 0:
++                            # Shouldn't allow +/- or other number formats.
++                            # https://www.rfc-editor.org/rfc/rfc9110#section-8.6-2
++                            if not length_hdr.strip(" \t").isdecimal():
+                                 raise InvalidHeader(CONTENT_LENGTH)
+ 
+-                            return length
++                            return int(length_hdr)
+ 
+                         length = get_content_length()
+                         # do not support old websocket spec
+@@ -632,13 +684,9 @@ class HttpResponseParser(HttpParser[RawResponseMessage]):
+         version_o = HttpVersion(int(match.group(1)), int(match.group(2)))
+ 
+         # The status code is a three-digit number
+-        try:
+-            status_i = int(status)
+-        except ValueError:
+-            raise BadStatusLine(line) from None
+-
+-        if status_i > 999:
++        if len(status) != 3 or not status.isdecimal():
+             raise BadStatusLine(line)
++        status_i = int(status)
+ 
+         # read headers
+         (

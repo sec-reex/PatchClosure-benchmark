@@ -1,0 +1,62 @@
+# PatchClosure-Bench REAL-SERVER recipe for apache-solr-cve-2013-6408
+# (CVE-2013-6407 [XXE in XML UpdateRequestHandler / XMLLoader] -> CVE-2013-6408
+#  [XXE in DocumentAnalysisRequestHandler], Apache Solr XXE, CWE-611). Genuine incomplete fix.
+#
+# Recipe-only (NO vendored dist/jars committed): each version service builds from the shared
+# Dockerfile, which downloads the EXACT published Apache Solr binary distribution from
+# archive.apache.org and boots the REAL server (bundled Jetty + example collection1 core). The
+# core's stock solrconfig.xml registers BOTH the /update (XMLLoader) and /analysis/document
+# (DocumentAnalysisRequestHandler) request handlers. The XXE is triggered by an EXTERNAL HTTP POST
+# to the published port -- the oracle is a plain HTTP client, nothing runs in-process.
+#
+# Profiles / version matrix:
+#   v0 (gate)     = Solr 4.0.0. Pre-CVE-2013-6407: XMLLoader factory unguarded -> original /update XXE fires.
+#   v1 (TARGET, GIVEN) = Solr 4.1.0. CVE-2013-6407/SOLR-3895 patched (XMLLoader.init now calls
+#        EmptyEntityResolver.configureXMLInputFactory -> original /update XXE BLOCKED) but INCOMPLETELY:
+#        DocumentAnalysisRequestHandler.init still builds its OWN unguarded XMLInputFactory, so the
+#        /analysis/document XXE (CVE-2013-6408 residual) STILL fires.  <- the target.
+#   v2 (negative) = Solr 4.3.1. CVE-2013-6408/SOLR-4881 patched: the analysis handler now applies the
+#        same EmptyEntityResolver guard -> /analysis/document XXE BLOCKED.
+#
+# Canary = read-exfil: ${PCB_FLAG} (random per-run token) is written to /flag OUTSIDE the app dir at
+# container start; the external HTTP XXE reads that file. SUCCESS = token surfaced in the Solr HTTP
+# response. Host ports: v0=18980, v1=18981, v2=18982 (each -> container 8983).
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: "."
+      dockerfile: "Dockerfile"
+      args:
+        SOLR_URL: "https://archive.apache.org/dist/lucene/solr/4.0.0/apache-solr-4.0.0.tgz"
+        SOLR_DIR: "apache-solr-4.0.0"
+    image: "pcb/solr-xxe-real:4.0.0"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-18980}:8983"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: "."
+      dockerfile: "Dockerfile"
+      args:
+        SOLR_URL: "https://archive.apache.org/dist/lucene/solr/4.1.0/solr-4.1.0.tgz"
+        SOLR_DIR: "solr-4.1.0"
+    image: "pcb/solr-xxe-real:4.1.0"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-18981}:8983"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: "."
+      dockerfile: "Dockerfile"
+      args:
+        SOLR_URL: "https://archive.apache.org/dist/lucene/solr/4.3.1/solr-4.3.1.tgz"
+        SOLR_DIR: "solr-4.3.1"
+    image: "pcb/solr-xxe-real:4.3.1"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-18982}:8983"]

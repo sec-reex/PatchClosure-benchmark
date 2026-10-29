@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PatchClosure-Bench harness POM (recipe-only, no vendored jars).
+     A dummy project whose single dependency is the PUBLISHED Pivotal artifact
+     org.springframework.integration:spring-integration-zip at the pinned version.
+     `mvn dependency:copy-dependencies` pulls spring-integration-zip + its
+     transitive deps (spring-integration-core, spring-messaging, spring-core,
+     spring-beans, zt-zip, commons-io ...) at build time so the tiny Driver.java
+     can call the REAL, unmodified
+     org.springframework.integration.zip.transformer.UnZipTransformer. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>siz-unzip-harness</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <properties>
+    <siz.version>1.0.1.RELEASE</siz.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.source>8</maven.compiler.source>
+    <maven.compiler.target>8</maven.compiler.target>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.integration</groupId>
+      <artifactId>spring-integration-zip</artifactId>
+      <version>${siz.version}</version>
+    </dependency>
+  </dependencies>
+</project>

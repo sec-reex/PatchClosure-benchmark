@@ -1,0 +1,25 @@
+case_id: PCBV2-0118
+public_name: gitea-openredirect-2022-1058-2026-25779
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: gitea/gitea
+  v0: "1.16.4"
+  v1: "1.16.5"
+service:
+  # Compose publishes ${PORT_V*_0}:3000. Platform HTTP on :3000 would miss;
+  # start.sh / reset.sh wait on the published host port and seed pcbuser.
+  readiness: none
+  exposed_ports: [3000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

@@ -1,0 +1,11 @@
+{
+  "name": "pcb-axios-buildfullpath-ssrf-core",
+  "private": true,
+  "type": "module",
+  "description": "Faithful-core axios baseURL destination-control guard using the REAL npm axios package per version (CVE-2024-39338 -> CVE-2025-27152). npm aliases hold all three versions side-by-side; the server role selects one by HARNESS_VER.",
+  "dependencies": {
+    "axios-v0": "npm:axios@1.7.3",
+    "axios-v1": "npm:axios@1.7.4",
+    "axios-v2": "npm:axios@1.8.2"
+  }
+}

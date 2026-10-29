@@ -1,0 +1,34 @@
+PCBV2-0181 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: upstream: https://sourceforge.net/projects/qdpm/files/qdPM_9.1.zip
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0181/
+
+diff --git a/uploads/.htaccess b/uploads/.htaccess
+--- a/uploads/.htaccess
++++ b/uploads/.htaccess
+@@
++# $Id$
++#
++# This is used to restrict access to this folder to anything other
++# than images
++
++# Prevents any script files from being accessed from the images folder
++<FilesMatch "\.(php([0-9]|s)?|s?p?html|cgi|pl|exe)$">
++   Order Deny,Allow
++   Deny from all
++</FilesMatch>
+
+diff --git a/uploads/users/.htaccess b/uploads/users/.htaccess
+--- a/uploads/users/.htaccess
++++ b/uploads/users/.htaccess
+@@
++# $Id$
++#
++# This is used to restrict access to this folder to anything other
++# than images
++
++# Prevents any script files from being accessed from the images folder
++<FilesMatch "\.(php([0-9]|s)?|s?p?html|cgi|pl|exe)$">
++   Order Deny,Allow
++   Deny from all
++</FilesMatch>

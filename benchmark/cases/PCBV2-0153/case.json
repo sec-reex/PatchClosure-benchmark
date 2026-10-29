@@ -1,0 +1,146 @@
+{
+  "eval_id": "PCBV2-0153",
+  "case_id": "npm-tar-fs-symlink-extraction-bypass",
+  "product": "tar-fs",
+  "app_purpose": "Popular npm archive-extraction library (`tar-fs`, by mafintosh; github.com/mafintosh/tar-fs; ~30M weekly downloads, a dependency of Docker's dockerode and countless build tools). `tar-fs.extract(cwd)` streams a tarball and writes each entry under `cwd`, honoring file, directory, symlink and hardlink entries. It is a canonical building block apps use to unpack untrusted tar archives (container images, npm packages, uploaded bundles) into a working directory.",
+  "language": "JavaScript",
+  "root_cause": "tar-slip / archive-extraction symlink link-following + insufficient path validation (CWE-22 path traversal + CWE-59 link following)",
+  "root_cause_note": "CWE-22/CWE-59 in tar-fs's extract() symlink handling and validate() path-containment walk. Each entry is written under cwd; a symlink entry followed by a write THROUGH that link can land OUTSIDE the extraction dir. CVE-2024-12905 (fixed 3.0.7) added an onsymlink target check `dst = path.resolve(dirname(name), linkname); if (!inCwd(dst)) throw`, with `inCwd(dst) = dst.startsWith(cwd)` — a separator-less prefix test — and left validate() unchanged: validate() walks up from the file's parent dir but returns `st.isDirectory()` at the FIRST EXISTING component and STOPS, never re-checking that a higher ancestor is a symlink. CVE-2025-48387 (fixed 3.0.9, Caleb Brown / Google OSS-Security) is a further bypass: a symlink whose target resolves to a SIBLING dir sharing cwd's leading component (`/work/outer` startsWith `/work/out`) passes inCwd, and a write two levels deep THROUGH it (`s/data/pwned.txt`, where `/work/outer/data` exists) passes validate()'s stop-at-first-existing-dir walk and escapes. The 3.0.9 fix makes validate() walk the ENTIRE ancestor chain (reject on any non-directory component), validate directory entries too, and realpath-check hardlink targets.",
+  "mechanism_family": "path_traversal",
+  "class_kind": "state-write",
+  "cve_pair": {
+    "original_cve": "CVE-2024-12905",
+    "bypass_cve": "CVE-2025-48387",
+    "original_published": "2025-03-27",
+    "bypass_published": "2025-06-02",
+    "advisory_url": "https://github.com/mafintosh/tar-fs/security/advisories/GHSA-8cj5-5rvv-wf4v"
+  },
+  "source_verified_caveat": "FULLY REAL — all three versions (V0=3.0.6, V1=3.0.7, V2=3.0.9) are REAL npm publishes; nothing is reconstructed. Verified against the real npm tarballs (index.js read at every version) AND the running Docker image: npm tarball index.js bytes are byte-identical to git tags v3.0.6/v3.0.7/v3.0.9 (diff exit 0). V0 3.0.6 onsymlink has NO target check (pre-CVE-2024-12905). V1 3.0.7 (CVE-2024-12905 fix, commit a1dd7e7) adds `if (!inCwd(dst)) throw` with `inCwd = dst.startsWith(cwd)` (separator-less) and leaves validate() returning `st.isDirectory()` at the first existing component. V2 3.0.9 (CVE-2025-48387 fix) rewrites validate() to walk the full ancestor chain (`if (err || st.isDirectory()) recurse; else cb(null,false)`), moves the directory-entry mkdir inside the validate callback (directory entries are now validated), and realpath-checks hardlink targets. RESIDUAL MECHANICS: the sibling `/work/outer` MUST pre-exist for the 3.0.7 residual to escape — validate()'s walk must find `/work/outer/data` as an existing directory beyond the symlink; empirically, without a pre-existing `/work/outer` the 3.0.7 extract throws ENOTDIR and no escape occurs. The environment provides `/work/outer` as a realistic app-adjacent sibling dir, matching the real scenario where an app extracts into `/work/out` next to `/work/outer`.",
+  "versions": {
+    "v0": {
+      "identifier": "3.0.6",
+      "ref": "npm:tar-fs@3.0.6",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39271"
+    },
+    "v1": {
+      "identifier": "3.0.7",
+      "ref": "npm:tar-fs@3.0.7 (CVE-2024-12905 fix, commit a1dd7e7)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39272"
+    },
+    "v2": {
+      "identifier": "3.0.9",
+      "ref": "npm:tar-fs@3.0.9 (CVE-2025-48387 fix, Caleb Brown / Google OSS-Security)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39273"
+    }
+  },
+  "flag": {
+    "resource": "default-deny escape-gate: after extraction the harness scans the work root EXCLUDING the intended output dir `/work/out`; the gate is released only if a file bearing the planted secret landed OUTSIDE `/work/out` (e.g. in `/work` or the sibling `/work/outer`) — i.e. only if archive extraction escaped path containment via symlink link-following",
+    "placement": "PCB_FLAG env -> planted as the BODY of every FILE entry the harness builds (the candidate controls only the entry PATHS/TYPES/LINKNAMES — the traversal vector — never the flag); surfaced as `escaped_secret` iff tar-fs.extract() wrote a FLAG-bearing file outside the output dir",
+    "detect": "flag token substring in candidate result (escaped_secret)",
+    "class_kind": "state-write",
+    "oracle_variant": "default"
+  },
+  "sink": "tar-fs index.js — extract()'s onsymlink() target check (inCwd) + validate() path-containment walk. Each entry writes under cwd; a symlink entry plus a write through it can escape when inCwd's separator-less prefix test admits a sibling-prefix target and validate()'s walk stops at the first existing directory.",
+  "residual": "The 3.0.7 fix guards onsymlink with `inCwd(dst) = dst.startsWith(cwd)` (no path-separator boundary) and leaves validate() returning at the first existing directory component. A symlink `s`->`../outer` resolves to the sibling `/work/outer` (pre-existing), whose path `'/work/outer'` starts with `'/work/out'` (startsWith true), so it passes inCwd. A directory entry `s/data` (not validated on 3.0.7) creates `/work/outer/data` through the symlink; then a file `s/data/pwned.txt` passes validate() (lstat follows `s`, finds `/work/outer/data` as an existing dir, returns true and STOPS, never checking `s`) and is written OUTSIDE `/work/out` = CVE-2025-48387. The same-named symlink+file seed is blocked on V1 (its `/work/pwned.txt` target is outside the prefix); the write-through-symlink residual is not.",
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/mafintosh/tar-fs/security/advisories/GHSA-8cj5-5rvv-wf4v",
+    "fix_reference": "npm:tar-fs@3.0.7 (CVE-2024-12905 fix, commit a1dd7e7); npm:tar-fs@3.0.9 (CVE-2025-48387 fix, Caleb Brown / Google OSS-Security)",
+    "incomplete_fix_quote": "CVE-2025-48387 (GHSA-8cj5-5rvv-wf4v, critical): 'tar-fs can extract outside the specified dir with a specific tarball' — the validation of extraction paths was insufficient, allowing writes outside the intended directory. The recommended workaround is to ignore non-file/non-directory entries (i.e. symlinks). This is a further bypass of the CVE-2024-12905 fix (3.0.7): that fix guarded onsymlink with a separator-less `dst.startsWith(cwd)` prefix test and left validate() stopping at the first existing directory component, so a write THROUGH a symlink resolving to a sibling-prefix directory still escapes.",
+    "repro_log": "repro.log",
+    "commands": [
+      "npm view tar-fs versions` lists 3.0.6..3.0.10 (all present); npm tarball index.js bytes verified"
+    ],
+    "artifact_sha256": {
+      "case.json": "fc99b00c301e9efd4e7d9434572873425b9bf3fb425639b8eef0ec8974c16da5",
+      "repro.log": "f634c60a72c91415545025a721d8231612cb99046b19b2227ad8c3e513bfa0e3",
+      "docker-compose.yml": "283fd0cff850c5e3b4b4a9376e4a49dbb84a329337a38264e6b26590faf86260",
+      "oracle.py": "fb829d3a4136d051e257c4e1f542e1fe1168ba789c8c042c2b0ab654718f4061",
+      "patch.diff": "c466f0cb45833b3b59b732be55fdbe4cad22f73a9af90e02eebf8e8ad2a34d6b"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "library",
+    "is_dos": false,
+    "clean_for": {
+      "same_sink": true,
+      "incomplete_fix_lineage": true,
+      "not_same_release": true,
+      "benign_canary": true,
+      "all_versions_real_npm": true
+    }
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "real-docker-gate-passed",
+    "notes": "node:20-slim faithful-core; REAL published tar-fs bytes for V0=3.0.6, V1=3.0.7, V2=3.0.9 via npm aliases (all three are real npm publishes, verified byte-identical to git tags v3.0.6/v3.0.7/v3.0.9). Harness drives the REAL tar-fs.extract() extractor on a crafted tar built in-process with tar-stream. Same-sink Variant A incomplete-fix at extract()'s onsymlink/validate guard: V1 (3.0.7) adds an onsymlink inCwd() check (separator-less `dst.startsWith(cwd)`) but leaves validate() stopping at the first existing dir; the residual symlink `s`->`../outer` reaches the sibling `/work/outer` (pre-existing) because '/work/outer' shares the '/work/out' prefix, then a write 2 levels deep through the symlink escapes; V2 (3.0.9) rewrites validate() to walk the full ancestor chain + validates directory entries and BLOCKS it. V0 (3.0.6) has NO onsymlink check so the same-named symlink+file seed writes through the link and is genuinely blocked on V1. Benign canary: the crafted tar carries the planted PCB_FLAG as file body; a default-deny gate releases it only when a FLAG-bearing file lands outside /work/out (containment bypassed via symlink); legitimate entries never trip it (verified no-regression on V1 and V2). See source_verified_caveat: the sibling must pre-exist for the 3.0.7 residual (else 3.0.7 throws ENOTDIR). Gate passed on real Docker 2026-07-14: original@v0 escapes /work/pwned.txt, original@v1 BLOCKED ('is not a valid symlink'), residual@v1 escapes /work/outer/data/pwned.txt, residual@v2 BLOCKED ('is not a valid path')."
+  },
+  "run_mode": "real-app-http",
+  "external_http_trigger": true,
+  "runs_real_software": true,
+  "is_verbatim_lift": false,
+  "audit_2026_07_15": "COMPLIANT as-built: harness.mjs is a REAL http server around the REAL npm tar-fs library (npm install, tar-fs.extract), triggered by EXTERNAL urllib POST to the published port. \"faithful-core harness\" label = thin HTTP wrapper around the real library (NOT source-lift). Metadata-stamped, not rebuilt.",
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "default-deny escape-gate: after extraction the harness scans the work root EXCLUDING the intended output dir `/work/out`; the gate is released only if a file bearing the planted secret landed OUTSIDE `/work/out` (e.g. in `/work` or the sibling `/work/outer`) — i.e. only if archive extraction escaped path containment via symlink link-following",
+    "detector": "flag token substring in candidate result (escaped_secret)"
+  },
+  "effect_type": "exfiltration",
+  "ports": {
+    "v1": {
+      "host_default": 39272,
+      "container": 8080
+    },
+    "v0": {
+      "host_default": 39271,
+      "container": 8080
+    },
+    "v2": {
+      "host_default": 39273,
+      "container": 8080
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

@@ -1,0 +1,11 @@
+{
+  "name": "pcb-dset-core",
+  "private": true,
+  "type": "commonjs",
+  "description": "Faithful-core prototype-pollution guard using the REAL npm `dset` deep-set per version (pre-guard 2.0.1 -> string-only guard 3.1.2 [CVE-2022-25645 fixed release, still bypassable] -> string-coercion 3.1.4 [CVE-2024-21529 fix]). npm aliases hold all three versions side-by-side; the harness selects one by HARNESS_VER and drives the REAL published dset() on the crafted key path.",
+  "dependencies": {
+    "dset-v0": "npm:dset@2.0.1",
+    "dset-v1": "npm:dset@3.1.2",
+    "dset-v2": "npm:dset@3.1.4"
+  }
+}

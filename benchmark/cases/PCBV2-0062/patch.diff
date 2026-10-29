@@ -1,0 +1,24 @@
+PCBV2-0062 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: v2.0.1..v3.1.2  src/index.js
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0062/
+
+diff --git a/src/index.js b/src/index.js
+index ade2de8..75a01fb 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -1,8 +1,9 @@
+-export default function (obj, keys, val) {
++export function dset(obj, keys, val) {
+ 	keys.split && (keys=keys.split('.'));
+-	var i=0, l=keys.length, t=obj, x;
+-	for (; i < l; ++i) {
+-		x = t[keys[i]];
+-		t = t[keys[i]] = (i === l - 1 ? val : (x != null ? x : (!!~keys[i+1].indexOf('.') || !(+keys[i+1] > -1)) ? {} : []));
++	var i=0, l=keys.length, t=obj, x, k;
++	while (i < l) {
++		k = keys[i++];
++		if (k === '__proto__' || k === 'constructor' || k === 'prototype') break;
++		t = t[k] = (i === l) ? val : (typeof(x=t[k])===typeof(keys)) ? x : (keys[i]*0 !== 0 || !!~(''+keys[i]).indexOf('.')) ? {} : [];
+ 	}
+ }

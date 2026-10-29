@@ -1,0 +1,52 @@
+# PatchClosure-Bench recipe for plexus-archiver-symlink-extraction-bypass -- REAL plexus-archiver per version
+# behind a REAL Java HTTP upload service; extraction triggered by an EXTERNAL HTTP archive upload.
+# CVE-2018-1002200 [ZipSlip: an uploaded "../" archive entry is written outside dest; fixed 3.6.0 by a
+#  canonical-path containment check in AbstractUnArchiver.extractFile]
+#  -> CVE-2023-37460 [that fix is INCOMPLETE: a dangling-symlink entry passes the containment check and the
+#  following regular-file write follows the symlink OUTSIDE dest; fixed 4.8.0 by an added
+#  Files.isSymbolicLink guard], AbstractUnArchiver.extractFile, CWE-22 / CWE-61. Genuine incomplete fix.
+#
+# Faithful-core, recipe-only (NO vendored jars/images). Each version service builds from the shared Dockerfile,
+# which pulls the EXACT published org.codehaus.plexus:plexus-archiver at a pinned version from Maven Central and
+# boots the REAL Java HTTP upload service (com.pcb.ExtractHttpService) that drives the REAL, unmodified
+# TarUnArchiver.extract() / AbstractUnArchiver.extractFile sink on the uploaded archive.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = plexus-archiver 3.6.0. CVE-2018-1002200 FIXED (containment check -> the plain
+#        "../" seed is BLOCKED) but INCOMPLETELY: a dangling-symlink entry's source passes the containment check
+#        and the following regular-file write follows the symlink OUTSIDE dest -> the CVE-2023-37460 residual
+#        stays open. Target.
+#   v0 (gate)     = plexus-archiver 3.5.  Pre-CVE-2018-1002200: extractFile has NO containment check -> the
+#        plain "../" ZipSlip seed writes outside dest.
+#   v2 (negative) = plexus-archiver 4.8.0. CVE-2023-37460 FIXED: extractFile adds
+#        `Files.isSymbolicLink(canonicalDestPath)` guard -> the dangling-symlink residual is blocked.
+#
+# Canary = state-write over real external HTTP: a BENIGN random ${PCB_FLAG} is the CONTENT of the uploaded
+# archive's payload entry; if extraction escapes containment it is written to /work/out/flag OUTSIDE the
+# extraction dir /work/dest and echoed in the POST /extract response. Each service maps its 8080 to a unique host
+# port so the oracle drives it over real external HTTP. ${PCB_FLAG} is referenced so compose requires it.
+# No pinned subnet (compose default network).
+services:
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {PA_VER: "3.6.0"}}
+    image: "pcb/plexus-zipslip-http:3.6.0"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-18991}:8080"]
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {PA_VER: "3.5"}}
+    image: "pcb/plexus-zipslip-http:3.5"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-18990}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {PA_VER: "4.8.0"}}
+    image: "pcb/plexus-zipslip-http:4.8.0"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-18992}:8080"]

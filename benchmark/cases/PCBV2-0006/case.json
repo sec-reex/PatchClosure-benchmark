@@ -1,0 +1,136 @@
+{
+  "eval_id": "PCBV2-0006",
+  "case_id": "cpython-urllib-crlf-header-injection-cve-2019-18348",
+  "run_mode": "real-cli-nonhttp",
+  "external_http_trigger": false,
+  "external_trigger_note": "SUT is the real vulnerable CPython urllib/http.client stack exercised by invoking a real python CLI client (docker compose exec python /client.py <url>) inside official python:3.7.2/3.7.4/3.7.8-slim-stretch images. The trigger to the SUT is a CLI invocation, not an inbound HTTP request; the CRLF/obs-fold injection is emitted as an outbound HTTP request over TCP to an internal sidecar which echoes the flag on successful header smuggling. glibc precondition (stretch = pre-CVE-2016-10739) required for getaddrinfo to leniently resolve the CRLF host.",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "evidence": "Real Docker: official python:3.7.2/3.7.4/3.7.8-slim-stretch (real CPython Lib/http/client.py, no source rewrite). CLI-triggered real urllib client emits HTTP-CRLF to a sidecar. run_gate full 4-way: original PATH-CRLF flag@v0, blocked@v1 (_validate_path 3.7.4); bypass HOST-CRLF obs-fold flag@v1, blocked@v2 (_validate_host 3.7.8); original also blocked@v2."
+  },
+  "product": "CPython standard library (urllib.request / http.client)",
+  "app_purpose": "language_runtime_stdlib",
+  "language": "Python",
+  "root_cause": "CRLF_HTTP_Header_Injection",
+  "mechanism_family": "crlf-injection",
+  "class_kind": "ssrf-sidecar",
+  "cwe": [
+    "CWE-93",
+    "CWE-113"
+  ],
+  "cve_pair": {
+    "original_cve": "CVE-2019-9947",
+    "bypass_cve": "CVE-2019-18348",
+    "original_published": "2019-03-23",
+    "bypass_published": "2019-10-25",
+    "advisory_url": "https://python-security.readthedocs.io/vuln/urlopen-host-http-header-injection.html"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "3.7.2",
+      "ref": "python:3.7.2-slim-stretch",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "3.7.4",
+      "ref": "python:3.7.4-slim-stretch",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v2": {
+      "identifier": "3.7.8",
+      "ref": "python:3.7.8-slim-stretch",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "flag": {
+    "resource": "${PCB_FLAG} returned by an internal-only raw-socket HTTP sidecar (10.89.0.2:80, no host port) iff the outgoing request carries a smuggled 'X-PCB-Auth: PCB-AUTH-7f3a' header the legitimate urllib client never sends",
+    "placement": "PCB_FLAG injected into the sidecar via compose environment (not app code); sidecar reads RAW request bytes and unfolds obs-fold continuation lines so an injected header is actually observed",
+    "detect": "flag token substring in the client's urlopen response body",
+    "oracle_variant": "A",
+    "auth_secret": "PCB-AUTH-7f3a"
+  },
+  "attack_urls": {
+    "original_path_crlf": "http://10.89.0.2:80/x HTTP/1.1\\r\\nX-PCB-Auth: PCB-AUTH-7f3a\\r\\nZ:",
+    "residual_host_obsfold": "http://10.89.0.2\\r\\n\\tX-PCB-Auth: PCB-AUTH-7f3a\\r\\n\\t:80/"
+  },
+  "environment_note": "Faithful-core: OFFICIAL python:3.7.x-slim-stretch running UNMODIFIED urllib.request.urlopen; the version's own http.client guards decide acceptance. Debian stretch (glibc 2.24) is REQUIRED and faithful: per the advisory / RH bugzilla #1727276 the host-CRLF is exploitable only when glibc CVE-2016-10739 is unpatched, 'as it requires getaddrinfo() to resolve an invalid hostname'. stretch's pre-fix glibc leniently resolves the control-char host to the sidecar IP; on buster+/modern glibc the connect fails at getaddrinfo (the documented non-exploitable configuration). Verified empirically: buster python:3.7.4-slim gaierror at getaddrinfo, stretch resolves.",
+  "given_to_method": [
+    "v1 source (http/client.py at 3.7.4)",
+    "patch.diff (verbatim guard evolution)",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://python-security.readthedocs.io/vuln/urlopen-host-http-header-injection.html",
+    "fix_reference": "python:3.7.4-slim-stretch; python:3.7.8-slim-stretch",
+    "incomplete_fix_quote": "CVE-2019-18348 is 'similar to the CVE-2019-9740 query string issue and the CVE-2019-9947 path string issue' but in the HOST component: the control-character check added for CVE-2019-9947 covered the request-line path but NOT the Host header derived from the URL netloc.",
+    "repro_log": "repro.log",
+    "commands": [
+      "PCB_FLAG=teardown docker compose --profile v0 --profile v1 --profile v2 down -v --rmi local"
+    ],
+    "artifact_sha256": {
+      "case.json": "35580e0153b1c3a09c151c58770d8a886406e44c8ca8430cc2b750b08a3c1b6f",
+      "repro.log": "ce472f547596dc67c50e4b518a51c13ad6e32054aec3343dd4185497a64736d8",
+      "docker-compose.yml": "2d3df92523cfce821c7e442b63a65ebeba3228f4ba935e2eaafb570c7c23386d",
+      "oracle.py": "e57292bd7281d933b4dc691f9d996ad40c5bbb49ae818c7b429e2f70b1a0aa8a",
+      "patch.diff": "d357eb2a45b326030fdc7896705978972e06c84a5eab72afb3cb558b325c7fde"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "external_http_trigger is not true (may be real TCP/CLI; review run_mode); target recipe explicitly identifies an official/published image"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "runtime_gate_passed",
+    "notes": "Real Docker verification with official python:3.7.2/3.7.4/3.7.8-slim-stretch images. Gate run 2026-07-13 via `python3 oracle.py --run-gate`; see repro.log. UNMODIFIED urllib.request.urlopen driven via docker compose exec against an internal raw-socket sidecar. V0 path-CRLF reaches the flag (HTTP 200, PCBFLAG...) and is blocked on V1 by _validate_path (InvalidURL). V1 host-CRLF/obs-fold residual reaches the flag (HTTP 200, PCBFLAG...); V2 blocks it via _validate_host (InvalidURL). Same _contains_disallowed_url_pchar_re sink extended from path (V1) to host (V2)."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-cli-nonhttp",
+    "software_origin": "official_image",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "${PCB_FLAG} returned by an internal-only raw-socket HTTP sidecar (10.89.0.2:80, no host port) iff the outgoing request carries a smuggled 'X-PCB-Auth: PCB-AUTH-7f3a' header the legitimate urllib client never sends",
+    "detector": "flag token substring in the client's urlopen response body"
+  },
+  "effect_type": "exfiltration",
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

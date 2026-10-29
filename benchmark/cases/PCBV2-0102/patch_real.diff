@@ -1,0 +1,43 @@
+CVE: CVE-2024-4990
+upstream: https://github.com/yiisoft/yii2
+fix: 628d406bfafb80fc32147837888c0057d89a021e (2.0.50 / GHSA-cjcc-p67m-7qxm)
+
+diff --git a/framework/CHANGELOG.md b/framework/CHANGELOG.md
+index 8ed5a4669fc..80e5398d164 100644
+--- a/framework/CHANGELOG.md
++++ b/framework/CHANGELOG.md
+@@ -27,11 +27,13 @@ Yii Framework 2 Change Log
+ - New #20137: Added `yii\caching\CallbackDependency` to allow using a callback to determine if a cache dependency is still valid (laxity7)
+ - Enh #20134: Raise minimum `PHP` version to `7.3` (@terabytesoftw)
+ - Bug #20141: Update `ezyang/htmlpurifier` dependency to version `4.17` (@terabytesoftw)
++- CVE-2024-4990: Fix Unsafe Reflection in base Component class (@mtangoo)
+ - Bug #19817: Add MySQL Query `addCheck()` and `dropCheck()` (@bobonov)
+ - Bug #20165: Adjust pretty name of closures for PHP 8.4 compatibility (@staabm)
+ - Bug #19855: Fixed `yii\validators\FileValidator` to not limit some of its rules only to array attribute (bizley)
+ - Enh: #20171: Support JSON columns for MariaDB 10.4 or higher (@terabytesoftw)
+ 
++
+ 2.0.49.2 October 12, 2023
+ -------------------------
+ 
+diff --git a/framework/base/Component.php b/framework/base/Component.php
+index f2eb9bf05c1..ad5eff141a7 100644
+--- a/framework/base/Component.php
++++ b/framework/base/Component.php
+@@ -189,7 +189,15 @@ public function __set($name, $value)
+         } elseif (strncmp($name, 'as ', 3) === 0) {
+             // as behavior: attach behavior
+             $name = trim(substr($name, 3));
+-            $this->attachBehavior($name, $value instanceof Behavior ? $value : Yii::createObject($value));
++            if ($value instanceof Behavior) {
++                $this->attachBehavior($name, $value);
++            } elseif (isset($value['class']) && is_subclass_of($value['class'], Behavior::class, true)) {
++                $this->attachBehavior($name, Yii::createObject($value));
++            } elseif (is_string($value) && is_subclass_of($value, Behavior::class, true)) {
++                $this->attachBehavior($name, Yii::createObject($value));
++            } else {
++                throw new InvalidConfigException('Class is not of type ' . Behavior::class . ' or its subclasses');
++            }
+ 
+             return;
+         }

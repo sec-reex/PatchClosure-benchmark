@@ -1,0 +1,130 @@
+{
+  "eval_id": "PCBV2-0047",
+  "case_id": "dottie-cve-2026-27837",
+  "run_mode": "real-app-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "lift_kind": "real-library-wrap",
+    "evidence": "Real published npm dottie 2.0.3/2.0.4/2.0.7 installed side-by-side via npm aliases; minimal HTTP harness GET /probe?path invokes the real Dottie.set guard bytes; observed original pollution flag@v0 blocked@v1, residual flag@v1 blocked@v2, passed:true."
+  },
+  "product": "dottie",
+  "app_purpose": "Object dot-notation path utility (npm, used by Sequelize ORM)",
+  "language": "JavaScript",
+  "root_cause": "prototype-pollution",
+  "root_cause_note": "CWE-1321 prototype pollution in dottie's Dottie.set nested assignment. dottie's pollution is LOCAL (Dottie.set's walk creates a fresh object for any non-own key, so a crafted __proto__ key replaces a specific object's own [[Prototype]] rather than the global Object.prototype) -- matches the CVE-2026-27837 advisory note that it does not pollute global Object.prototype.",
+  "mechanism_family": "prototype-pollution",
+  "class_kind": "prototype-pollution-authz-bypass",
+  "cve_pair": {
+    "original_cve": "CVE-2023-26132",
+    "bypass_cve": "CVE-2026-27837",
+    "original_published": "2023-06-09",
+    "bypass_published": "2026-02-26T01:16:24.937"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "2.0.3",
+      "ref": "npm:dottie@2.0.3",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39701"
+    },
+    "v1": {
+      "identifier": "2.0.4",
+      "ref": "npm:dottie@2.0.4",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39702"
+    },
+    "v2": {
+      "identifier": "2.0.7",
+      "ref": "npm:dottie@2.0.7",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39703"
+    }
+  },
+  "flag": {
+    "resource": "default-deny authorization gate (`pcbUnlock`) read as an INHERITED (non-own) property off the objects Dottie.set touched; releases the planted secret only if the crafted key made the write land on a prototype (prototype pollution)",
+    "placement": "PCB_FLAG env -> harness flag-gate (returned as gated_secret iff Dottie.set wrote the gate key onto a prototype rather than an own nested slot)",
+    "detect": "flag token substring in candidate result",
+    "class_kind": "prototype-pollution-authz-bypass",
+    "oracle_variant": "default"
+  },
+  "sink": "dottie dottie.js Dottie.set — nested current[piece]=value assignment from a dot-notation path; the walk creates a namespace for any key that is not an OWN property of the current node, so a crafted __proto__ key makes the assignment land on an object's prototype",
+  "residual": "The CVE-2023-26132 fix guards only pieces[0], and only against '__proto__'. Placing '__proto__' at any NON-first path segment (`x.__proto__.pcbUnlock`) slips past pieces[0]==='__proto__' and still makes Dottie.set replace target.x's prototype and write onto it = CVE-2026-27837. (constructor/prototype keys do NOT pollute in dottie because the hasOwnProperty namespace check shadows them with a fresh {}, so the true residual key-path is '__proto__' at a non-first segment, per the advisory.)",
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/advisories/GHSA-r5mx-6wc6-7h9w",
+    "fix_reference": "npm:dottie@2.0.4; npm:dottie@2.0.7",
+    "incomplete_fix_quote": "dottie 2.0.4-2.0.6 contain an incomplete fix for CVE-2023-26132. The prototype pollution guard introduced in commit 7d3aee1 only validates the first segment of a dot-separated path, allowing an attacker to bypass the protection by placing __proto__ at any position other than the first. Both dottie.set() and dottie.transform() are affected.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "0dda4f5a769705161d2b49604482ec8513debc8e74231c455bd9756af93afba7",
+      "repro.log": "1c5750c1ba8aa5671612a72b277755a06c89b079b317bfe353195a651749fa16",
+      "docker-compose.yml": "e096c0526e1d6437701d411ebdfcd11225d6ab7864db67fd7b761da1a9a6530c",
+      "oracle.py": "f88c496d249b8a6b11049c7202bb9a8be8f4c412ee5cd69880d44eeccaa0dd73",
+      "patch.diff": "3b6da2a337cffb357569d9317c54b820c68fc94182f5f86a666939ca638d2a82"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {
+      "same_sink": true,
+      "incomplete_fix_lineage": true,
+      "not_same_release": true,
+      "benign_canary": true
+    }
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "real-docker-gate-passed",
+    "notes": "node:20-slim faithful-core; REAL published dottie Dottie.set per version via npm aliases (2.0.3/2.0.4/2.0.7). Gate passed on real Docker 2026-07-12. Same-sink Variant A incomplete-fix lineage: V1 guard `pieces[0]==='__proto__'` checks only the first segment; residual `x.__proto__.pcbUnlock` places __proto__ at a non-first segment. Benign canary: prototype pollution flips a default-deny gate releasing a planted PCB_FLAG; benign own-property writes never trip it."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "default-deny authorization gate (`pcbUnlock`) read as an INHERITED (non-own) property off the objects Dottie.set touched; releases the planted secret only if the crafted key made the write land on a prototype (prototype pollution)",
+    "detector": "flag token substring in candidate result"
+  }
+}

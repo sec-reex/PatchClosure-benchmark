@@ -1,0 +1,6 @@
+# Selenium client only. Chromium lives in the already-local selenium/standalone-chromium
+# sidecar (gpu1 has no mcr.microsoft.com playwright pull).
+FROM python:3.12-slim
+RUN pip install --no-cache-dir selenium==4.25.0
+COPY victim.py /victim.py
+CMD ["python3", "/victim.py"]

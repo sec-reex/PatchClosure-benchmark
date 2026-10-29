@@ -1,0 +1,28 @@
+case_id: PCBV2-0202
+public_name: ssti_thymeleaf_spel_sandbox
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  # Runtime pulls the published Maven Central artifact
+  # org.thymeleaf:thymeleaf-spring6 (CVE-2026-40478 seed on 3.1.3.RELEASE;
+  # incomplete 3.1.4.RELEASE; CVE-2026-41901 closed on 3.1.5.RELEASE).
+  type: maven
+  repo: org.thymeleaf:thymeleaf-spring6
+  v0: "3.1.3.RELEASE"
+  v1: "3.1.4.RELEASE"
+service:
+  # Compose publishes ${PORT_V*_0}:80. Platform HTTP on :80 would miss.
+  # start.sh / reset.sh wait until POST /render answers on the published port.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

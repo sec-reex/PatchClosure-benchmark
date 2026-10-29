@@ -1,0 +1,155 @@
+# docker-compose for avideo-cve-2026-33500 (CVE-2026-27568 -> CVE-2026-33500, stored XSS).
+#
+# REAL APP, EXTERNAL HTTP TRIGGER. Each v0/v1/v2 service builds an image that `git clone`s the REAL
+# WWBN/AVideo tree at the exact CVE commit and serves it; the attacker payload arrives over external
+# HTTP (POST /comment) and is rendered by the REAL sink markDownToHTML() out of the cloned
+# objects/functionsSecurity.php + REAL vendored Parsedown. No sink code is re-implemented in this case.
+#
+# Canary = xss-exfil: selenium/standalone-chromium (already local on gpu1; do not pull
+# mcr.microsoft.com/playwright) plus a slim selenium client. The victim carries ${PCB_FLAG}
+# in its cookie and CLICKS the rendered comment link (the CVE is UI:R). If the injected
+# comment yielded an executable `javascript:` href it navigates to the internal `callback`,
+# exfiltrating the flag -> proves JS EXECUTION (not reflection).
+#
+# Same-sink differential against the V1 guard (ParsedownSafeWithLinks @ f154167251):
+#   - original (CVE-2026-27568): raw-HTML  <a href='javascript:...'>CLICKME</a>
+#       -> real inlineMarkup()/sanitizeATag() scheme-whitelist blanks the javascript: href on V1
+#       -> click no-op -> BLOCKED on V1.  (On V0 = plain Parsedown it passes verbatim -> executes.)
+#   - residual (CVE-2026-33500): markdown  [CLICKME](javascript:...)
+#       -> Parsedown core inlineLink() is NOT overridden in V1 -> <a href="javascript:...">
+#       -> click executes -> flag exfiltrated. V2 (3ae02fa2409) overrides inlineLink() -> href blanked.
+#
+# Profiles: v0 / v1 / v2. Victim + callback share those profiles so they come up with the app.
+# No pinned subnet (clashes with parallel compose projects on gpu1).
+# pull_policy: never — pcb-avideo-real is a local tag (Hub "access denied"); sidecars are
+# pre-pulled in start.sh then `up --pull never` so a Hub HEAD cannot fail create after Built.
+services:
+  callback:
+    profiles: ["v0", "v1", "v2"]
+    image: "python:3.12-alpine"
+    pull_policy: never
+    restart: unless-stopped
+    volumes: ["./callback.py:/callback.py:ro"]
+    command: ["python3", "/callback.py"]
+    ports: ["${PORT_CALLBACK_0:-33590}:9000"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  browser:
+    profiles: ["v0", "v1", "v2"]
+    image: "selenium/standalone-chromium:latest"
+    pull_policy: never
+    restart: unless-stopped
+    shm_size: "2gb"
+    environment:
+      SE_NODE_MAX_SESSIONS: "2"
+      SE_NODE_OVERRIDE_MAX_SESSIONS: "true"
+      SE_START_VNC: "false"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:4444/wd/hub/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+
+  victim:
+    profiles: ["v0", "v1", "v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile.victim
+    image: "pcb-avideo-victim:se425"
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run victim secret}"
+      GRID_URL: "http://browser:4444"
+    volumes: ["./victim.py:/victim.py:ro"]
+    command: ["python3", "/victim.py"]
+    ports: ["${PORT_VICTIM_0:-33570}:8070"]
+    depends_on:
+      callback:
+        condition: service_healthy
+      browser:
+        condition: service_healthy
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args:
+        AE_REF: "f154167251c9cf183ce09cd018d07e9352310457"
+    image: "pcb-avideo-real:v1"
+    pull_policy: never
+    restart: unless-stopped
+    ports: ["${PORT_V1_0:-33521}:80"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    depends_on:
+      victim:
+        condition: service_started
+      callback:
+        condition: service_healthy
+      browser:
+        condition: service_healthy
+
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args:
+        AE_REF: "3905f03df0f0d05c44715419d7535e4dc3649e76"
+    image: "pcb-avideo-real:v0"
+    pull_policy: never
+    restart: unless-stopped
+    ports: ["${PORT_V0_0:-33520}:80"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    depends_on:
+      victim:
+        condition: service_started
+      callback:
+        condition: service_healthy
+      browser:
+        condition: service_healthy
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        AE_REF: "3ae02fa240939dbefc5949d64f05790fd25d728d"
+    image: "pcb-avideo-real:v2"
+    pull_policy: never
+    restart: unless-stopped
+    ports: ["${PORT_V2_0:-33522}:80"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    depends_on:
+      victim:
+        condition: service_started
+      callback:
+        condition: service_healthy
+      browser:
+        condition: service_healthy
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.82.0/24

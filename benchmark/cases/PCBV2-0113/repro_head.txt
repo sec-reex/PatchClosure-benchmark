@@ -1,0 +1,1 @@
+transient build/probe scratch — content folded into repro.log; images torn down (down -v --rmi all).

@@ -1,0 +1,544 @@
+# CVE-2024-1132
+# upstream: https://github.com/keycloak/keycloak
+# fix: 4ffb69ecefce155f297d3bb9f6ecc8fa8600d308 (24.0.3 / GHSA-72vp-xfrc-42xm)
+diff --git a/common/src/main/java/org/keycloak/common/util/Encode.java b/common/src/main/java/org/keycloak/common/util/Encode.java
+index b17d61be5bf5..682d29fedaab 100755
+--- a/common/src/main/java/org/keycloak/common/util/Encode.java
++++ b/common/src/main/java/org/keycloak/common/util/Encode.java
+@@ -46,6 +46,7 @@ public class Encode
+    private static final String[] matrixParameterEncoding = new String[128];
+    private static final String[] queryNameValueEncoding = new String[128];
+    private static final String[] queryStringEncoding = new String[128];
++   private static final String[] userInfoStringEncoding = new String[128];
+ 
+    static
+    {
+@@ -158,6 +159,44 @@ public class Encode
+          }
+          queryStringEncoding[i] = URLEncoder.encode(String.valueOf((char) i));
+       }
++
++     /*
++      * userinfo    = *( unreserved / pct-encoded / sub-delims / ":" )
++      * unreserved  = ALPHA / DIGIT / "-" / "." / "_" / "~"
++      * pct-encoded   = "%" HEXDIG HEXDIG
++      * sub-delims  = "!" / "$" / "&" / "'" / "(" / ")"
++      *                   / "*" / "+" / "," / ";" / "="
++      */
++      for (int i = 0; i < 128; i++)
++      {
++         if (i >= 'a' && i <= 'z') continue;
++         if (i >= 'A' && i <= 'Z') continue;
++         if (i >= '0' && i <= '9') continue;
++         switch ((char) i)
++         {
++            case '-':
++            case '.':
++            case '_':
++            case '~':
++            case '!':
++            case '$':
++            case '&':
++            case '\'':
++            case '(':
++            case ')':
++            case '*':
++            case '+':
++            case ',':
++            case ';':
++            case '=':
++            case ':':
++               continue;
++            case ' ':
++               userInfoStringEncoding[i] = "%20";
++               continue;
++         }
++         userInfoStringEncoding[i] = URLEncoder.encode(String.valueOf((char) i));
++      }
+    }
+ 
+    /**
+@@ -177,6 +216,24 @@ public static String encodeQueryStringNotTemplateParameters(String value) {
+       return encodeNonCodes(encodeFromArray(value, queryStringEncoding, false));
+    }
+ 
++   /**
++    * Keep encoded values "%..." and template parameters intact.
++    * @param value The user-info value to encode
++    * @return The user-info encoded
++    */
++   public static String encodeUserInfo(String value) {
++      return encodeValue(value, userInfoStringEncoding);
++   }
++
++   /**
++    * Keep encoded values "%..." but not the template parameters.
++    * @param value The user-info to encode
++    * @return The user-info encoded
++    */
++   public static String encodeUserInfoNotTemplateParameters(String value) {
++      return encodeNonCodes(encodeFromArray(value, userInfoStringEncoding, false));
++   }
++
+    /**
+     * Keep encoded values "%...", matrix parameters, template parameters, and '/' characters intact.
+     */
+@@ -424,6 +481,30 @@ public static String encodeQueryParamSaveEncodings(String segment)
+       return result;
+    }
+ 
++   /**
++    * Encodes everything in user-info
++    *
++    * @param nameOrValue
++    * @return
++    */
++   public static String encodeUserInfoAsIs(String nameOrValue)
++   {
++      return encodeFromArray(nameOrValue, userInfoStringEncoding, true);
++   }
++
++   /**
++    * Keep any valid encodings from string i.e. keep "%2D" but don't keep "%p"
++    *
++    * @param segment
++    * @return
++    */
++   public static String encodeUserInfoSaveEncodings(String segment)
++   {
++      String result = encodeFromArray(segment, userInfoStringEncoding, false);
++      result = encodeNonCodes(result);
++      return result;
++   }
++
+    public static String encodeFragmentAsIs(String nameOrValue)
+    {
+       return encodeFromArray(nameOrValue, queryNameValueEncoding, true);
+diff --git a/common/src/main/java/org/keycloak/common/util/KeycloakUriBuilder.java b/common/src/main/java/org/keycloak/common/util/KeycloakUriBuilder.java
+index 659c1d8c418c..5b27f988796c 100755
+--- a/common/src/main/java/org/keycloak/common/util/KeycloakUriBuilder.java
++++ b/common/src/main/java/org/keycloak/common/util/KeycloakUriBuilder.java
+@@ -150,7 +150,7 @@ protected KeycloakUriBuilder parseHierarchicalUri(String uri, Matcher match, boo
+             if (at > -1) {
+                 String user = host.substring(0, at);
+                 host = host.substring(at + 1);
+-                this.userInfo = user;
++                replaceUserInfo(user, template);
+             }
+             Matcher hostPortMatch = hostPortPattern.matcher(host);
+             if (hostPortMatch.matches()) {
+@@ -459,7 +459,7 @@ private String buildString(Map<String, ?> paramMap, boolean fromEncodedMap, bool
+         } else if (userInfo != null || host != null || port != -1) {
+             buffer.append("//");
+             if (userInfo != null)
+-                replaceParameter(paramMap, fromEncodedMap, isTemplate, userInfo, buffer, encodeSlash).append("@");
++                replaceUserInfoParameter(paramMap, fromEncodedMap, isTemplate, userInfo, buffer).append("@");
+             if (host != null) {
+                 if ("".equals(host)) throw new RuntimeException("empty host name");
+                 replaceParameter(paramMap, fromEncodedMap, isTemplate, host, buffer, encodeSlash);
+@@ -571,6 +571,33 @@ protected StringBuffer replaceQueryStringParameter(Map<String, ?> paramMap, bool
+         return buffer;
+     }
+ 
++    protected StringBuffer replaceUserInfoParameter(Map<String, ?> paramMap, boolean fromEncodedMap, boolean isTemplate, String string, StringBuffer buffer) {
++        Matcher matcher = createUriParamMatcher(string);
++        while (matcher.find()) {
++            String param = matcher.group(1);
++            Object valObj = paramMap.get(param);
++            if (valObj == null && !isTemplate) {
++                throw new IllegalArgumentException("NULL value for template parameter: " + param);
++            } else if (valObj == null && isTemplate) {
++                matcher.appendReplacement(buffer, matcher.group());
++                continue;
++            }
++            String value = valObj.toString();
++            if (value != null) {
++                if (!fromEncodedMap) {
++                    value = Encode.encodeUserInfoAsIs(value);
++                } else {
++                    value = Encode.encodeUserInfoSaveEncodings(value);
++                }
++                matcher.appendReplacement(buffer, value);
++            } else {
++                throw new IllegalArgumentException("path param " + param + " has not been provided by the parameter map");
++            }
++        }
++        matcher.appendTail(buffer);
++        return buffer;
++    }
++
+     /**
+      * Return a unique order list of path params
+      *
+@@ -742,6 +769,15 @@ public KeycloakUriBuilder replacePath(String path, boolean template) {
+         return this;
+     }
+ 
++    public KeycloakUriBuilder replaceUserInfo(String userInfo, boolean template) {
++        if (userInfo == null) {
++            this.userInfo = null;
++            return this;
++        }
++        this.userInfo = template? Encode.encodeUserInfo(userInfo) : Encode.encodeUserInfoNotTemplateParameters(userInfo);
++        return this;
++    }
++
+     public URI build(Object[] values, boolean encodeSlashInPath) throws IllegalArgumentException {
+         if (values == null) throw new IllegalArgumentException("values param is null");
+         return buildFromValues(encodeSlashInPath, false, values);
+diff --git a/common/src/test/java/org/keycloak/common/util/KeycloakUriBuilderTest.java b/common/src/test/java/org/keycloak/common/util/KeycloakUriBuilderTest.java
+index 5e418d73e5de..950b3db7c0ab 100644
+--- a/common/src/test/java/org/keycloak/common/util/KeycloakUriBuilderTest.java
++++ b/common/src/test/java/org/keycloak/common/util/KeycloakUriBuilderTest.java
+@@ -80,4 +80,16 @@ public void testTemplateAndNotTemplate() {
+         Assert.assertEquals("https://localhost:8443/%7Bpath%7D?key=%7Bquery%7D#%7Bfragment%7D", KeycloakUriBuilder.fromUri(
+                 "https://localhost:8443/{path}?key={query}#{fragment}", false).buildAsString());
+     }
++
++    @Test
++    public void testUserInfo() {
++        Assert.assertEquals("https://user-info@localhost:8443/path?key=query#fragment", KeycloakUriBuilder.fromUri(
++                "https://{userinfo}@localhost:8443/{path}?key={query}#{fragment}").buildAsString("user-info", "path", "query", "fragment"));
++        Assert.assertEquals("https://user%20info%40%2F@localhost:8443/path?key=query#fragment", KeycloakUriBuilder.fromUri(
++                "https://{userinfo}@localhost:8443/{path}?key={query}#{fragment}").buildAsString("user info@/", "path", "query", "fragment"));
++        Assert.assertEquals("https://user-info%E2%82%AC@localhost:8443", KeycloakUriBuilder.fromUri(
++                "https://user-info%E2%82%AC@localhost:8443", false).buildAsString());
++        Assert.assertEquals("https://user-info%E2%82%AC@localhost:8443", KeycloakUriBuilder.fromUri(
++                "https://user-info€@localhost:8443", false).buildAsString());
++    }
+ }
+diff --git a/docs/documentation/server_admin/topics/clients/oidc/con-basic-settings.adoc b/docs/documentation/server_admin/topics/clients/oidc/con-basic-settings.adoc
+index 6732d45c602b..4a35b8c290f6 100644
+--- a/docs/documentation/server_admin/topics/clients/oidc/con-basic-settings.adoc
++++ b/docs/documentation/server_admin/topics/clients/oidc/con-basic-settings.adoc
+@@ -24,9 +24,13 @@ the name, set up a replacement string value. For example, a string value such as
+ 
+ *Home URL*:: Provides the default URL for when the auth server needs to redirect or link back to the client.
+ 
+-*Valid Redirect URIs*:: Required field.  Enter a URL pattern and click *+* to add and *-* to remove existing URLs and click *Save*. You can use wildcards at the end of the URL pattern. For example $$http://host.com/*$$
++*Valid Redirect URIs*:: Required field.  Enter a URL pattern and click *+* to add and *-* to remove existing URLs and click *Save*. Exact (case sensitive) string matching is used to compare valid redirect URIs.
+ +
+-Exclusive redirect URL patterns are typically more secure.  See xref:unspecific-redirect-uris_{context}[Unspecific Redirect URIs] for more information.
++You can use wildcards at the end of the URL pattern. For example `$$http://host.com/path/*$$`. To avoid security issues, if the passed redirect URI contains the *userinfo* part or its *path* manages access to parent directory (`/../`) no wildcard comparison is performed but the standard and secure exact string matching.
+++
++The full wildcard `$$*$$` valid redirect URI can also be configured to allow any *http* or *https* redirect URI. Please do not use it in production environments.
+++
++Exclusive redirect URI patterns are typically more secure. See xref:unspecific-redirect-uris_{context}[Unspecific Redirect URIs] for more information.
+ 
+ Web Origins:: Enter a URL pattern and click + to add and - to remove existing URLs. Click Save.
+ +
+diff --git a/docs/documentation/upgrading/topics/changes/changes-24_0_3.adoc b/docs/documentation/upgrading/topics/changes/changes-24_0_3.adoc
+new file mode 100644
+index 000000000000..27265c6c4cef
+--- /dev/null
++++ b/docs/documentation/upgrading/topics/changes/changes-24_0_3.adoc
+@@ -0,0 +1,7 @@
++= Changes in redirect URI verification when using wildcards
++
++Because of security concerns, the redirect URI verification now performs a exact string matching (no wildcard involved) if the passed redirect uri contains a `userinfo` part or its `path` accesses parent directory (`/../`).
++
++The full wildcard `*` can still be used as a valid redirect in development for http(s) URIs with those characteristics. In production environments a exact valid redirect URI without wildcard needs to be configured for any URI of that type.
++
++Please note that wildcard valid redirect URIs are not recommended for production and not covered by the OAuth 2.0 specification.
+diff --git a/docs/documentation/upgrading/topics/changes/changes.adoc b/docs/documentation/upgrading/topics/changes/changes.adoc
+index 78f0f0817d8a..62f7cbd487de 100644
+--- a/docs/documentation/upgrading/topics/changes/changes.adoc
++++ b/docs/documentation/upgrading/topics/changes/changes.adoc
+@@ -1,6 +1,10 @@
+ [[migration-changes]]
+ == Migration Changes
+ 
++=== Migrating to 24.0.3
++
++include::changes-24_0_3.adoc[leveloffset=3]
++
+ === Migrating to 24.0.2
+ 
+ include::changes-24_0_2.adoc[leveloffset=3]
+diff --git a/services/src/main/java/org/keycloak/protocol/oidc/utils/RedirectUtils.java b/services/src/main/java/org/keycloak/protocol/oidc/utils/RedirectUtils.java
+index e171d8da8951..de8fd84e0a56 100644
+--- a/services/src/main/java/org/keycloak/protocol/oidc/utils/RedirectUtils.java
++++ b/services/src/main/java/org/keycloak/protocol/oidc/utils/RedirectUtils.java
+@@ -18,8 +18,6 @@
+ package org.keycloak.protocol.oidc.utils;
+ 
+ import org.jboss.logging.Logger;
+-import org.keycloak.common.util.Encode;
+-import org.keycloak.common.util.KeycloakUriBuilder;
+ import org.keycloak.common.util.UriUtils;
+ import org.keycloak.models.ClientModel;
+ import org.keycloak.models.Constants;
+@@ -34,6 +32,7 @@
+ import java.util.Collection;
+ import java.util.Set;
+ import java.util.TreeSet;
++import java.util.regex.Pattern;
+ import java.util.stream.Collectors;
+ 
+ /**
+@@ -111,16 +110,13 @@ public static String verifyRedirectUri(KeycloakSession session, String rootUrl,
+                 return null;
+             }
+ 
+-            // Make the validations against fully decoded and normalized redirect-url. This also allows wildcards (case when client configured "Valid redirect-urls" contain wildcards)
+-            String decodedRedirectUri = decodeRedirectUri(redirectUri);
+-            URI decodedRedirect = toUri(decodedRedirectUri);
+-            decodedRedirectUri = getNormalizedRedirectUri(decodedRedirect);
+-            if (decodedRedirectUri == null) return null;
++            // check if the passed URI allows wildcards
++            boolean allowWildcards = areWildcardsAllowed(originalRedirect);
+ 
+-            String r = decodedRedirectUri;
++            String r = redirectUri;
+             Set<String> resolveValidRedirects = resolveValidRedirects(session, rootUrl, validRedirects);
+ 
+-            String valid = matchesRedirects(resolveValidRedirects, r, true);
++            String valid = matchesRedirects(resolveValidRedirects, r, allowWildcards);
+ 
+             if (valid == null && (r.startsWith(Constants.INSTALLED_APP_URL) || r.startsWith(Constants.INSTALLED_APP_LOOPBACK)) && r.indexOf(':', Constants.INSTALLED_APP_URL.length()) >= 0) {
+                 int i = r.indexOf(':', Constants.INSTALLED_APP_URL.length());
+@@ -135,15 +131,7 @@ public static String verifyRedirectUri(KeycloakSession session, String rootUrl,
+ 
+                 r = sb.toString();
+ 
+-                valid = matchesRedirects(resolveValidRedirects, r, true);
+-            }
+-
+-            // Return the original redirectUri, which can be partially encoded - for example http://localhost:8280/foo/bar%20bar%2092%2F72/3 . Just make sure it is normalized
+-            redirectUri = getNormalizedRedirectUri(originalRedirect);
+-
+-            // We try to check validity also for original (encoded) redirectUrl, but just in case it exactly matches some "Valid Redirect URL" specified for client (not wildcards allowed)
+-            if (valid == null) {
+-                valid = matchesRedirects(resolveValidRedirects, redirectUri, false);
++                valid = matchesRedirects(resolveValidRedirects, r, allowWildcards);
+             }
+ 
+             if (valid != null && !originalRedirect.isAbsolute()) {
+@@ -154,7 +142,7 @@ public static String verifyRedirectUri(KeycloakSession session, String rootUrl,
+                 redirectUri = relativeToAbsoluteURI(session, rootUrl, redirectUri);
+             }
+ 
+-            String scheme = decodedRedirect.getScheme();
++            String scheme = originalRedirect.getScheme();
+             if (valid != null && scheme != null) {
+                 // check the scheme is valid, it should be http(s) or explicitly allowed by the validation
+                 if (!valid.startsWith(scheme + ":") && !"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+@@ -179,51 +167,22 @@ private static URI toUri(String redirectUri) {
+             try {
+                 uri = URI.create(redirectUri);
+             } catch (IllegalArgumentException cause) {
+-                logger.debug("Invalid redirect uri", cause);
++                logger.debugf(cause, "Invalid redirect uri %s", redirectUri);
+             } catch (Exception cause) {
+-                logger.debug("Unexpected error when parsing redirect uri", cause);
++                logger.debugf(cause, "Unexpected error when parsing redirect uri %s", redirectUri);
+             }
+         }
+         return uri;
+     }
+ 
+-    private static String getNormalizedRedirectUri(URI uri) {
+-        String redirectUri = null;
+-        if (uri != null) {
+-            redirectUri = uri.normalize().toString();
+-        }
+-        return redirectUri;
+-    }
+-
+-    // Decode redirectUri. Only path is decoded as other elements can be encoded in the original URL or cannot be encoded at all.
+-    // URL can be decoded multiple times (in case it was encoded multiple times, or some of it's parts were encoded multiple times)
+-    private static String decodeRedirectUri(String redirectUri) {
+-        if (redirectUri == null) return null;
+-        int MAX_DECODING_COUNT = 5; // Max count of attempts for decoding URL (in case it was encoded multiple times)
++    // any access to parent folder /../ is unsafe with or without encoding
++    private final static Pattern UNSAFE_PATH_PATTERN = Pattern.compile(
++            "(/|%2[fF]|%5[cC]|\\\\)(%2[eE]|\\.){2}(/|%2[fF]|%5[cC]|\\\\)|(/|%2[fF]|%5[cC]|\\\\)(%2[eE]|\\.){2}$");
+ 
+-        try {
+-            KeycloakUriBuilder uriBuilder = KeycloakUriBuilder.fromUri(redirectUri, false).preserveDefaultPort();
+-            if (uriBuilder.getPath() == null) {
+-                return redirectUri;
+-            }
+-            String encodedPath = uriBuilder.getPath();
+-            String decodedPath;
+-
+-            for (int i = 0; i < MAX_DECODING_COUNT; i++) {
+-                decodedPath = Encode.decode(encodedPath);
+-                if (decodedPath.equals(encodedPath)) {
+-                    // URL path is decoded. We can return it in the original redirect URI
+-                    return uriBuilder.replacePath(decodedPath, false).buildAsString();
+-                } else {
+-                    // Next attempt
+-                    encodedPath = decodedPath;
+-                }
+-            }
+-        } catch (IllegalArgumentException iae) {
+-            logger.debugf("Illegal redirect URI used: %s, Details: %s", redirectUri, iae.getMessage());
+-        }
+-        logger.debugf("Was not able to decode redirect URI: %s", redirectUri);
+-        return null;
++    private static boolean areWildcardsAllowed(URI redirectUri) {
++        // wildcars are only allowed if no user-info and no unsafe pattern in path
++        return redirectUri.getRawUserInfo() == null
++                && (redirectUri.getRawPath() == null || !UNSAFE_PATH_PATTERN.matcher(redirectUri.getRawPath()).find());
+     }
+ 
+     private static String relativeToAbsoluteURI(KeycloakSession session, String rootUrl, String relative) {
+@@ -240,24 +199,20 @@ private static String relativeToAbsoluteURI(KeycloakSession session, String root
+         return sb.toString();
+     }
+ 
+-    // removes the queryString, fragment and userInfo from the redirect
+-    // to avoid comparing this when wildcards are used
+-    private static String stripOffRedirectForWildcard(String redirect) {
+-        return KeycloakUriBuilder.fromUri(redirect, false)
+-                .preserveDefaultPort()
+-                .userInfo(null)
+-                .replaceQuery(null)
+-                .fragment(null)
+-                .buildAsString();
+-    }
+-
+     // return the String that matched the redirect or null if not matched
+     private static String matchesRedirects(Set<String> validRedirects, String redirect, boolean allowWildcards) {
+         logger.tracef("matchesRedirects: redirect URL to check: %s, allow wildcards: %b, Configured valid redirect URLs: %s", redirect, allowWildcards, validRedirects);
+         for (String validRedirect : validRedirects) {
+-            if (validRedirect.endsWith("*") && !validRedirect.contains("?") && allowWildcards) {
+-                // strip off the userInfo, query or fragment components - we don't check them when wildcards are effective
+-                String r = stripOffRedirectForWildcard(redirect);
++            if ("*".equals(validRedirect)) {
++                // the valid redirect * is a full wildcard for http(s) even if the redirect URI does not allow wildcards
++                return validRedirect;
++            } else if (validRedirect.endsWith("*") && !validRedirect.contains("?") && allowWildcards) {
++                // strip off the query or fragment components - we don't check them when wildcards are effective
++                int idx = redirect.indexOf('?');
++                if (idx == -1) {
++                    idx = redirect.indexOf('#');
++                }
++                String r = idx == -1 ? redirect : redirect.substring(0, idx);
+                 // strip off *
+                 int length = validRedirect.length() - 1;
+                 validRedirect = validRedirect.substring(0, length);
+diff --git a/services/src/test/java/org/keycloak/protocol/oidc/utils/RedirectUtilsTest.java b/services/src/test/java/org/keycloak/protocol/oidc/utils/RedirectUtilsTest.java
+index 814d29920690..fcc501934d3c 100644
+--- a/services/src/test/java/org/keycloak/protocol/oidc/utils/RedirectUtilsTest.java
++++ b/services/src/test/java/org/keycloak/protocol/oidc/utils/RedirectUtilsTest.java
+@@ -87,6 +87,8 @@ public void testverifyRedirectUriMixedSchemes() {
+         Assert.assertEquals("custom1:/parent/child", RedirectUtils.verifyRedirectUri(session, null, "custom1:/parent/child", set, false));
+         Assert.assertEquals("custom2:/something", RedirectUtils.verifyRedirectUri(session, null, "custom2:/something", set, false));
+         Assert.assertEquals("https://keycloak.org/test", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test", set, false));
++        Assert.assertEquals("https://keycloak.org/", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/", set, false));
++        Assert.assertEquals("https://keycloak.org", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org", set, false));
+ 
+         Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "custom1:/test", set, false));
+         Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "custom1:/test1/test", set, false));
+@@ -172,6 +174,8 @@ public void testRelativeRedirectUri() {
+ 
+         Assert.assertEquals("https://keycloak.org/path", RedirectUtils.verifyRedirectUri(session, "https://keycloak.org", "/path", set, false));
+         Assert.assertEquals("https://keycloak.org/path", RedirectUtils.verifyRedirectUri(session, "https://keycloak.org", "path", set, false));
++        Assert.assertEquals("https://keycloak.org/test/../other", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/../other", set, false));
++        Assert.assertEquals("http://keycloak.org/test%2Fother", RedirectUtils.verifyRedirectUri(session, null, "http://keycloak.org/test%2Fother", set, false));
+     }
+ 
+     @Test
+@@ -184,8 +188,6 @@ public void testUserInfo() {
+ 
+         Assert.assertEquals("https://keycloak.org/index.html", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/index.html", set, false));
+         Assert.assertEquals("https://test.com/index.html", RedirectUtils.verifyRedirectUri(session, null, "https://test.com/index.html", set, false));
+-        Assert.assertEquals("https://something@keycloak.org/path", RedirectUtils.verifyRedirectUri(session, null, "https://something@keycloak.org/path", set, false));
+-        Assert.assertEquals("https://some%20thing@test.com/path", RedirectUtils.verifyRedirectUri(session, null, "https://some%20thing@test.com/path", set, false));
+         Assert.assertEquals("https://something@keycloak.com/exact", RedirectUtils.verifyRedirectUri(session, null, "https://something@keycloak.com/exact", set, false));
+ 
+         Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://something@other.com/", set, false));
+@@ -193,12 +195,15 @@ public void testUserInfo() {
+         Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org%2F@other.com", set, false));
+         Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://test@other.com", set, false));
+         Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://test.com@other.com", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://something@keycloak.org/path", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://some%20thing@test.com/path", set, false));
+     }
+ 
+     @Test
+     public void testEncodedRedirectUri() {
+         Set<String> set = Stream.of(
+-                "https://keycloak.org/test/*"
++                "https://keycloak.org/test/*",
++                "https://keycloak.org/exact/%5C%2F/.."
+         ).collect(Collectors.toSet());
+ 
+         Assert.assertEquals("https://keycloak.org/test/index.html", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/index.html", set, false));
+@@ -206,16 +211,30 @@ public void testEncodedRedirectUri() {
+         Assert.assertEquals("https://keycloak.org/test?encodeTest=a%3Cb#encode2=a%3Cb", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test?encodeTest=a%3Cb#encode2=a%3Cb", set, false));
+         Assert.assertEquals("https://keycloak.org/test/#encode2=a%3Cb", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/#encode2=a%3Cb", set, false));
+ 
+-        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/../", set, false));  // direct
+-        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%2E%2E/", set, false));  // encoded
+-        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test%2F%2E%2E%2F", set, false)); // encoded
+-        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%252E%252E/", set, false)); // double-encoded
+-        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%252E%252E/?some_query_param=some_value", set, false)); // double-encoded
+-        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%252E%252E/#encodeTest=a%3Cb", set, false)); // double-encoded
+-        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%25252E%25252E/", set, false)); // triple-encoded
+-        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%2525252525252E%2525252525252E/", set, false)); // seventh-encoded
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/../", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test\\..\\", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%2E%2E/", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%2e%2e/", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%2E./", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%2E.", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test\\%2E.", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test%2f%2E%2e%2F", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test%5C%2E.%5c", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test%5C..", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%2F%2E%2E%2Fdocumentation", set, false));
++        Assert.assertEquals("https://keycloak.org/test/.../", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/.../", set, false));
++        Assert.assertEquals("https://keycloak.org/test/%2E../", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%2E../", set, false));  // encoded
++        Assert.assertEquals("https://keycloak.org/test/some%2Fthing/", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/some%2Fthing/", set, false));  // encoded
++        Assert.assertEquals("https://keycloak.org/test/./", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/./", set, false));
++        Assert.assertEquals("https://keycloak.org/test/%252E%252E/", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%252E%252E/", set, false)); // double-encoded
++        Assert.assertEquals("https://keycloak.org/test/%252E%252E/#encodeTest=a%3Cb", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%252E%252E/#encodeTest=a%3Cb", set, false)); // double-encoded
++        Assert.assertEquals("https://keycloak.org/test/%25252E%25252E/", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test/%25252E%25252E/", set, false)); // triple-encoded
++        Assert.assertEquals("https://keycloak.org/exact/%5C%2F/..", RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/exact/%5C%2F/..", set, false));
+ 
+         Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak%2Eorg/test/", set, false));
+         Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org%2Ftest%2F%40sample.com", set, false));
++
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test%2Fanother/../any/path/", set, false));
++        Assert.assertNull(RedirectUtils.verifyRedirectUri(session, null, "https://keycloak.org/test%2Fanother/%2E%2E/any/path/", set, false));
+     }
+ }
+diff --git a/testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/oauth/OAuthRedirectUriTest.java b/testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/oauth/OAuthRedirectUriTest.java
+index 842b7b5f2f7a..313ffce5f1ff 100755
+--- a/testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/oauth/OAuthRedirectUriTest.java
++++ b/testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/oauth/OAuthRedirectUriTest.java
+@@ -351,12 +351,12 @@ public void testWildcard() throws IOException {
+         checkRedirectUri("http://example.com/foo/../", false);
+         checkRedirectUri("http://example.com/foo/%2E%2E/", false); // url-encoded "http://example.com/foobar/../"
+         checkRedirectUri("http://example.com/foo%2F%2E%2E%2F", false); // url-encoded "http://example.com/foobar/../"
+-        checkRedirectUri("http://example.com/foo/%252E%252E/", false); // double-encoded "http://example.com/foobar/../"
+-        checkRedirectUri("http://example.com/foo/%252E%252E/?some_query_param=some_value", false); // double-encoded "http://example.com/foobar/../?some_query_param=some_value"
+-        checkRedirectUri("http://example.com/foo/%252E%252E/?encodeTest=a%3Cb", false); // double-encoded "http://example.com/foobar/../?encodeTest=a<b"
+-        checkRedirectUri("http://example.com/foo/%252E%252E/#encodeTest=a%3Cb", false); // double-encoded "http://example.com/foobar/../?encodeTest=a<b"
+-        checkRedirectUri("http://example.com/foo/%25252E%25252E/", false); // triple-encoded "http://example.com/foobar/../"
+-        checkRedirectUri("http://example.com/foo/%2525252525252E%2525252525252E/", false); // seventh-encoded "http://example.com/foobar/../"
++        checkRedirectUri("http://example.com/foo/%252E%252E/", true); // double-encoded "http://example.com/foobar/../"
++        checkRedirectUri("http://example.com/foo/%252E%252E/?some_query_param=some_value", true); // double-encoded "http://example.com/foobar/../?some_query_param=some_value"
++        checkRedirectUri("http://example.com/foo/%252E%252E/?encodeTest=a%3Cb", true); // double-encoded "http://example.com/foobar/../?encodeTest=a<b"
++        checkRedirectUri("http://example.com/foo/%252E%252E/#encodeTest=a%3Cb", true); // double-encoded "http://example.com/foobar/../?encodeTest=a<b"
++        checkRedirectUri("http://example.com/foo/%25252E%25252E/", true); // triple-encoded "http://example.com/foobar/../"
++        checkRedirectUri("http://example.com/foo/%2525252525252E%2525252525252E/", true); // seventh-encoded "http://example.com/foobar/../"
+ 
+         checkRedirectUri("http://example.com/foo?encodeTest=a%3Cb", true);
+         checkRedirectUri("http://example.com/foo?encodeTest=a%3Cb#encode2=a%3Cb", true);
+diff --git a/themes/src/main/resources/theme/keycloak.v2/account/src/app/util/RedirectUri.ts b/themes/src/main/resources/theme/keycloak.v2/account/src/app/util/RedirectUri.ts
+index c5211addbb52..55d134f88b9a 100644
+--- a/themes/src/main/resources/theme/keycloak.v2/account/src/app/util/RedirectUri.ts
++++ b/themes/src/main/resources/theme/keycloak.v2/account/src/app/util/RedirectUri.ts
+@@ -38,5 +38,5 @@ export const createRedirect = (currentLocation: string): string => {
+         redirectUri += "?referrer=" + referrer + "&referrer_uri=" + referrerUri.replace('#', '_hash_');
+     }
+ 
+-    return encodeURIComponent(redirectUri) + encodeURIComponent("/#" + currentLocation);    
+-}
+\ No newline at end of file
++    return encodeURIComponent(redirectUri) + encodeURIComponent("#" + currentLocation);
++}

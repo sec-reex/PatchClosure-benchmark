@@ -1,0 +1,26 @@
+case_id: PCBV2-0136
+public_name: librechat-cve-2026-54024
+run_mode: real-app-http
+oracle_family: sibling_endpoint
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: ghcr.io/danny-avila/librechat
+  v0: v0.7.5
+  v1: v0.7.6
+service:
+  # Compose publishes ${PORT_V*_0}:3080. Platform HTTP on :3080 would miss the
+  # randomized host port; start.sh / reset.sh wait on the published mapping
+  # and confirm registration before returning.
+  readiness: none
+  exposed_ports: [3080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

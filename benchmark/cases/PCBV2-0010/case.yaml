@@ -1,0 +1,23 @@
+case_id: PCBV2-0010
+public_name: traefik-cve-2026-29054
+run_mode: real-app-http
+oracle_family: state_auth_mutation
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/traefik/traefik.git
+  v0: 2.11.8
+  v1: 2.11.9
+service:
+  readiness: http://127.0.0.1:80/
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

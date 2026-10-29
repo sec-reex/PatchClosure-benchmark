@@ -1,0 +1,38 @@
+CVE: CVE-2023-30848
+upstream: https://github.com/pimcore/pimcore
+fix: 25ad8674886f2b938243cbe13e33e204a2e35cc3 (10.5.21 / #14972)
+
+diff --git a/bundles/AdminBundle/Controller/Searchadmin/SearchController.php b/bundles/AdminBundle/Controller/Searchadmin/SearchController.php
+index 5082616b5d6..651548b55ef 100644
+--- a/bundles/AdminBundle/Controller/Searchadmin/SearchController.php
++++ b/bundles/AdminBundle/Controller/Searchadmin/SearchController.php
+@@ -15,6 +15,7 @@
+ 
+ namespace Pimcore\Bundle\AdminBundle\Controller\Searchadmin;
+ 
++use Doctrine\DBAL\Exception\SyntaxErrorException;
+ use Pimcore\Bundle\AdminBundle\Controller\AdminController;
+ use Pimcore\Bundle\AdminBundle\Controller\Traits\AdminStyleTrait;
+ use Pimcore\Bundle\AdminBundle\Helper\GridHelperService;
+@@ -111,6 +112,8 @@ public function findAction(Request $request, EventDispatcherInterface $eventDisp
+         $bricks = [];
+         if (!empty($allParams['fields'])) {
+             $fields = $allParams['fields'];
++            //remove sql comments
++            $fields = str_replace('--', '', $fields);
+ 
+             foreach ($fields as $f) {
+                 $parts = explode('~', $f);
+@@ -310,7 +313,11 @@ public function findAction(Request $request, EventDispatcherInterface $eventDisp
+             $searcherList = $beforeListLoadEvent->getArgument('list');
+         }
+ 
+-        $hits = $searcherList->load();
++        try {
++            $hits = $searcherList->load();
++        } catch (SyntaxErrorException $syntaxErrorException) {
++            throw new \InvalidArgumentException('Check your arguments.');
++        }
+ 
+         $elements = [];
+         foreach ($hits as $hit) {

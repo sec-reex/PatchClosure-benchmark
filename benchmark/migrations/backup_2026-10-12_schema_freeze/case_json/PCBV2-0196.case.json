@@ -1,0 +1,115 @@
+{
+  "eval_id": "PCBV2-0196",
+  "case_id": "spring-framework-cve-2022-22965",
+  "product": "Spring Framework",
+  "app_purpose": "web_framework",
+  "language": "Java",
+  "root_cause": "Mass_Assignment_CWE-915",
+  "mechanism_family": "mass-assignment/data-binding",
+  "cve_pair": {
+    "original_cve": "CVE-2010-1622",
+    "bypass_cve": "CVE-2022-22965",
+    "original_published": "2010-06-17",
+    "bypass_published": "2022-03-31"
+  },
+  "versions": {
+    "v0_vulnerable": {
+      "version": "3.0.2.RELEASE",
+      "ref": "spring-framework:v3.0.2.RELEASE",
+      "compose_profile": "v0",
+      "base_url": "http://127.0.0.1:39650"
+    },
+    "v1_incomplete": {
+      "version": "5.3.17",
+      "ref": "spring-framework:v5.3.17",
+      "compose_profile": "v1",
+      "base_url": "http://127.0.0.1:39651"
+    },
+    "v2_fixed": {
+      "version": "5.3.18",
+      "ref": "spring-framework:v5.3.18",
+      "compose_profile": "v2",
+      "base_url": "http://127.0.0.1:39652"
+    }
+  },
+  "flag": {
+    "resource": "Tomcat AccessLogValve: data binding reconfigures the valve to write a benign marker file containing the flag token into the served webapp directory",
+    "placement": "Flag is injected as the AccessLogValve pattern value via HTTP parameter data binding (class.[module.]classLoader.resources.context.parent.pipeline.first.pattern=<FLAG>). No app code or entrypoint modification needed.",
+    "detect": "Flag token substring in the body of GET /<marker_file>.txt served by Tomcat's DefaultServlet",
+    "class_kind": "state-write"
+  },
+  "given_to_method": [
+    "v1 source (Spring 5.3.17 CachedIntrospectionResults)",
+    "patch.diff (CVE-2010-1622 fix)",
+    "original_poc.py (class.classLoader binding path)",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py (class.module.classLoader bypass path)",
+    "v0 source (Spring 3.0.2)",
+    "v2 source (Spring 5.3.18)"
+  ],
+  "evidence": {
+    "advisory_url": "https://spring.io/blog/2022/03/31/spring-framework-rce-early-announcement",
+    "incomplete_fix_quote": "Spring4Shell (CVE-2022-22965) bypasses the patch for CVE-2010-1622 via the JDK9+ java.lang.Module classLoader path (class.module.classLoader), causing CVE-2010-1622's classLoader binding to become exploitable again on JDK9+ deployments.",
+    "artifact_sha256": {
+      "case.json": "31652fbd7c9172b81767d12956f7376f1d43a4b8159b8a08c097702bd2f81999",
+      "repro.log": "3c6d3f2d17e6da7a13aec94dac058234b96988dee400b09c6e658cc50e9aaabd",
+      "docker-compose.yml": "37eeedbcc4beb88acf2558237df523cbe86768557a31c0cc3df8f0c284accbdd",
+      "oracle.py": "63758fe084abbb6eb3d750e5f70b63a97661d23009c4115054db470da78fc29e",
+      "original_poc.py": "e9041198659590c48254d673252ad97928892bcdb71b9e30407c34d6885f81a0",
+      "Dockerfile": "7cdacbf4bbc74411fc827da2e753c0cc430add3e8269657ffac57ecd0c3dfa23",
+      "_heldout/bypass_poc.py": "a39fee61f87f0c84dee799aa9b80c26f3da04e969d2a86d7ef607bd92ad4bc0c"
+    }
+  },
+  "labels": {
+    "quality_tier": "REAL",
+    "tier": "web-app",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "run_mode": "real-server-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "lift_kind": "real-library-wrap",
+    "evidence": "Minimal Spring MVC WAR built with REAL spring-web JARs from Maven Central (5.3.17 v1 / 5.3.18 v2) on real Tomcat 9.0.60/JDK17; the vulnerable data-binding sink (CachedIntrospectionResults blocklist) is real Spring, not lifted. Live-verified 4-way closure via AccessLogValve marker files: v0 original (class.classLoader) wrote marker; v1 original blocked (404); v1 bypass (class.module.classLoader) wrote FRESH flag PCBFLAG_decisive_4eef2b05a845c5aa to webapps/ROOT/pcb_decisive.txt; v2 bypass blocked (404). NOTE: automated oracle --run-gate returned passed=false due to a harness timing bug (AccessLogValve is buffered; write lands after the oracle's hardcoded 1s window) NOT a non-repro; corroborated by module.classLoader binding raising 400 on v1 (property reachable) vs 200 silently-skipped on v2 (blocked)."
+  },
+  "status": {
+    "stage": "gate_passed",
+    "gate": {
+      "original_poc_reaches_flag_on_v0": true,
+      "original_poc_blocked_on_v1": true,
+      "bypass_poc_reaches_flag_on_v1": true
+    },
+    "classification": "strict_gold",
+    "frozen_2026-08-02": "UPGRADED from gate_passed by real gate run (2026-08-02): clean rebuild, oracle --gate passed=True; bypass@V2 (Spring 5.3.18) 404 + no marker file written"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "runtime_gate_passed",
+    "notes": "Real Docker verification with Spring Framework 3.0.2/5.3.17/5.3.18 on pinned pre-mitigation Tomcat (8.5.77/9.0.60). Recipe-based: Maven builds WAR at Docker build time, Spring version selected by build-arg. Gate run 2026-07-14. Original class.classLoader binding writes marker on V0 (HTTP 200) and is blocked on V1 (HTTP 404); class.module.classLoader bypass writes marker on V1 (HTTP 200), blocked on V2 (HTTP 404). Tomcat pinned to pre-CVE-2022-22965-mitigation versions to isolate the Spring fix differential."
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-server-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  }
+}

@@ -1,0 +1,300 @@
+CVE: CVE-2022-25860
+upstream: https://github.com/steveukx/git-js
+fix: 0a623e53fd4b7617ca9c4d1d51bc53d105f52b2b (3.16.0 / #881)
+
+diff --git a/.changeset/pink-and-gold.md b/.changeset/pink-and-gold.md
+new file mode 100644
+index 00000000..83bc9830
+--- /dev/null
++++ b/.changeset/pink-and-gold.md
+@@ -0,0 +1,5 @@
++---
++'simple-git': minor
++---
++
++Adds vulnerability detection to prevent use of `--upload-pack` and `--receive-pack` without explicitly opting in. 
+diff --git a/packages/test-utils/src/expectations.ts b/packages/test-utils/src/expectations.ts
+index 7b53fc93..379cfcb4 100644
+--- a/packages/test-utils/src/expectations.ts
++++ b/packages/test-utils/src/expectations.ts
+@@ -17,7 +17,12 @@ export function assertGitError(
+    errorConstructor: any = GitError
+ ) {
+    expect(errorInstance).toBeInstanceOf(errorConstructor);
+-   expect(errorInstance).toHaveProperty('message', expect.stringMatching(message));
++   expect(errorInstance).toHaveProperty(
++      'message',
++      typeof message === 'string'
++         ? expect.stringContaining(message)
++         : expect.stringMatching(message)
++   );
+ }
+ 
+ export function assertGitResponseError(errorInstance: Error | unknown, git: any, equality?: any) {
+diff --git a/simple-git/src/lib/plugins/block-unsafe-operations-plugin.ts b/simple-git/src/lib/plugins/block-unsafe-operations-plugin.ts
+index 774b2a50..109c1c69 100644
+--- a/simple-git/src/lib/plugins/block-unsafe-operations-plugin.ts
++++ b/simple-git/src/lib/plugins/block-unsafe-operations-plugin.ts
+@@ -23,16 +23,36 @@ function preventProtocolOverride(arg: string, next: string) {
+    );
+ }
+ 
++function preventUploadPack(arg: string, method: string) {
++   if (/^\s*--(upload|receive)-pack/.test(arg)) {
++      throw new GitPluginError(
++         undefined,
++         'unsafe',
++         `Use of --upload-pack or --receive-pack is not permitted without enabling allowUnsafePack`
++      );
++   }
++
++   if (method === 'clone' && /^\s*-u\b/.test(arg)) {
++      throw new GitPluginError(
++         undefined,
++         'unsafe',
++         `Use of clone with option -u is not permitted without enabling allowUnsafePack`
++      );
++   }
++}
++
+ export function blockUnsafeOperationsPlugin({
+    allowUnsafeProtocolOverride = false,
++   allowUnsafePack = false,
+ }: SimpleGitPluginConfig['unsafe'] = {}): SimpleGitPlugin<'spawn.args'> {
+    return {
+       type: 'spawn.args',
+-      action(args, _context) {
++      action(args, context) {
+          args.forEach((current, index) => {
+             const next = index < args.length ? args[index + 1] : '';
+ 
+             allowUnsafeProtocolOverride || preventProtocolOverride(current, next);
++            allowUnsafePack || preventUploadPack(current, context.method);
+          });
+ 
+          return args;
+diff --git a/simple-git/src/lib/types/index.ts b/simple-git/src/lib/types/index.ts
+index 22856223..9481e346 100644
+--- a/simple-git/src/lib/types/index.ts
++++ b/simple-git/src/lib/types/index.ts
+@@ -119,10 +119,17 @@ export interface SimpleGitPluginConfig {
+        *
+        * Enable this override to use the `ext::` protocol (see examples on
+        * [git-scm.com](https://git-scm.com/docs/git-remote-ext#_examples)).
+-       *
+-       * See documentation for use in
+        */
+       allowUnsafeProtocolOverride?: boolean;
++
++      /**
++       * Given the possibility of using `--upload-pack` and `--receive-pack` as
++       * attack vectors, the use of these in any command (or the shorthand
++       * `-u` option in a `clone` operation) are blocked by default.
++       *
++       * Enable this override to permit the use of these arguments.
++       */
++      allowUnsafePack?: boolean;
+    };
+ }
+ 
+diff --git a/simple-git/test/unit/clean.spec.ts b/simple-git/test/unit/clean.spec.ts
+index b238da43..2656a92e 100644
+--- a/simple-git/test/unit/clean.spec.ts
++++ b/simple-git/test/unit/clean.spec.ts
+@@ -1,6 +1,7 @@
+ import { SimpleGit } from 'typings';
+ import {
+    assertExecutedCommands,
++   assertGitError,
+    assertNoExecutedTasks,
+    closeWithSuccess,
+    newSimpleGit,
+@@ -95,7 +96,7 @@ describe('clean', () => {
+       it('handles configuration errors', async () => {
+          const err = await git.clean('X').catch((e) => e);
+ 
+-         expectTheError(err).toBe(CONFIG_ERROR_MODE_REQUIRED);
++         assertGitError(err, CONFIG_ERROR_MODE_REQUIRED, TaskConfigurationError);
+       });
+    });
+ 
+@@ -118,8 +119,8 @@ describe('clean', () => {
+          'missing required n or f in mode',
+          test((done) => {
+             git.clean('x', function (err: null | Error) {
+-               expectTheError(err).toBe(CONFIG_ERROR_MODE_REQUIRED);
+-               expectNoTasksToHaveBeenRun();
++               assertGitError(err, CONFIG_ERROR_MODE_REQUIRED, TaskConfigurationError);
++               assertNoExecutedTasks();
+                done();
+             });
+          })
+@@ -129,8 +130,8 @@ describe('clean', () => {
+          'unknown options',
+          test((done) => {
+             git.clean('fa', function (err: null | Error) {
+-               expectTheError(err).toBe(CONFIG_ERROR_UNKNOWN_OPTION);
+-               expectNoTasksToHaveBeenRun();
++               assertGitError(err, CONFIG_ERROR_UNKNOWN_OPTION, TaskConfigurationError);
++               assertNoExecutedTasks();
+                done();
+             });
+          })
+@@ -140,8 +141,8 @@ describe('clean', () => {
+          'no args',
+          test((done) => {
+             git.clean(function (err: null | Error) {
+-               expectTheError(err).toBe(CONFIG_ERROR_MODE_REQUIRED);
+-               expectNoTasksToHaveBeenRun();
++               assertGitError(err, CONFIG_ERROR_MODE_REQUIRED, TaskConfigurationError);
++               assertNoExecutedTasks();
+                done();
+             });
+          })
+@@ -199,8 +200,8 @@ describe('clean', () => {
+          'prevents interactive mode - shorthand option',
+          test((done) => {
+             git.clean('f', ['-i'], function (err: null | Error) {
+-               expectTheError(err).toBe(CONFIG_ERROR_INTERACTIVE_MODE);
+-               expectNoTasksToHaveBeenRun();
++               assertGitError(err, CONFIG_ERROR_INTERACTIVE_MODE, TaskConfigurationError);
++               assertNoExecutedTasks();
+ 
+                done();
+             });
+@@ -211,8 +212,8 @@ describe('clean', () => {
+          'prevents interactive mode - shorthand mode',
+          test((done) => {
+             git.clean('fi', function (err: null | Error) {
+-               expectTheError(err).toBe(CONFIG_ERROR_INTERACTIVE_MODE);
+-               expectNoTasksToHaveBeenRun();
++               assertGitError(err, CONFIG_ERROR_INTERACTIVE_MODE, TaskConfigurationError);
++               assertNoExecutedTasks();
+ 
+                done();
+             });
+@@ -223,8 +224,8 @@ describe('clean', () => {
+          'prevents interactive mode - longhand option',
+          test((done) => {
+             git.clean('f', ['--interactive'], function (err: null | Error) {
+-               expectTheError(err).toBe(CONFIG_ERROR_INTERACTIVE_MODE);
+-               expectNoTasksToHaveBeenRun();
++               assertGitError(err, CONFIG_ERROR_INTERACTIVE_MODE, TaskConfigurationError);
++               assertNoExecutedTasks();
+ 
+                done();
+             });
+@@ -232,19 +233,6 @@ describe('clean', () => {
+       );
+    });
+ 
+-   function expectNoTasksToHaveBeenRun() {
+-      assertNoExecutedTasks();
+-   }
+-
+-   function expectTheError<E extends Error>(err: E | null) {
+-      return {
+-         toBe(message: string) {
+-            expect(err).toBeInstanceOf(TaskConfigurationError);
+-            expect(String(err)).toMatch(message);
+-         },
+-      };
+-   }
+-
+    function test(t: (done: Function) => void) {
+       return async () => {
+          await new Promise((done) => t(done));
+diff --git a/simple-git/test/unit/plugin.unsafe.spec.ts b/simple-git/test/unit/plugin.unsafe.spec.ts
+new file mode 100644
+index 00000000..f23fc4ea
+--- /dev/null
++++ b/simple-git/test/unit/plugin.unsafe.spec.ts
+@@ -0,0 +1,88 @@
++import { promiseError } from '@kwsites/promise-result';
++import {
++   assertExecutedCommands,
++   assertGitError,
++   closeWithSuccess,
++   newSimpleGit,
++} from './__fixtures__';
++
++describe('blockUnsafeOperationsPlugin', () => {
++   it.each([
++      ['cmd', '--upload-pack=touch /tmp/pwn0'],
++      ['cmd', '--receive-pack=touch /tmp/pwn1'],
++      ['clone', '-u touch /tmp/pwn'],
++   ])('allows %s %s only when using override', async (cmd, option) => {
++      assertGitError(
++         await promiseError(newSimpleGit({ unsafe: {} }).raw(cmd, option)),
++         'allowUnsafePack'
++      );
++
++      const err = promiseError(
++         newSimpleGit({ unsafe: { allowUnsafePack: true } }).raw(cmd, option)
++      );
++
++      await closeWithSuccess();
++      expect(await err).toBeUndefined();
++      assertExecutedCommands(cmd, option);
++   });
++
++   it('allows -u for non-clone commands', async () => {
++      const git = newSimpleGit({ unsafe: {} });
++      const err = promiseError(git.raw('push', '-u', 'origin/main'));
++
++      await closeWithSuccess();
++      expect(await err).toBeUndefined();
++      assertExecutedCommands('push', '-u', 'origin/main');
++   });
++
++   it('blocks -u for clone command', async () => {
++      const git = newSimpleGit({ unsafe: {} });
++      const err = promiseError(git.clone('-u touch /tmp/pwn', 'file:///tmp/zero12'));
++
++      assertGitError(await err, 'allowUnsafePack');
++   });
++
++   it('allows -u for clone command with override', async () => {
++      const git = newSimpleGit({ unsafe: { allowUnsafePack: true } });
++      const err = promiseError(git.clone('-u touch /tmp/pwn', 'file:///tmp/zero12'));
++
++      await closeWithSuccess();
++      expect(await err).toBeUndefined();
++      assertExecutedCommands('clone', '-u touch /tmp/pwn', 'file:///tmp/zero12');
++   });
++
++   it('blocks pull --upload-pack', async () => {
++      const git = newSimpleGit({ unsafe: {} });
++      const err = await promiseError(git.pull('--upload-pack=touch /tmp/pwn0', 'master'));
++
++      assertGitError(err, 'allowUnsafePack');
++   });
++
++   it('blocks push --receive-pack', async () => {
++      const git = newSimpleGit({ unsafe: {} });
++      const err = await promiseError(git.push('--receive-pack=touch /tmp/pwn1', 'master'));
++
++      assertGitError(err, 'allowUnsafePack');
++   });
++
++   it('blocks raw --upload-pack', async () => {
++      const git = newSimpleGit({ unsafe: {} });
++      const err = await promiseError(git.raw('pull', `--upload-pack=touch /tmp/pwn0`));
++
++      assertGitError(err, 'allowUnsafePack');
++   });
++
++   it('blocks raw --receive-pack', async () => {
++      const git = newSimpleGit({ unsafe: {} });
++      const err = await promiseError(git.raw('push', `--receive-pack=touch /tmp/pwn1`));
++
++      assertGitError(err, 'allowUnsafePack');
++   });
++
++   it('blocks listRemote --upload-pack', async () => {
++      const git = newSimpleGit({ unsafe: {} });
++      const err = await promiseError(git.listRemote(['--upload-pack=touch /tmp/pwn2', 'main']));
++
++      assertGitError(err, 'allowUnsafePack');
++   });
++});

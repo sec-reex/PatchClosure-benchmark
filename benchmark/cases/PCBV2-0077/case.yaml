@@ -1,0 +1,27 @@
+case_id: PCBV2-0077
+public_name: apache-log4j-2-cve-2021-45046
+run_mode: real-app-cli
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  # Runtime pulls official Maven Central log4j-core + log4j-api
+  # (CVE-2021-44228 seed on 2.14.1; incomplete 2.15.0; complete 2.16.0).
+  type: maven
+  repo: org.apache.logging.log4j:log4j-core
+  v0: "2.14.1"
+  v1: "2.15.0"
+service:
+  # CLI / library client: LDAP canary is internal-only (no host HTTP port).
+  # Same class as 0070/0197/0211. start.sh waits on 127.0.0.1:1389 inside the container.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

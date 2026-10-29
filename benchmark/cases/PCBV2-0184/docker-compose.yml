@@ -1,0 +1,58 @@
+# PatchClosure-Bench: Django Truncator.words(html=True) ReDoS, CVE-2023-43665 -> CVE-2024-27351.
+# run_mode = real-app-http. Each profile boots a REAL Django project (gunicorn + proj/) running the
+# REAL published Django per DJ_VER. The ReDoS is triggered by an EXTERNAL HTTP request
+# (POST /truncate with an untrusted HTML body -> Truncator(text).words(30, html=True)) and observed
+# as SERVER-SIDE response latency. CPU-pinned (cpus=1.0) so the latency threshold is stable.
+#
+#   original  '\t'x5_000_000 + '<'x30_000 : V0(4.2.5) SLOW | V1(4.2.6) bounded (cap truncates the tail) | V2 fast   (CVE-2023-43665)
+#   residual  '<'x30_000                   : V0 slow | V1(4.2.6) SLOW (within-cap -> regex still O(n^2)) | V2 fast    (CVE-2024-27351, INCOMPLETE FIX)
+#   benign    '<p>Joel is a slug</p>'x40   : fast on V0,V1,V2                                                        (control)
+services:
+  v0:
+    profiles: ["v0"]
+    image: pcb-redos-django-truncator-v0
+    build:
+      context: .
+      args:
+        DJ_VER: "4.2.5"
+    ports: ["${PORT_V0_0:-29140}:8000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  v1:
+    profiles: ["v1"]
+    image: pcb-redos-django-truncator-v1
+    build:
+      context: .
+      args:
+        DJ_VER: "4.2.6"
+    ports: ["${PORT_V1_0:-29141}:8000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  v2:
+    profiles: ["v2"]
+    image: pcb-redos-django-truncator-v2
+    build:
+      context: .
+      args:
+        DJ_VER: "4.2.11"
+    ports: ["${PORT_V2_0:-29142}:8000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  watchdog:
+    profiles: ["v0", "v1", "v2"]
+    image: python:3.12-alpine
+    volumes:
+      - ./watchdog.py:/wd.py:ro
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+      VERSION: "${VERSION:-v1}"
+    command: ["python", "/wd.py"]
+    ports: ["${PORT_WATCHDOG_0:-29148}:8888"]
+    cpus: 0.5
+    mem_limit: 128m

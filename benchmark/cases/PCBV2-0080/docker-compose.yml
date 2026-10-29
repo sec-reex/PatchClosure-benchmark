@@ -1,0 +1,21 @@
+# PatchClosure-Bench: ArcadeDB CVE-2026-44221 -> CVE-2026-54076 (incomplete fix).
+# Real official arcadedata/arcadedb images per version. Read-only API token mutates schema.
+services:
+  v0:
+    image: arcadedata/arcadedb:26.3.2   # pre CVE-2026-44221: NO UPDATE_SCHEMA check anywhere
+    profiles: ["v0"]
+    environment:
+      JAVA_OPTS: "-Darcadedb.server.rootPassword=playwithdata -Darcadedb.server.mode=production"
+    ports: ["${PORT_V0_0:-24801}:2480"]
+  v1:
+    image: arcadedata/arcadedb:26.4.2   # CVE-2026-44221 fix: UPDATE_SCHEMA on createProperty ONLY (TARGET)
+    profiles: ["v1"]
+    environment:
+      JAVA_OPTS: "-Darcadedb.server.rootPassword=playwithdata -Darcadedb.server.mode=production"
+    ports: ["${PORT_V1_0:-24802}:2480"]
+  v2:
+    image: arcadedata/arcadedb:26.6.1   # CVE-2026-54076 fix: UPDATE_SCHEMA on ALL schema mutators
+    profiles: ["v2"]
+    environment:
+      JAVA_OPTS: "-Darcadedb.server.rootPassword=playwithdata -Darcadedb.server.mode=production"
+    ports: ["${PORT_V2_0:-24803}:2480"]

@@ -1,0 +1,44 @@
+# PatchClosure-Bench: urllib3 cross-origin redirect sensitive-header strip (credential leak).
+# HTTP gateway wraps the probe: GET /probe?mode=seed|residual triggers the real
+# urllib3 client against the internal redirect chain and returns the attacker's
+# echo of received headers (flag leaks if header not stripped).
+services:
+  redirector:
+    build: ./servers
+    command: python redirector.py
+    networks: [pcbnet]
+
+  attacker:
+    build: ./servers
+    command: python attacker.py
+    networks: [pcbnet]
+
+  client-v0:
+    build: { context: ./client, args: { U3_VERSION: "1.26.16" } }
+    environment: { PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}" }
+    depends_on: [redirector, attacker]
+    networks: [pcbnet]
+    profiles: [v0]
+    ports: ["${PORT_V0_0:-39509}:8080"]
+    command: ["python", "/app/gateway.py"]
+
+  client-v1:
+    build: { context: ./client, args: { U3_VERSION: "1.26.17" } }
+    environment: { PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}" }
+    depends_on: [redirector, attacker]
+    networks: [pcbnet]
+    profiles: [v1]
+    ports: ["${PORT_V1_0:-39510}:8080"]
+    command: ["python", "/app/gateway.py"]
+
+  client-v2:
+    build: { context: ./client, args: { U3_VERSION: "1.26.19" } }
+    environment: { PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}" }
+    depends_on: [redirector, attacker]
+    networks: [pcbnet]
+    profiles: [v2]
+    ports: ["${PORT_V2_0:-39511}:8080"]
+    command: ["python", "/app/gateway.py"]
+
+networks:
+  pcbnet: {}

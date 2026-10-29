@@ -1,0 +1,613 @@
+CVE: CVE-2021-3664
+upstream: https://github.com/unshiftio/url-parse.git
+fix: 1.5.1..1.5.2
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+new file mode 100644
+index 0000000..945a447
+--- /dev/null
++++ b/.github/workflows/ci.yml
+@@ -0,0 +1,38 @@
++name: CI
++
++on:
++  - push
++  - pull_request
++
++jobs:
++  test:
++    runs-on: ubuntu-latest
++    strategy:
++      matrix:
++        node:
++          - 12
++          - 14
++          - 16
++    steps:
++      - uses: actions/checkout@v2
++      - uses: actions/setup-node@v2
++        with:
++          node-version: ${{ matrix.node }}
++      - run: npm install
++      - run: npm test
++      - uses: coverallsapp/github-action@v1.1.2
++        if: matrix.node == 12
++        with:
++          github-token: ${{ secrets.GITHUB_TOKEN }}
++  test-browser:
++    runs-on: ubuntu-latest
++    env:
++      SAUCE_USERNAME: url-parse
++      SAUCE_ACCESS_KEY: ${{ secrets.SAUCE_ACCESS_KEY }}
++    steps:
++      - uses: actions/checkout@v2
++      - uses: actions/setup-node@v2
++        with:
++          node-version: 12
++      - run: npm install
++      - run: npm run test-browser
+diff --git a/.travis.yml b/.travis.yml
+deleted file mode 100644
+index 7333c3e..0000000
+--- a/.travis.yml
++++ /dev/null
+@@ -1,25 +0,0 @@
+-language: node_js
+-matrix:
+-  fast_finish: true
+-  include:
+-    - node_js: "14"
+-      env: SCRIPT=test
+-    - node_js: "12"
+-      env: SCRIPT=test
+-    - node_js: "10"
+-      env: SCRIPT=test
+-    - node_js: "12"
+-      env:
+-        - secure: IF01oyIKSs0C5dARdYRTilKnU1TG4zenjjEPClkQxAWIpUOxl9xcNJWDVEOPxJ/4pVt+pozyT80Rp7efh6ZiREJIQI1tUboBKSqZzSbnD5uViQNSbQ90PaDP0FIUc0IQ5o07W36rijBB0DTmtU1VofzN9PKkJO7XiSSXevI8RcM=
+-        - SAUCE_USERNAME=url-parse
+-        - SCRIPT=test-browser
+-script:
+-  - "npm run ${SCRIPT}"
+-after_script:
+-  - 'if [ "${SCRIPT}" == "test" ]; then c8 report --reporter=text-lcov | coveralls; fi'
+-notifications:
+-  irc:
+-    channels:
+-      - "irc.freenode.org#unshift"
+-    on_success: change
+-    on_failure: change
+diff --git a/README.md b/README.md
+index f81f919..4540e4b 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # url-parse
+ 
+-[![Made by unshift](https://img.shields.io/badge/made%20by-unshift-00ffcc.svg?style=flat-square)](http://unshift.io)[![Version npm](https://img.shields.io/npm/v/url-parse.svg?style=flat-square)](https://www.npmjs.com/package/url-parse)[![Build Status](https://img.shields.io/travis/unshiftio/url-parse/master.svg?style=flat-square)](https://travis-ci.org/unshiftio/url-parse)[![Dependencies](https://img.shields.io/david/unshiftio/url-parse.svg?style=flat-square)](https://david-dm.org/unshiftio/url-parse)[![Coverage Status](https://img.shields.io/coveralls/unshiftio/url-parse/master.svg?style=flat-square)](https://coveralls.io/r/unshiftio/url-parse?branch=master)[![IRC channel](https://img.shields.io/badge/IRC-irc.freenode.net%23unshift-00a8ff.svg?style=flat-square)](https://webchat.freenode.net/?channels=unshift)
++[![Made by unshift](https://img.shields.io/badge/made%20by-unshift-00ffcc.svg?style=flat-square)](http://unshift.io)[![Version npm](https://img.shields.io/npm/v/url-parse.svg?style=flat-square)](https://www.npmjs.com/package/url-parse)[![Build Status](https://img.shields.io/github/workflow/status/unshiftio/url-parse/CI/master?label=CI&style=flat-square)](https://github.com/unshiftio/url-parse/actions?query=workflow%3ACI+branch%3Amaster)[![Dependencies](https://img.shields.io/david/unshiftio/url-parse.svg?style=flat-square)](https://david-dm.org/unshiftio/url-parse)[![Coverage Status](https://img.shields.io/coveralls/unshiftio/url-parse/master.svg?style=flat-square)](https://coveralls.io/r/unshiftio/url-parse?branch=master)[![IRC channel](https://img.shields.io/badge/IRC-irc.freenode.net%23unshift-00a8ff.svg?style=flat-square)](https://webchat.freenode.net/?channels=unshift)
+ 
+ [![Sauce Test Status](https://saucelabs.com/browser-matrix/url-parse.svg)](https://saucelabs.com/u/url-parse)
+ 
+diff --git a/SECURITY.md b/SECURITY.md
+index 31ef5b4..3a97067 100644
+--- a/SECURITY.md
++++ b/SECURITY.md
+@@ -33,6 +33,19 @@ acknowledge your responsible disclosure, if you wish.
+ 
+ ## History
+ 
++> url-parse mishandles certain use a single of (back) slash such as https:\ &
++> https:/ and > interprets the URI as a relative path. Browsers accept a single
++> backslash after the protocol, and treat it as a normal slash, while url-parse
++> sees it as a relative path.
++
++- **Reporter credits**
++  - Ready-Research
++  - GitHub: [@Ready-Reserach](https://github.com/ready-research)
++- Huntr report: https://www.huntr.dev/bounties/1625557993985-unshiftio/url-parse/
++- Fixed in: 1.5.2
++
++---
++
+ > Using backslash in the protocol is valid in the browser, while url-parse
+ > thinks it’s a relative path. An application that validates a url using
+ > url-parse might pass a malicious link.
+@@ -42,6 +55,8 @@ acknowledge your responsible disclosure, if you wish.
+   - Twitter: [Yaniv Nizry](https://twitter.com/ynizry)
+ - Fixed in: 1.5.0
+ 
++---
++
+ > The `extractProtocol` method does not return the correct protocol when
+ > provided with unsanitized content which could lead to false positives.
+ 
+diff --git a/index.js b/index.js
+index 72b27c0..903fce2 100644
+--- a/index.js
++++ b/index.js
+@@ -2,8 +2,8 @@
+ 
+ var required = require('requires-port')
+   , qs = require('querystringify')
+-  , slashes = /^[A-Za-z][A-Za-z0-9+-.]*:[\\/]+/
+-  , protocolre = /^([a-z][a-z0-9.+-]*:)?([\\/]{1,})?([\S\s]*)/i
++  , slashes = /^[A-Za-z][A-Za-z0-9+-.]*:\/\//
++  , protocolre = /^([a-z][a-z0-9.+-]*:)?(\/\/)?([\\/]+)?([\S\s]*)/i
+   , whitespace = '[\\x09\\x0A\\x0B\\x0C\\x0D\\x20\\xA0\\u1680\\u180E\\u2000\\u2001\\u2002\\u2003\\u2004\\u2005\\u2006\\u2007\\u2008\\u2009\\u200A\\u202F\\u205F\\u3000\\u2028\\u2029\\uFEFF]'
+   , left = new RegExp('^'+ whitespace +'+');
+ 
+@@ -32,8 +32,8 @@ function trimLeft(str) {
+ var rules = [
+   ['#', 'hash'],                        // Extract from the back.
+   ['?', 'query'],                       // Extract from the back.
+-  function sanitize(address) {          // Sanitize what is left of the address
+-    return address.replace('\\', '/');
++  function sanitize(address, url) {     // Sanitize what is left of the address
++    return isSpecial(url.protocol) ? address.replace(/\\/g, '/') : address;
+   },
+   ['/', 'pathname'],                    // Extract from the back.
+   ['@', 'auth', 1],                     // Extract from the front.
+@@ -98,6 +98,24 @@ function lolcation(loc) {
+   return finaldestination;
+ }
+ 
++/**
++ * Check whether a protocol scheme is special.
++ *
++ * @param {String} The protocol scheme of the URL
++ * @return {Boolean} `true` if the protocol scheme is special, else `false`
++ * @private
++ */
++function isSpecial(scheme) {
++  return (
++    scheme === 'file:' ||
++    scheme === 'ftp:' ||
++    scheme === 'http:' ||
++    scheme === 'https:' ||
++    scheme === 'ws:' ||
++    scheme === 'wss:'
++  );
++}
++
+ /**
+  * @typedef ProtocolExtract
+  * @type Object
+@@ -110,20 +128,56 @@ function lolcation(loc) {
+  * Extract protocol information from a URL with/without double slash ("//").
+  *
+  * @param {String} address URL we want to extract from.
++ * @param {Object} location
+  * @return {ProtocolExtract} Extracted information.
+  * @private
+  */
+-function extractProtocol(address) {
++function extractProtocol(address, location) {
+   address = trimLeft(address);
++  location = location || {};
++
++  var match = protocolre.exec(address);
++  var protocol = match[1] ? match[1].toLowerCase() : '';
++  var forwardSlashes = !!match[2];
++  var otherSlashes = !!match[3];
++  var slashesCount = 0;
++  var rest;
++
++  if (forwardSlashes) {
++    if (otherSlashes) {
++      rest = match[2] + match[3] + match[4];
++      slashesCount = match[2].length + match[3].length;
++    } else {
++      rest = match[2] + match[4];
++      slashesCount = match[2].length;
++    }
++  } else {
++    if (otherSlashes) {
++      rest = match[3] + match[4];
++      slashesCount = match[3].length;
++    } else {
++      rest = match[4]
++    }
++  }
+ 
+-  var match = protocolre.exec(address)
+-    , protocol = match[1] ? match[1].toLowerCase() : ''
+-    , slashes = !!(match[2] && match[2].length >= 2)
+-    , rest =  match[2] && match[2].length === 1 ? '/' + match[3] : match[3];
++  if (protocol === 'file:') {
++    if (slashesCount >= 2) {
++      rest = rest.slice(2);
++    }
++  } else if (isSpecial(protocol)) {
++    rest = match[4];
++  } else if (protocol) {
++    if (forwardSlashes) {
++      rest = rest.slice(2);
++    }
++  } else if (slashesCount >= 2 && isSpecial(location.protocol)) {
++    rest = match[4];
++  }
+ 
+   return {
+     protocol: protocol,
+-    slashes: slashes,
++    slashes: forwardSlashes || isSpecial(protocol),
++    slashesCount: slashesCount,
+     rest: rest
+   };
+ }
+@@ -214,7 +268,7 @@ function Url(address, location, parser) {
+   //
+   // Extract protocol information before running the instructions.
+   //
+-  extracted = extractProtocol(address || '');
++  extracted = extractProtocol(address || '', location);
+   relative = !extracted.protocol && !extracted.slashes;
+   url.slashes = extracted.slashes || relative && location.slashes;
+   url.protocol = extracted.protocol || location.protocol || '';
+@@ -224,13 +278,21 @@ function Url(address, location, parser) {
+   // When the authority component is absent the URL starts with a path
+   // component.
+   //
+-  if (!extracted.slashes) instructions[3] = [/(.*)/, 'pathname'];
++  if (
++    url.protocol === 'file:' ||
++    (!extracted.slashes &&
++      (extracted.protocol ||
++        extracted.slashesCount < 2 ||
++        !isSpecial(url.protocol)))
++  ) {
++    instructions[3] = [/(.*)/, 'pathname'];
++  }
+ 
+   for (; i < instructions.length; i++) {
+     instruction = instructions[i];
+ 
+     if (typeof instruction === 'function') {
+-      address = instruction(address);
++      address = instruction(address, url);
+       continue;
+     }
+ 
+@@ -288,7 +350,7 @@ function Url(address, location, parser) {
+   // Default to a / for pathname if none exists. This normalizes the URL
+   // to always have a /
+   //
+-  if (url.pathname.charAt(0) !== '/' && url.hostname) {
++  if (url.pathname.charAt(0) !== '/' && isSpecial(url.protocol)) {
+     url.pathname = '/' + url.pathname;
+   }
+ 
+@@ -312,7 +374,7 @@ function Url(address, location, parser) {
+     url.password = instruction[1] || '';
+   }
+ 
+-  url.origin = url.protocol && url.host && url.protocol !== 'file:'
++  url.origin = url.protocol !== 'file:' && isSpecial(url.protocol) && url.host
+     ? url.protocol +'//'+ url.host
+     : 'null';
+ 
+@@ -405,7 +467,7 @@ function set(part, value, fn) {
+     if (ins[4]) url[ins[1]] = url[ins[1]].toLowerCase();
+   }
+ 
+-  url.origin = url.protocol && url.host && url.protocol !== 'file:'
++  url.origin = url.protocol !== 'file:' && isSpecial(url.protocol) && url.host
+     ? url.protocol +'//'+ url.host
+     : 'null';
+ 
+@@ -430,7 +492,7 @@ function toString(stringify) {
+ 
+   if (protocol && protocol.charAt(protocol.length - 1) !== ':') protocol += ':';
+ 
+-  var result = protocol + (url.slashes ? '//' : '');
++  var result = protocol + (url.slashes || isSpecial(url.protocol) ? '//' : '');
+ 
+   if (url.username) {
+     result += url.username;
+diff --git a/package.json b/package.json
+index f84b62e..3183f73 100644
+--- a/package.json
++++ b/package.json
+@@ -1,12 +1,12 @@
+ {
+   "name": "url-parse",
+-  "version": "1.5.1",
++  "version": "1.5.2",
+   "description": "Small footprint URL parser that works seamlessly across Node.js and browser environments",
+   "main": "index.js",
+   "scripts": {
+     "browserify": "rm -rf dist && mkdir -p dist && browserify index.js -s URLParse -o dist/url-parse.js",
+     "minify": "uglifyjs dist/url-parse.js --source-map -cm -o dist/url-parse.min.js",
+-    "test": "c8 --reporter=html --reporter=text mocha test/test.js",
++    "test": "c8 --reporter=lcov --reporter=text mocha test/test.js",
+     "test-browser": "node test/browser.js",
+     "prepublishOnly": "npm run browserify && npm run minify",
+     "watch": "mocha --watch test/test.js"
+@@ -38,9 +38,8 @@
+   },
+   "devDependencies": {
+     "assume": "^2.2.0",
+-    "browserify": "^16.2.3",
++    "browserify": "^17.0.0",
+     "c8": "^7.3.1",
+-    "coveralls": "^3.1.0",
+     "mocha": "^8.0.1",
+     "pre-commit": "^1.2.2",
+     "sauce-browsers": "^2.0.0",
+diff --git a/test/browser.js b/test/browser.js
+index 200ec5e..63ee99b 100644
+--- a/test/browser.js
++++ b/test/browser.js
+@@ -29,12 +29,12 @@ const platforms = sauceBrowsers([
+ });
+ 
+ run(path.join(__dirname, 'test.js'), 'saucelabs', {
++  jobInfo: { name: pkg.name, build: process.env.GITHUB_RUN_ID },
+   html: path.join(__dirname, 'index.html'),
+   accessKey: process.env.SAUCE_ACCESS_KEY,
+   username: process.env.SAUCE_USERNAME,
+   browserify: true,
+   disableSSL: true,
+-  name: pkg.name,
+   parallel: 5,
+   platforms
+ }).done((results) => {
+diff --git a/test/test.js b/test/test.js
+index 216891e..1893891 100644
+--- a/test/test.js
++++ b/test/test.js
+@@ -71,7 +71,8 @@ describe('url-parse', function () {
+       assume(parse.extractProtocol('http://example.com')).eql({
+         slashes: true,
+         protocol: 'http:',
+-        rest: 'example.com'
++        rest: 'example.com',
++        slashesCount: 2
+       });
+     });
+ 
+@@ -79,7 +80,8 @@ describe('url-parse', function () {
+       assume(parse.extractProtocol('')).eql({
+         slashes: false,
+         protocol: '',
+-        rest: ''
++        rest: '',
++        slashesCount: 0
+       });
+     });
+ 
+@@ -87,13 +89,15 @@ describe('url-parse', function () {
+       assume(parse.extractProtocol('/foo')).eql({
+         slashes: false,
+         protocol: '',
+-        rest: '/foo'
++        rest: '/foo',
++        slashesCount: 1
+       });
+ 
+       assume(parse.extractProtocol('//foo/bar')).eql({
+         slashes: true,
+         protocol: '',
+-        rest: 'foo/bar'
++        rest: '//foo/bar',
++        slashesCount: 2
+       });
+     });
+ 
+@@ -103,7 +107,8 @@ describe('url-parse', function () {
+       assume(parse.extractProtocol(input)).eql({
+         slashes: false,
+         protocol: '',
+-        rest: input
++        rest: input,
++        slashesCount: 0
+       });
+     });
+ 
+@@ -111,7 +116,8 @@ describe('url-parse', function () {
+       assume(parse.extractProtocol(' javascript://foo')).eql({
+         slashes: true,
+         protocol: 'javascript:',
+-        rest: 'foo'
++        rest: 'foo',
++        slashesCount: 2
+       });
+     });
+   });
+@@ -281,20 +287,118 @@ describe('url-parse', function () {
+ 
+     assume(parsed.host).equals('what-is-up.com');
+     assume(parsed.href).equals('http://what-is-up.com/');
++
++    url = '\\\\\\\\what-is-up.com'
++    parsed = parse(url, parse('http://google.com'));
++
++    assume(parsed.host).equals('what-is-up.com');
++    assume(parsed.href).equals('http://what-is-up.com/');
+   });
+ 
+-  it('does not see a slash after the protocol as path', function () {
++  it('ignores slashes after the protocol for special URLs', function () {
+     var url = 'https:\\/github.com/foo/bar'
+       , parsed = parse(url);
+ 
+     assume(parsed.host).equals('github.com');
+     assume(parsed.hostname).equals('github.com');
+     assume(parsed.pathname).equals('/foo/bar');
++    assume(parsed.slashes).is.true();
++    assume(parsed.href).equals('https://github.com/foo/bar');
+ 
+-    url = 'https:/\/\/\github.com/foo/bar';
++    url = 'https:/\\/\\/\\github.com/foo/bar';
++    parsed = parse(url);
+     assume(parsed.host).equals('github.com');
+     assume(parsed.hostname).equals('github.com');
+     assume(parsed.pathname).equals('/foo/bar');
++    assume(parsed.slashes).is.true();
++    assume(parsed.href).equals('https://github.com/foo/bar');
++
++    url = 'https:/github.com/foo/bar';
++    parsed = parse(url);
++    assume(parsed.host).equals('github.com');
++    assume(parsed.pathname).equals('/foo/bar');
++    assume(parsed.slashes).is.true();
++    assume(parsed.href).equals('https://github.com/foo/bar');
++
++    url = 'https:\\github.com/foo/bar';
++    parsed = parse(url);
++    assume(parsed.host).equals('github.com');
++    assume(parsed.pathname).equals('/foo/bar');
++    assume(parsed.slashes).is.true();
++    assume(parsed.href).equals('https://github.com/foo/bar');
++
++    url = 'https:github.com/foo/bar';
++    parsed = parse(url);
++    assume(parsed.host).equals('github.com');
++    assume(parsed.pathname).equals('/foo/bar');
++    assume(parsed.slashes).is.true();
++    assume(parsed.href).equals('https://github.com/foo/bar');
++
++    url = 'https:github.com/foo/bar';
++    parsed = parse(url);
++    assume(parsed.host).equals('github.com');
++    assume(parsed.pathname).equals('/foo/bar');
++    assume(parsed.slashes).is.true();
++    assume(parsed.href).equals('https://github.com/foo/bar');
++  });
++
++  it('handles slashes after the protocol for non special URLs', function () {
++    var url = 'foo:example.com'
++      , parsed = parse(url);
++
++    assume(parsed.hostname).equals('');
++    assume(parsed.pathname).equals('example.com');
++    assume(parsed.href).equals('foo:example.com');
++    assume(parsed.slashes).is.false();
++
++    url = 'foo:/example.com';
++    parsed = parse(url);
++    assume(parsed.hostname).equals('');
++    assume(parsed.pathname).equals('/example.com');
++    assume(parsed.href).equals('foo:/example.com');
++    assume(parsed.slashes).is.false();
++
++    url = 'foo:\\example.com';
++    parsed = parse(url);
++    assume(parsed.hostname).equals('');
++    assume(parsed.pathname).equals('\\example.com');
++    assume(parsed.href).equals('foo:\\example.com');
++    assume(parsed.slashes).is.false();
++
++    url = 'foo://example.com';
++    parsed = parse(url);
++    assume(parsed.hostname).equals('example.com');
++    assume(parsed.pathname).equals('');
++    assume(parsed.href).equals('foo://example.com');
++    assume(parsed.slashes).is.true();
++
++    url = 'foo:\\\\example.com';
++    parsed = parse(url);
++    assume(parsed.hostname).equals('');
++    assume(parsed.pathname).equals('\\\\example.com');
++    assume(parsed.href).equals('foo:\\\\example.com');
++    assume(parsed.slashes).is.false();
++
++    url = 'foo:///example.com';
++    parsed = parse(url);
++    assume(parsed.hostname).equals('');
++    assume(parsed.pathname).equals('/example.com');
++    assume(parsed.href).equals('foo:///example.com');
++    assume(parsed.slashes).is.true();
++
++    url = 'foo:\\\\\\example.com';
++    parsed = parse(url);
++    assume(parsed.hostname).equals('');
++    assume(parsed.pathname).equals('\\\\\\example.com');
++    assume(parsed.href).equals('foo:\\\\\\example.com');
++    assume(parsed.slashes).is.false();
++
++    url = '\\\\example.com/foo/bar';
++    parsed = parse(url, 'foo://bar.com');
++    assume(parsed.hostname).equals('bar.com');
++    assume(parsed.pathname).equals('/\\\\example.com/foo/bar');
++    assume(parsed.href).equals('foo://bar.com/\\\\example.com/foo/bar');
++    assume(parsed.slashes).is.true();
+   });
+ 
+   describe('origin', function () {
+@@ -319,6 +423,13 @@ describe('url-parse', function () {
+       assume(parsed.origin).equals('null');
+     });
+ 
++    it('is null for non special URLs', function () {
++      var o = parse('foo://example.com/pathname');
++      assume(o.hostname).equals('example.com');
++      assume(o.pathname).equals('/pathname');
++      assume(o.origin).equals('null');
++    });
++
+     it('removes default ports for http', function () {
+       var o = parse('http://google.com:80/pathname');
+       assume(o.origin).equals('http://google.com');
+@@ -438,6 +549,60 @@ describe('url-parse', function () {
+       data.set('protocol', 'https:');
+       assume(data.href).equals('https://google.com/foo');
+     });
++
++    it('handles the file: protocol', function () {
++      var slashes = ['', '/', '//', '///'];
++      var data;
++      var url;
++
++      for (var i = 0; i < slashes.length; i++) {
++        data = parse('file:' + slashes[i]);
++        assume(data.protocol).equals('file:');
++        assume(data.pathname).equals('/');
++        assume(data.href).equals('file:///');
++      }
++
++      url = 'file:////';
++      data = parse(url);
++      assume(data.protocol).equals('file:');
++      assume(data.pathname).equals('//');
++      assume(data.href).equals(url);
++
++      url = 'file://///';
++      data = parse(url);
++      assume(data.protocol).equals('file:');
++      assume(data.pathname).equals('///');
++      assume(data.href).equals(url);
++
++      url = 'file:///Users/foo/BAR/baz.pdf';
++      data = parse(url);
++      assume(data.protocol).equals('file:');
++      assume(data.pathname).equals('/Users/foo/BAR/baz.pdf');
++      assume(data.href).equals(url);
++
++      url = 'file:///foo/bar?baz=qux#hash';
++      data = parse(url);
++      assume(data.protocol).equals('file:');
++      assume(data.hash).equals('#hash');
++      assume(data.query).equals('?baz=qux');
++      assume(data.pathname).equals('/foo/bar');
++      assume(data.href).equals(url);
++
++      data = parse('file://c:\\foo\\bar\\');
++      assume(data.protocol).equals('file:');
++      assume(data.pathname).equals('/c:/foo/bar/');
++      assume(data.href).equals('file:///c:/foo/bar/');
++
++      data = parse('foo/bar', 'file:///baz');
++      assume(data.protocol).equals('file:');
++      assume(data.pathname).equals('/foo/bar');
++      assume(data.href).equals('file:///foo/bar');
++
++      data = parse('foo/bar', 'file:///baz/');
++      assume(data.protocol).equals('file:');
++      assume(data.pathname).equals('/baz/foo/bar');
++      assume(data.href).equals('file:///baz/foo/bar');
++    });
+   });
+ 
+   describe('ip', function () {

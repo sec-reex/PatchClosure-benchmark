@@ -1,0 +1,24 @@
+case_id: PCBV2-0050
+public_name: gotenberg-cve-2026-40281
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: gotenberg/gotenberg
+  v0: "8.29.1"
+  v1: "8.30.1"
+service:
+  # Host port is ${PORT_V*_0}, not container :3000. start.sh / verify.sh wait on /health.
+  readiness: none
+  exposed_ports: [3000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

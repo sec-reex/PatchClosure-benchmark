@@ -1,0 +1,168 @@
+PCBV2-0080 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 04110c06315da55604ac107f71fe7182f3a3deb8 (26.4.2 / GHSA-fxc7-fm93-6q77)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0080/
+
+diff --git a/engine/src/main/java/com/arcadedb/schema/LocalDocumentType.java b/engine/src/main/java/com/arcadedb/schema/LocalDocumentType.java
+index b9165f5451..709ed23753 100644
+--- a/engine/src/main/java/com/arcadedb/schema/LocalDocumentType.java
++++ b/engine/src/main/java/com/arcadedb/schema/LocalDocumentType.java
+@@ -18,6 +18,7 @@
+  */
+ package com.arcadedb.schema;
+ 
++import com.arcadedb.database.DatabaseInternal;
+ import com.arcadedb.database.Document;
+ import com.arcadedb.database.MutableDocument;
+ import com.arcadedb.database.RecordEvents;
+@@ -35,6 +36,7 @@
+ import com.arcadedb.index.TypeIndex;
+ import com.arcadedb.index.lsm.LSMTreeIndexAbstract;
+ import com.arcadedb.log.LogManager;
++import com.arcadedb.security.SecurityDatabaseUser;
+ import com.arcadedb.serializer.json.JSONObject;
+ import com.arcadedb.utility.CollectionUtils;
+ import com.arcadedb.utility.FileUtils;
+@@ -398,6 +400,8 @@ public LocalProperty createProperty(final String propertyName, final Type proper
+    */
+   @Override
+   public LocalProperty createProperty(final String propertyName, final Type propertyType, final String ofType) {
++    ((DatabaseInternal) schema.getDatabase()).checkPermissionsOnDatabase(SecurityDatabaseUser.DATABASE_ACCESS.UPDATE_SCHEMA);
++
+     if (properties.containsKey(propertyName))
+       throw new SchemaException(
+           "Cannot create the property '" + propertyName + "' in type '" + name + "' because it already exists");
+diff --git a/server/src/main/java/com/arcadedb/server/ArcadeDBServer.java b/server/src/main/java/com/arcadedb/server/ArcadeDBServer.java
+index 1f1ae0b8a5..f129560451 100644
+--- a/server/src/main/java/com/arcadedb/server/ArcadeDBServer.java
++++ b/server/src/main/java/com/arcadedb/server/ArcadeDBServer.java
+@@ -474,6 +474,8 @@ public ServerDatabase createDatabase(final String databaseName, final ComponentF
+           configuration.getValueAsString(GlobalConfiguration.SERVER_DATABASE_DIRECTORY) + File.separator
+               + databaseName).setAutoTransaction(true);
+ 
++      factory.setSecurity(getSecurity());
++
+       if (factory.exists())
+         throw new IllegalArgumentException("Database '" + databaseName + "' already exists");
+ 
+diff --git a/server/src/main/java/com/arcadedb/server/security/ServerSecurity.java b/server/src/main/java/com/arcadedb/server/security/ServerSecurity.java
+index 2c7908c9c0..0954c554e0 100644
+--- a/server/src/main/java/com/arcadedb/server/security/ServerSecurity.java
++++ b/server/src/main/java/com/arcadedb/server/security/ServerSecurity.java
+@@ -638,12 +638,45 @@ public ServerSecurityUser authenticateByApiToken(final String tokenValue) {
+ 
+   protected JSONObject getDatabaseGroupsConfiguration(final String databaseName) {
+     final JSONObject groupDatabases = groupRepository.getGroups().getJSONObject("databases");
+-    JSONObject databaseConfiguration = groupDatabases.has(databaseName) ? groupDatabases.getJSONObject(databaseName) : null;
+-    if (databaseConfiguration == null)
+-      // GET DEFAULT (*) DATABASE GROUPS
+-      databaseConfiguration = groupDatabases.has(SecurityManager.ANY) ? groupDatabases.getJSONObject("*") : null;
+-    if (databaseConfiguration == null || !databaseConfiguration.has("groups"))
++
++    // When the caller asks for the wildcard itself, return the wildcard live reference directly — callers
++    // (setup helpers, reload tests) rely on mutating the returned object.
++    if (SecurityManager.ANY.equals(databaseName)) {
++      final JSONObject wildcard = groupDatabases.has(SecurityManager.ANY) ? groupDatabases.getJSONObject("*") : null;
++      return wildcard != null && wildcard.has("groups") ? wildcard.getJSONObject("groups") : null;
++    }
++
++    final JSONObject wildcardConfiguration = groupDatabases.has(SecurityManager.ANY) ? groupDatabases.getJSONObject("*") : null;
++    final JSONObject specificConfiguration = groupDatabases.has(databaseName) ? groupDatabases.getJSONObject(databaseName) : null;
++
++    final JSONObject wildcardGroups =
++        wildcardConfiguration != null && wildcardConfiguration.has("groups") ? wildcardConfiguration.getJSONObject("groups") : null;
++    final JSONObject specificGroups =
++        specificConfiguration != null && specificConfiguration.has("groups") ? specificConfiguration.getJSONObject("groups") : null;
++
++    if (wildcardGroups == null && specificGroups == null)
+       return null;
+-    return databaseConfiguration.getJSONObject("groups");
++
++    // When there is no db-specific entry, return the wildcard groups live reference so existing callers that mutate it
++    // (e.g. setup helpers doing getDatabaseGroupsConfiguration(db).put(groupName, ...)) keep working.
++    if (specificGroups == null)
++      return wildcardGroups;
++    if (wildcardGroups == null)
++      return specificGroups;
++
++    // MERGE: wildcard groups are the baseline, db-specific entries override same-named groups. The returned object is
++    // a snapshot copy; callers that need to persist groups must go through saveGroup/deleteGroup.
++    final JSONObject merged = new JSONObject();
++    for (final String groupName : wildcardGroups.keySet()) {
++      final Object value = wildcardGroups.get(groupName);
++      if (value instanceof JSONObject)
++        merged.put(groupName, value);
++    }
++    for (final String groupName : specificGroups.keySet()) {
++      final Object value = specificGroups.get(groupName);
++      if (value instanceof JSONObject)
++        merged.put(groupName, value);
++    }
++    return merged;
+   }
+ }
+diff --git a/server/src/test/java/com/arcadedb/server/security/CrossDatabaseAccessIT.java b/server/src/test/java/com/arcadedb/server/security/CrossDatabaseAccessIT.java
+index 109161a356..ecee5d1c6e 100644
+--- a/server/src/test/java/com/arcadedb/server/security/CrossDatabaseAccessIT.java
++++ b/server/src/test/java/com/arcadedb/server/security/CrossDatabaseAccessIT.java
+@@ -93,6 +93,39 @@ void scopedApiTokenCannotReadOtherDatabase() throws Exception {
+     });
+   }
+ 
++  @Test
++  void readOnlyApiTokenCannotInsertOnOwnDatabase() throws Exception {
++    // Mirrors the exact repro sent by the reporter (Art): a read-only token scoped to 'live' must not be able to
++    // INSERT INTO Memory on the very same 'live' database. Token payload uses no 'database' key inside permissions,
++    // matching the reporter's minimised token-only repro.
++    testEachServer((serverIndex) -> {
++      createDatabase(serverIndex, OTHER_DB);
++      try {
++        createType(serverIndex, OTHER_DB, "Memory");
++
++        final JSONObject permissions = new JSONObject()
++            .put("types", new JSONObject()
++                .put("*", new JSONObject().put("access", new JSONArray().put("readRecord"))));
++        final String token = createTokenForDatabase(serverIndex, "art-readonly-token", OTHER_DB, permissions);
++        final String tokenAuth = "Bearer " + token;
++
++        final int readStatus = commandStatus(serverIndex, OTHER_DB, tokenAuth, "SELECT FROM Memory");
++        assertThat(readStatus).as("read-only token must be allowed to SELECT on its own database").isEqualTo(200);
++
++        final int insertStatus = commandStatus(serverIndex, OTHER_DB, tokenAuth,
++            "INSERT INTO Memory SET content = 'token-write-attempt', salience = 0.2");
++        assertThat(insertStatus).as("read-only token must not INSERT on its own database").isGreaterThanOrEqualTo(400);
++
++        final int schemaStatus = commandStatus(serverIndex, OTHER_DB, tokenAuth,
++            "CREATE PROPERTY Memory.scope_probe_api_token STRING");
++        assertThat(schemaStatus).as("read-only token must not mutate schema on its own database").isGreaterThanOrEqualTo(400);
++      } finally {
++        deleteToken(serverIndex, "art-readonly-token");
++        dropDatabase(serverIndex, OTHER_DB);
++      }
++    });
++  }
++
+   @Test
+   void scopedApiTokenCannotWriteOtherDatabase() throws Exception {
+     testEachServer((serverIndex) -> {
+@@ -159,6 +192,11 @@ private String createCrudToken(final int serverIndex, final String name) throws
+   }
+ 
+   private String createToken(final int serverIndex, final String name, final JSONObject permissions) throws Exception {
++    return createTokenForDatabase(serverIndex, name, getDatabaseName(), permissions);
++  }
++
++  private String createTokenForDatabase(final int serverIndex, final String name, final String database,
++      final JSONObject permissions) throws Exception {
+     final ApiTokenConfiguration tokenConfig = getServer(serverIndex).getSecurity().getApiTokenConfiguration();
+     tokenConfig.listTokens().stream()
+         .filter(t -> name.equals(t.getString("name", "")))
+@@ -170,7 +208,7 @@ private String createToken(final int serverIndex, final String name, final JSONO
+ 
+     final JSONObject payload = new JSONObject();
+     payload.put("name", name);
+-    payload.put("database", getDatabaseName());
++    payload.put("database", database);
+     payload.put("expiresAt", 0);
+     payload.put("permissions", permissions);
+     connection.getOutputStream().write(payload.toString().getBytes());

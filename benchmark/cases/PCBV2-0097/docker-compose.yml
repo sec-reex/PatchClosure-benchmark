@@ -1,0 +1,107 @@
+# PatchClosure-Bench REAL-APP-HTTP recipe for deser_concretecms_unserialize
+# CVE-2026-3452 (9.4.8, TARGET/incomplete) -> CVE-2026-8135 (9.5.1, complete). CWE-502 PHP Object Injection.
+#
+# Each app service runs the REAL Concrete CMS, git-cloned at the exact tag at build time (Dockerfile),
+# installed DB-backed against a real MySQL, served over HTTP by apache. The PHP Object Injection is
+# triggered by an EXTERNAL HTTP request through the real Concrete CMS bootstrap (the REST-style
+# json_decode block-save path). NO source-lift, NO in-process harness.
+#
+# Profiles: v0=9.4.7 (pre-fix), v1=9.4.8 (CVE-2026-3452 fix, TARGET), v2=9.5.1 (CVE-2026-8135 fix).
+# The benign canary ${PCB_FLAG} is written to /canary/flag.txt (outside /app) at container start; the
+# shadow class PcbFlagProbe, if instantiated by the render-path unserialize(), reads+echoes it.
+services:
+  db-v0:
+    profiles: ["v0"]
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: concrete
+      MARIADB_USER: concrete
+      MARIADB_PASSWORD: concrete
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  db-v1:
+    profiles: ["v1"]
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: concrete
+      MARIADB_USER: concrete
+      MARIADB_PASSWORD: concrete
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  db-v2:
+    profiles: ["v2"]
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: concrete
+      MARIADB_USER: concrete
+      MARIADB_PASSWORD: concrete
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args: {CMS_TAG: "9.4.7"}
+    image: pcb-concrete:9.4.7
+    depends_on:
+      db-v0: {condition: service_healthy}
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      DB_HOST: db-v0
+    volumes:
+      - ./seed.sh:/work/seed.sh:ro
+      - ./pcb_boot.php:/work/pcb_boot.php:ro
+      - ./pcb_seed.php:/work/pcb_seed.php:ro
+      - ./pcb_driver.php:/work/pcb_driver.php:ro
+    ports: ["${PORT_V0_0:-8080}:80"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args: {CMS_TAG: "9.4.8"}
+    image: pcb-concrete:9.4.8
+    depends_on:
+      db-v1: {condition: service_healthy}
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      DB_HOST: db-v1
+    volumes:
+      - ./seed.sh:/work/seed.sh:ro
+      - ./pcb_boot.php:/work/pcb_boot.php:ro
+      - ./pcb_seed.php:/work/pcb_seed.php:ro
+      - ./pcb_driver.php:/work/pcb_driver.php:ro
+    ports: ["${PORT_V1_0:-8081}:80"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args: {CMS_TAG: "9.5.1"}
+    image: pcb-concrete:9.5.1
+    depends_on:
+      db-v2: {condition: service_healthy}
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      DB_HOST: db-v2
+    volumes:
+      - ./seed.sh:/work/seed.sh:ro
+      - ./pcb_boot.php:/work/pcb_boot.php:ro
+      - ./pcb_seed.php:/work/pcb_seed.php:ro
+      - ./pcb_driver.php:/work/pcb_driver.php:ro
+    ports: ["${PORT_V2_0:-8082}:80"]

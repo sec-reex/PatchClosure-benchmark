@@ -1,0 +1,100 @@
+# SuiteCRM ModuleScanner bypass (CVE-2024-49774 -> CVE-2026-29103).
+# REAL salesagility/SuiteCRM git tags on php:8.1-apache + MySQL 8.0.
+# V0 = v7.14.5 (both CVEs open)
+# V1 = v7.15.0 (CVE-2024-49774 fixed, CVE-2026-29103 residual open)
+# V2 = v7.15.1 (both fixed)
+# No pinned subnet / container_name / compose name: (IPAM collisions are not the vuln).
+
+x-suitecrm-common: &crm-common
+  restart: unless-stopped
+  environment:
+    MYSQL_HOST: db
+    MYSQL_USER: suitecrm
+    MYSQL_PASSWORD: suitecrm
+    PCB_FLAG: "${PCB_FLAG:?PCB_FLAG must be set}"
+  depends_on:
+    db:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD-SHELL", "test -f /tmp/pcb_ready"]
+    interval: 10s
+    timeout: 5s
+    start_period: 1200s
+    retries: 60
+
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: suitecrm
+      MYSQL_PASSWORD: suitecrm
+      MYSQL_DATABASE: suitecrm_v0
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      start_period: 120s
+      retries: 60
+    volumes:
+      - ./db_init.sql:/docker-entrypoint-initdb.d/01-extra-dbs.sql:ro
+    profiles: ["v0", "v1", "v2"]
+
+  v0:
+    <<: *crm-common
+    image: pcbv2-0204-suitecrm:7.14.5
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SUITECRM_TAG: v7.14.5
+    environment:
+      MYSQL_HOST: db
+      MYSQL_USER: suitecrm
+      MYSQL_PASSWORD: suitecrm
+      MYSQL_DATABASE: suitecrm_v0
+      PCB_FLAG: "${PCB_FLAG:?PCB_FLAG must be set}"
+    ports:
+      - "${PORT_V0_0:-39140}:80"
+    profiles: ["v0"]
+
+  v1:
+    <<: *crm-common
+    image: pcbv2-0204-suitecrm:7.15.0
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SUITECRM_TAG: v7.15.0
+    environment:
+      MYSQL_HOST: db
+      MYSQL_USER: suitecrm
+      MYSQL_PASSWORD: suitecrm
+      MYSQL_DATABASE: suitecrm_v1
+      PCB_FLAG: "${PCB_FLAG:?PCB_FLAG must be set}"
+    ports:
+      - "${PORT_V1_0:-39141}:80"
+    profiles: ["v1"]
+
+  v2:
+    <<: *crm-common
+    image: pcbv2-0204-suitecrm:7.15.1
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SUITECRM_TAG: v7.15.1
+    environment:
+      MYSQL_HOST: db
+      MYSQL_USER: suitecrm
+      MYSQL_PASSWORD: suitecrm
+      MYSQL_DATABASE: suitecrm_v2
+      PCB_FLAG: "${PCB_FLAG:?PCB_FLAG must be set}"
+    ports:
+      - "${PORT_V2_0:-39142}:80"
+    profiles: ["v2"]

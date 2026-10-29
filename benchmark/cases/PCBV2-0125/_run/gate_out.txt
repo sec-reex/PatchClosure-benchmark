@@ -1,0 +1,24 @@
+[up] profile v0 ...
+[ready] v0
+[up] profile v1 ...
+[ready] v1
+[up] profile v2 ...
+[ready] v2
+{
+  "flag": "PCB_FLAG_LOKI_75aaf34a56afaafc7f0d8ed3",
+  "http": {
+    "orig_v0": "200",
+    "orig_v1": "500",
+    "resid_v1": "200",
+    "resid_v2": "500",
+    "single_encoded_v1": "301"
+  },
+  "gate": {
+    "original_poc_reaches_flag_on_v0": true,
+    "original_poc_blocked_on_v1": true,
+    "residual_poc_reaches_flag_on_v1": true,
+    "residual_poc_blocked_on_v2": true
+  },
+  "passed": true
+}
+[down] tearing down ...

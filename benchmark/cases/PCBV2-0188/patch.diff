@@ -1,0 +1,128 @@
+PCBV2-0188 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 31d25ce5037909f85af54d8ad197933cf0a6b635
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0188/
+
+diff --git a/ChangeLog b/ChangeLog
+index ba03421..19dbbd0 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -1,3 +1,9 @@
++Mon Oct 27 20:20:14 2014  NAKAMURA Usaku  <usa@ruby-lang.org>
++
++	* lib/rexml/entity.rb: keep the entity size within the limitation.
++	  reported by Willis Vandevanter <will@silentrobots.com> and
++	  patched by nahi.
++
+ Sun Oct 26 03:31:46 2014  Nobuyoshi Nakada  <nobu@ruby-lang.org>
+ 
+ 	* vm_method.c (rb_method_entry_make): warn redefinition only for
+diff --git a/lib/rexml/entity.rb b/lib/rexml/entity.rb
+index 39f3900..f447202 100644
+--- a/lib/rexml/entity.rb
++++ b/lib/rexml/entity.rb
+@@ -138,8 +138,14 @@ module REXML
+         matches = @value.scan(PEREFERENCE_RE)
+         rv = @value.clone
+         if @parent
++          sum = 0
+           matches.each do |entity_reference|
+             entity_value = @parent.entity( entity_reference[0] )
++            if sum + entity_value.bytesize > Security.entity_expansion_text_limit
++              raise "entity expansion has grown too large"
++            else
++              sum += entity_value.bytesize
++            end
+             rv.gsub!( /%#{entity_reference.join};/um, entity_value )
+           end
+         end
+diff --git a/test/rexml/test_document.rb b/test/rexml/test_document.rb
+index cec9452..efdcf66 100644
+--- a/test/rexml/test_document.rb
++++ b/test/rexml/test_document.rb
+@@ -45,6 +45,20 @@ EOF
+ <member>
+ &a;
+ </member>
++EOF
++
++    XML_WITH_NESTED_PARAMETER_ENTITY = <<EOF
++<!DOCTYPE root [
++  <!ENTITY % a "BOOM.BOOM.BOOM.BOOM.BOOM.BOOM.BOOM.BOOM.BOOM.">
++  <!ENTITY % b "%a;%a;%a;%a;%a;%a;%a;%a;%a;%a;%a;%a;%a;%a;%a;">
++  <!ENTITY % c "%b;%b;%b;%b;%b;%b;%b;%b;%b;%b;%b;%b;%b;%b;%b;">
++  <!ENTITY % d "%c;%c;%c;%c;%c;%c;%c;%c;%c;%c;%c;%c;%c;%c;%c;">
++  <!ENTITY % e "%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;">
++  <!ENTITY % f "%e;%e;%e;%e;%e;%e;%e;%e;%e;%e;%e;%e;%e;%e;%e;">
++  <!ENTITY % g "%f;%f;%f;%f;%f;%f;%f;%f;%f;%f;%f;%f;%f;%f;%f;">
++  <!ENTITY test "test %g;">
++]>
++<cd></cd>
+ EOF
+ 
+   XML_WITH_4_ENTITY_EXPANSION = <<EOF
+@@ -85,6 +99,19 @@ EOF
+     REXML::Security.entity_expansion_limit = 10000
+   end
+ 
++  def test_entity_expansion_limit_for_parameter_entity
++    assert_raise(REXML::ParseException) do
++      REXML::Document.new(XML_WITH_NESTED_PARAMETER_ENTITY)
++    end
++    REXML::Security.entity_expansion_limit = 100
++    assert_equal(100, REXML::Security.entity_expansion_limit)
++    assert_raise(REXML::ParseException) do
++      REXML::Document.new(XML_WITH_NESTED_PARAMETER_ENTITY)
++    end
++  ensure
++    REXML::Security.entity_expansion_limit = 10000
++  end
++
+   def test_tag_in_cdata_with_not_ascii_only_but_ascii8bit_encoding_source
+     tag = "<b>...</b>"
+     message = "こんにちは、世界！" # Hello world! in Japanese
+diff --git a/test/rexml/test_entity.rb b/test/rexml/test_entity.rb
+index 7b9f394..ddb6f45 100644
+--- a/test/rexml/test_entity.rb
++++ b/test/rexml/test_entity.rb
+@@ -122,6 +122,22 @@ class EntityTester < Test::Unit::TestCase
+     end
+   end
+ 
++  def test_entity_string_limit_for_parameter_entity
++    template = '<!DOCTYPE bomb [ <!ENTITY % a "^" > <!ENTITY bomb "$" > ]><root/>'
++    len      = 5120 # 5k per entity
++    template.sub!(/\^/, "B" * len)
++
++    # 10k is OK
++    entities = '%a;' * 2 # 5k entity * 2 = 10k
++    REXML::Document.new(template.sub(/\$/, entities))
++
++    # above 10k explodes
++    entities = '%a;' * 3 # 5k entity * 2 = 15k
++    assert_raises(REXML::ParseException) do
++      REXML::Document.new(template.sub(/\$/, entities))
++    end
++  end
++
+   def test_raw
+     source = '<!DOCTYPE foo [
+ <!ENTITY ent "replace">
+diff --git a/version.h b/version.h
+index b6f5a95..794e0d6 100644
+--- a/version.h
++++ b/version.h
+@@ -1,10 +1,10 @@
+ #define RUBY_VERSION "2.1.4"
+-#define RUBY_RELEASE_DATE "2014-10-26"
+-#define RUBY_PATCHLEVEL 264
++#define RUBY_RELEASE_DATE "2014-10-27"
++#define RUBY_PATCHLEVEL 265
+ 
+ #define RUBY_RELEASE_YEAR 2014
+ #define RUBY_RELEASE_MONTH 10
+-#define RUBY_RELEASE_DAY 26
++#define RUBY_RELEASE_DAY 27
+ 
+ #include "ruby/version.h"
+ 

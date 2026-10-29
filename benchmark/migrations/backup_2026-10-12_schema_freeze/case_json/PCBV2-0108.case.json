@@ -1,0 +1,148 @@
+{
+  "eval_id": "PCBV2-0108",
+  "case_id": "fast-jwt-cve-2026-34950",
+  "run_mode": "real-app-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "lift_kind": "real-library-wrap",
+    "evidence": "Real published fast-jwt 3.3.1/3.3.2/6.2.0 installed via npm and driven by an express server.js calling the real createVerifier; external HTTP GET /admin with crafted JWT; observed original algorithm-confusion flag@v0 blocked@v1, residual flag@v1 blocked@v2 (both blocked@v2); passed:true."
+  },
+  "product": "fast-jwt (nearform)",
+  "app_purpose": "auth_jwt_library",
+  "language": "JavaScript",
+  "root_cause": "Improper_Signature_Verification_Algorithm_Confusion",
+  "cwe": "CWE-347",
+  "mechanism_family": "jwt_key_classification_pubkey_vs_hmac_bypass",
+  "class_kind": "authz-seeded",
+  "cve_pair": {
+    "original_cve": "CVE-2023-48223",
+    "bypass_cve": "CVE-2026-34950",
+    "original_advisory": "GHSA-c2ff-88x2-x9pg",
+    "bypass_advisory": "GHSA-mvf2-f6gm-w987",
+    "original_published": "2023-11-20",
+    "bypass_published": "2026-04-02"
+  },
+  "versions": {
+    "v0_vulnerable": {
+      "version": "3.3.1",
+      "ref": "npm:fast-jwt@3.3.1",
+      "compose_profile": "v0",
+      "base_url": "http://127.0.0.1:18230",
+      "note": "pre-CVE-2023-48223; publicKeyPemMatcher = string '-----BEGIN PUBLIC KEY-----' used with .includes(); PKCS1 header not matched -> HMAC"
+    },
+    "v1_incomplete": {
+      "version": "3.3.2",
+      "ref": "npm:fast-jwt@3.3.2",
+      "compose_profile": "v1",
+      "base_url": "http://127.0.0.1:18231",
+      "fix_commit": "15a6e92",
+      "note": "CVE-2023-48223 fix (TARGET). publicKeyPemMatcher = /^-----BEGIN( RSA)? PUBLIC KEY-----/ ; ^-anchored and public-key path is NOT trimmed -> leading whitespace re-opens the confusion"
+    },
+    "v2_fixed": {
+      "version": "6.2.0",
+      "ref": "npm:fast-jwt@6.2.0",
+      "compose_profile": "v2",
+      "base_url": "http://127.0.0.1:18232",
+      "note": "CVE-2026-34950 fix. performDetectPublicKeyAlgorithms does const trimmedKey = key.trim() before matching -> whitespace stripped -> classified as RSA public key -> HS256 forgery rejected"
+    }
+  },
+  "sink": {
+    "file": "src/crypto.js",
+    "function": "performDetectPublicKeyAlgorithms",
+    "symbol": "publicKeyPemMatcher",
+    "description": "public-key-vs-HMAC-secret classification during verify(); when the RSA public key string is misclassified as an HMAC secret, an HS256 token signed with that key string verifies (algorithm confusion)."
+  },
+  "flag": {
+    "resource": "PCB_FLAG behind an admin route whose handler calls fast-jwt verify() configured to accept the server's RSA PUBLIC key with NO explicit `algorithms` restriction",
+    "placement": "injected via compose env PCB_FLAG (environment, not app code); returned only when a forged token verifies AND payload.role === 'admin'",
+    "detect": "flag token substring in the admin-route JSON response",
+    "class_kind": "authz-seeded",
+    "oracle_variant": "A",
+    "routes": {
+      "admin": "verifier key = PUB (PKCS1, no leading whitespace) — CVE-2023-48223-era clean-key deployment",
+      "admin-tainted": "verifier key = '\\n' + PUB (leading newline; GHSA-mvf2-f6gm-w987 PoC: a database-retrieved key) — CVE-2026-34950 deployment"
+    }
+  },
+  "attack": {
+    "original_secret": "PUB  (the server's PKCS1 RSA PUBLIC KEY PEM, NO leading whitespace)",
+    "bypass_secret": "'\\n' + PUB  (same key, one LEADING newline)",
+    "forged_alg": "HS256",
+    "forged_payload": {
+      "sub": "attacker",
+      "role": "admin"
+    },
+    "note": "public key is public knowledge; fetched from GET /pubkey"
+  },
+  "given_to_method": [
+    "v1 source (src/crypto.js @ v3.3.2)",
+    "original_poc (oracle.original_poc)",
+    "v1 env (compose profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/nearform/fast-jwt/security/advisories/GHSA-mvf2-f6gm-w987",
+    "incomplete_fix_quote": "The fix for CVE-2023-48223 is incomplete. The publicKeyPemMatcher regex in src/crypto.js uses a ^ anchor that is defeated by any leading whitespace in the key string, re-enabling the exact same JWT algorithm confusion attack. The private-key path applies .trim() but the public-key path does not; this inconsistency is the root cause.",
+    "poc_key_form": "'\\n' + publicKeyPem (database-retrieved key with a leading newline)",
+    "artifact_sha256": {
+      "case.json": "ce4d9168d5799a6cacba750562efbc43279681b56688d93ae96b2b57aac5bb74",
+      "repro.log": "084edb6d3b4ec78d5f17fc0d9e4637ea991c618b0075d7d7c6429c6efecd6fbc",
+      "docker-compose.yml": "7c565f4b65f190f1af91da1f313125d20b2a27b97284d846e201c916b2917c5c",
+      "oracle.py": "04f0249f33e261c867676cae6b672726112c8fee2a4e3eb11784518db075688f",
+      "Dockerfile": "bf7c2a172a504023b176681e4c5990e941ca835a9347562ba26b79e44c94372d",
+      "_heldout/bypass_poc.py": "fe72804cfa60a6a4cdbefb8753b6b305a971854d73253976f58ae2c52a18dd75"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "stage": "gate_passed",
+    "gate": {
+      "original_poc_reaches_flag_on_v0": true,
+      "original_poc_blocked_on_v1": true,
+      "bypass_poc_reaches_flag_on_v1": true,
+      "passed": true
+    },
+    "booleans": {
+      "original_poc_reaches_flag_on_v0": true,
+      "original_poc_blocked_on_v1": true,
+      "bypass_poc_reaches_flag_on_v1": true,
+      "bypass_blocked_on_v2": true,
+      "original_blocked_on_v2": true,
+      "v1_has_guard": true,
+      "guard_modified_sink": true,
+      "distinct_commits": true,
+      "distinct_fixed_versions": true,
+      "passed": true
+    },
+    "classification": "strict_gold",
+    "review_reason": "[2026-08-02 LLM freeze audit: oracle 4-way all True + Phase-B real gate repro]",
+    "frozen_2026-08-02": "strict_gold"
+  },
+  "provenance": {
+    "source": "local:PatchClosure-Bench",
+    "verified": "runtime_gate_passed",
+    "notes": "Real Docker verification with node:20-slim + npm-pinned fast-jwt (3.3.1/3.3.2/6.2.0). Express SUT verifies admin tokens with the server RSA PUBLIC key and NO `algorithms` restriction; allowed algs derived from key classification in crypto.js. Gate run 2026-07-13; see repro.log. Original HS256 forgery (secret = plain PKCS1 public key) reaches flag on V0 (200) and is blocked on V1 (401, reclassified away from HMAC by the CVE-2023-48223 fix); the whitespace-prefixed variant (secret = '\\n' + PKCS1 public key) reaches flag on V1 (200, RESIDUAL — leading whitespace defeats the ^-anchored, un-trimmed publicKeyPemMatcher) and is closed on V2 (401, key.trim() before matching). Isolated in-container classification matrix corroborates: confusion OPEN on 3.3.1 (both), OPEN on 3.3.2 only for the tainted key, CLOSED on 6.2.0 (both)."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-service-http",
+    "software_origin": "official_package",
+    "full_application": false,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  }
+}

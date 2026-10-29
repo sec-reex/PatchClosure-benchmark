@@ -1,0 +1,28 @@
+case_id: PCBV2-0105
+public_name: dos_rack_byte_ranges
+run_mode: real-app-http
+oracle_family: dos_threshold
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  # Runtime gem-installs the published rack gem (3.0.9 / 3.1.20). Schema has no
+  # rubygems enum; url_tgz + rubygems.org identity matches sibling gem cases.
+  type: url_tgz
+  repo: https://rubygems.org/gems/rack
+  v0: "3.0.9"
+  v1: "3.1.20"
+service:
+  # Compose publishes ${PORT_V*_0}:3000. Platform HTTP on container :3000 would miss
+  # the randomized host port; start.sh / reset.sh wait until GET /health answers.
+  readiness: none
+  exposed_ports: [3000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]
+  wrong_flag_mode: residual

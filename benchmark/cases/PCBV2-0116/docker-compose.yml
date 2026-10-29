@@ -1,0 +1,33 @@
+# PatchClosure-Bench build recipe for git-submodule-url-dash-argument-injection.
+# Recipe-based: NO committed images / source. Each service compiles one Git
+# version FROM SOURCE (Dockerfile build-arg GIT_VER) and tags it pcb-git:<v>.
+# The probe is exec-style (one-shot `git clone --recurse-submodules`), so the
+# oracle drives `docker run ... sh /victim.sh <url> <path>` per probe rather than
+# long-running services. Build all three with:  docker compose build
+#
+# Profiles / roles (SPEC.md):
+#   v0 = git 2.13.4  vulnerable to CVE-2017-1000117 AND CVE-2018-17456
+#   v1 = git 2.14.1  CVE-2017-1000117 patched (connect.c) INCOMPLETELY -> the
+#                    target; still vulnerable to CVE-2018-17456
+#   v2 = git 2.19.1  CVE-2018-17456 patched (submodule--helper.c "--"); fixed
+services:
+  v0:
+    profiles: ["v0"]
+    image: "pcb-git:v0"
+    build: {context: ".", args: {GIT_VER: "2.13.4"}}
+    command: ["git", "--version"]
+  v1:
+    profiles: ["v1"]
+    image: "pcb-git:v1"
+    build: {context: ".", args: {GIT_VER: "2.14.1"}}
+    command: ["git", "--version"]
+  v2:
+    profiles: ["v2"]
+    image: "pcb-git:v2"
+    build: {context: ".", args: {GIT_VER: "2.19.1"}}
+    command: ["git", "--version"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.117.0/24

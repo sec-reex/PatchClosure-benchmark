@@ -1,0 +1,58 @@
+# PatchClosure-Bench: postcss source-map annotation ReDoS, CVE-2021-23368 -> CVE-2021-23382.
+# REAL Express HTTP service running the REAL published `postcss` per profile. The ReDoS is triggered
+# by an EXTERNAL HTTP request (POST /process {css}) and observed as SERVER-SIDE latency: postcss.parse
+# runs the source-map annotation regex (lib/previous-map.js loadAnnotation) synchronously on the event
+# loop, so a catastrophic input hangs the response. CPU-pinned (cpus=1.0) for a stable threshold.
+#
+#   original  'a{}/*# sourceMappingURL='+' 'x90000+'!'   : V0(8.2.9) HANGS | V1(8.2.10) fast | V2(8.2.13) fast  (CVE-2021-23368)
+#   residual  'a{}'+'/*# sourceMappingURL='x24000+'!'     : V0 HANGS | V1 HANGS | V2 fast                        (CVE-2021-23382, INCOMPLETE FIX)
+#   benign    GET /health                                 : fast on V0,V1,V2                                    (watchdog baseline)
+services:
+  v0:
+    profiles: ["v0"]
+    image: pcb-postcss-sourcemap-redos-v0
+    build:
+      context: .
+      args:
+        POSTCSS_VERSION: "8.2.9"
+    ports: ["${PORT_V0_0}:3000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  v1:
+    profiles: ["v1"]
+    image: pcb-postcss-sourcemap-redos-v1
+    build:
+      context: .
+      args:
+        POSTCSS_VERSION: "8.2.10"
+    ports: ["${PORT_V1_0}:3000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  v2:
+    profiles: ["v2"]
+    image: pcb-postcss-sourcemap-redos-v2
+    build:
+      context: .
+      args:
+        POSTCSS_VERSION: "8.2.13"
+    ports: ["${PORT_V2_0}:3000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  watchdog:
+    profiles: ["v0", "v1", "v2"]
+    image: python:3.12-alpine
+    volumes:
+      - ./watchdog.py:/wd.py:ro
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+      VERSION: "${VERSION:-v1}"
+    command: ["python", "/wd.py"]
+    ports: ["${PORT_WATCHDOG_0}:8888"]
+    cpus: 0.5
+    mem_limit: 128m

@@ -1,0 +1,93 @@
+# PatchClosure-Bench real-library-wrap recipe for pydantic-ai-cve-2026-46678
+# (CVE-2026-25580 -> CVE-2026-46678). Root cause: SSRF (CWE-918) in pydantic-ai's URL download sink
+# (download_item -> safe_download). Canary kind = ssrf-sidecar. Residual class = DENYLIST
+# ENCODING/COVERAGE GAP (IPv6 transition forms of a cloud-metadata IP), NOT DNS-rebinding
+# -> STATIC internal canary (no DNS sidecar).
+#
+# Each vN service `pip install`s the REAL pydantic-ai-slim wheel for its version (build arg) and
+# runs app.py, which calls that installed package's REAL download_item/safe_download over HTTP.
+# NOTHING about the SSRF guard is lifted; version behaviour comes purely from the installed wheel.
+#
+# The canary impersonates the Alibaba cloud-metadata service at 100.100.100.200 (one of the three
+# addresses in pydantic-ai's _CLOUD_METADATA_IPS blocklist). It has no host port; reading ${PCB_FLAG}
+# requires a server-side SSRF through the real pydantic-ai fetch sink.
+#
+# Guard arithmetic (allow_local=True == force_download='allow-local', the CVE-2026-46678 precondition):
+#   seed  (CVE-2026-25580): url=http://100.100.100.200/           (literal metadata IP)
+#       V0 (1.55.0, no _ssrf.py)   -> raw client.get -> canary -> FLAG
+#       V1 (1.56.0) is_cloud_metadata_ip('100.100.100.200')=True -> ValueError, BLOCKED
+#   residual (CVE-2026-46678): url=http://[::ffff:100.100.100.200]/  (IPv4-mapped IPv6 of same IP)
+#       V1 (1.56.0) is_cloud_metadata_ip('::ffff:100.100.100.200')=False (string miss); is_private_ip
+#          SKIPPED because allow_local=True -> guard passes; real httpx fetch of [::ffff:100.100.100.200]
+#          is routed by the dual-stack kernel over IPv4 to 100.100.100.200 -> canary -> FLAG
+#       V2 (1.99.0) _normalize_ip('::ffff:100.100.100.200') -> 100.100.100.200 -> True -> BLOCKED
+services:
+  canary:
+    profiles: ["v0", "v1", "v2"]
+    build:
+      context: .
+      args:
+        PYDANTIC_AI_VER: "1.56.0"
+    image: "pcb-pydantic-ai-canary:core"
+    command: ["python", "/app/canary.py"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      CANARY_PORT: "80"
+    networks:
+      metanet:
+        ipv4_address: 100.100.100.200
+
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args:
+        PYDANTIC_AI_VER: "1.55.0"
+    image: "pcb-pydantic-ai-v0:1.55.0"
+    command: ["python", "/app/app.py"]
+    environment:
+      HARNESS_VER: "v0"
+    ports: ["${PORT_V0_0:-39570}:8080"]
+    depends_on: ["canary"]
+    networks: ["metanet"]
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "0"
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args:
+        PYDANTIC_AI_VER: "1.56.0"
+    image: "pcb-pydantic-ai-v1:1.56.0"
+    command: ["python", "/app/app.py"]
+    environment:
+      HARNESS_VER: "v1"
+    ports: ["${PORT_V1_0:-39571}:8080"]
+    depends_on: ["canary"]
+    networks: ["metanet"]
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "0"
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        PYDANTIC_AI_VER: "1.99.0"
+    image: "pcb-pydantic-ai-v2:1.99.0"
+    command: ["python", "/app/app.py"]
+    environment:
+      HARNESS_VER: "v2"
+    ports: ["${PORT_V2_0:-39572}:8080"]
+    depends_on: ["canary"]
+    networks: ["metanet"]
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "0"
+
+networks:
+  metanet:
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: 100.100.100.0/24

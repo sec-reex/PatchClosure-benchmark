@@ -1,0 +1,78 @@
+# PatchClosure-Bench recipe for INJ-01-superset-denylist  (run_mode = real-app-http).
+# CVE-2024-39887 (V1 target, incomplete) -> CVE-2025-55674 (V2 complete).
+#
+# Each profile boots the REAL Apache Superset app (official apache/superset:<tag>) with a real
+# sqlite metadata DB and a shared REAL analytics postgres (the query target). The denylist
+# bypass is triggered EXTERNALLY over HTTP against the real SQL Lab execute API
+# (/api/v1/sqllab/execute/) as a low-priv user; the oracle reads ${PCB_FLAG} from the real
+# JSON response (exfiltrated by the denylisted query_to_xml running against pcb_secret).
+#
+#   v0 = 4.0.1  (no DISALLOWED_SQL_FUNCTIONS enforcement)  -> original query_to_xml runs (flag)
+#   v1 = 4.0.2  (CVE-2024-39887 fix, sqlparse denylist) [TARGET]:
+#                 original direct query_to_xml BLOCKED; comment-inline query_to_xml/**/(...) RUNS (flag)
+#   v2 = 5.0.0  (CVE-2025-55674 fix, sqlglot denylist): comment-inline residual BLOCKED (neg control)
+#
+# ${PCB_FLAG:?} is injected at up-time and seeded by each Superset's bootstrap into analytics-db.
+services:
+  analytics-db:
+    image: postgres:16-alpine
+    profiles: ["v0", "v1", "v2"]
+    environment:
+      POSTGRES_USER: analytics
+      POSTGRES_PASSWORD: analytics
+      POSTGRES_DB: analytics
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analytics -d analytics"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  v0:
+    build:
+      context: .
+      args:
+        SS_TAG: "4.0.1"
+    image: "pcb-superset-denylist:4.0.1"
+    profiles: ["v0"]
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      ANALYTICS_HOST: analytics-db
+    ports: ["${PORT_V0_0:-43201}:8088"]
+
+  v1:
+    build:
+      context: .
+      args:
+        SS_TAG: "4.0.2"
+    image: "pcb-superset-denylist:4.0.2"
+    profiles: ["v1"]
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      ANALYTICS_HOST: analytics-db
+    ports: ["${PORT_V1_0:-43202}:8088"]
+
+  v2:
+    build:
+      context: .
+      args:
+        SS_TAG: "5.0.0"
+    image: "pcb-superset-denylist:5.0.0"
+    profiles: ["v2"]
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      ANALYTICS_HOST: analytics-db
+    ports: ["${PORT_V2_0:-43203}:8088"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.46.0/24

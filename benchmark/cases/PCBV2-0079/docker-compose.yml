@@ -1,0 +1,35 @@
+# PatchClosure-Bench recipe for apache-struts-cve-2021-31805
+# (CVE-2020-17530 [S2-061] -> CVE-2021-31805 [S2-062]). REAL Struts 2 WAR on Tomcat.
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: "."
+      dockerfile: "Dockerfile"
+      args: {STRUTS_VER: "2.5.25"}
+    image: "pcb/struts-double-eval:2.5.25"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: "."
+      dockerfile: "Dockerfile"
+      args: {STRUTS_VER: "2.5.26"}
+    image: "pcb/struts-double-eval:2.5.26"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: "."
+      dockerfile: "Dockerfile"
+      args: {STRUTS_VER: "2.5.30"}
+    image: "pcb/struts-double-eval:2.5.30"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0}:8080"]

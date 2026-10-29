@@ -1,0 +1,179 @@
+# CVE: CVE-2026-27738
+# Upstream: https://github.com/angular/angular-cli.git
+# Fix: 8700e18d7cf175d80fe6ce6205589767b7870c1c
+
+diff --git a/packages/angular/ssr/src/utils/url.ts b/packages/angular/ssr/src/utils/url.ts
+index faabf15..caf7f3a 100644
+--- a/packages/angular/ssr/src/utils/url.ts
++++ b/packages/angular/ssr/src/utils/url.ts
+@@ -95,26 +95,32 @@ export function addTrailingSlash(url: string): string {
+  * ```
+  */
+ export function joinUrlParts(...parts: string[]): string {
+-  const normalizeParts: string[] = [];
++  const normalizedParts: string[] = [];
++
+   for (const part of parts) {
+     if (part === '') {
+       // Skip any empty parts
+       continue;
+     }
+ 
+-    let normalizedPart = part;
+-    if (part[0] === '/') {
+-      normalizedPart = normalizedPart.slice(1);
++    let start = 0;
++    let end = part.length;
++
++    // Use "Pointers" to avoid intermediate slices
++    while (start < end && part[start] === '/') {
++      start++;
+     }
+-    if (part[part.length - 1] === '/') {
+-      normalizedPart = normalizedPart.slice(0, -1);
++
++    while (end > start && part[end - 1] === '/') {
++      end--;
+     }
+-    if (normalizedPart !== '') {
+-      normalizeParts.push(normalizedPart);
++
++    if (start < end) {
++      normalizedParts.push(part.slice(start, end));
+     }
+   }
+ 
+-  return addLeadingSlash(normalizeParts.join('/'));
++  return addLeadingSlash(normalizedParts.join('/'));
+ }
+ 
+ /**
+diff --git a/packages/angular/ssr/src/utils/validation.ts b/packages/angular/ssr/src/utils/validation.ts
+index 97ac860..c89cdd6 100644
+--- a/packages/angular/ssr/src/utils/validation.ts
++++ b/packages/angular/ssr/src/utils/validation.ts
+@@ -26,6 +26,11 @@ const VALID_PROTO_REGEX = /^https?$/i;
+  */
+ const VALID_HOST_REGEX = /^[a-z0-9.:-]+$/i;
+ 
++/**
++ * Regular expression to validate that the prefix is valid.
++ */
++const INVALID_PREFIX_REGEX = /^[/\\]{2}|(?:^|[/\\])\.\.?(?:[/\\]|$)/;
++
+ /**
+  * Extracts the first value from a multi-value header string.
+  *
+@@ -253,4 +258,11 @@ function validateHeaders(request: Request): void {
+   if (xForwardedProto && !VALID_PROTO_REGEX.test(xForwardedProto)) {
+     throw new Error('Header "x-forwarded-proto" must be either "http" or "https".');
+   }
++
++  const xForwardedPrefix = getFirstHeaderValue(headers.get('x-forwarded-prefix'));
++  if (xForwardedPrefix && INVALID_PREFIX_REGEX.test(xForwardedPrefix)) {
++    throw new Error(
++      'Header "x-forwarded-prefix" must not start with multiple "/" or "\\" or contain ".", ".." path segments.',
++    );
++  }
+ }
+diff --git a/packages/angular/ssr/test/utils/url_spec.ts b/packages/angular/ssr/test/utils/url_spec.ts
+index 9a7a7cb..a108c7f 100644
+--- a/packages/angular/ssr/test/utils/url_spec.ts
++++ b/packages/angular/ssr/test/utils/url_spec.ts
+@@ -100,6 +100,18 @@ describe('URL Utils', () => {
+     it('should handle an all-empty URL parts', () => {
+       expect(joinUrlParts('', '')).toBe('/');
+     });
++
++    it('should normalize parts with multiple leading and trailing slashes', () => {
++      expect(joinUrlParts('//path//', '///to///', '//resource//')).toBe('/path/to/resource');
++    });
++
++    it('should handle a single part', () => {
++      expect(joinUrlParts('path')).toBe('/path');
++    });
++
++    it('should handle parts containing only slashes', () => {
++      expect(joinUrlParts('//', '///')).toBe('/');
++    });
+   });
+ 
+   describe('stripIndexHtmlFromURL', () => {
+diff --git a/packages/angular/ssr/test/utils/validation_spec.ts b/packages/angular/ssr/test/utils/validation_spec.ts
+index 99fbf51..10ab896 100644
+--- a/packages/angular/ssr/test/utils/validation_spec.ts
++++ b/packages/angular/ssr/test/utils/validation_spec.ts
+@@ -124,6 +124,73 @@ describe('Validation Utils', () => {
+         'Header "x-forwarded-host" contains characters that are not allowed.',
+       );
+     });
++
++    it('should throw error if x-forwarded-prefix starts with multiple slashes or backslashes', () => {
++      const inputs = ['//evil', '\\\\evil', '/\\evil', '\\/evil'];
++
++      for (const prefix of inputs) {
++        const request = new Request('https://example.com', {
++          headers: {
++            'x-forwarded-prefix': prefix,
++          },
++        });
++
++        expect(() => validateRequest(request, allowedHosts))
++          .withContext(`Prefix: "${prefix}"`)
++          .toThrowError(
++            'Header "x-forwarded-prefix" must not start with multiple "/" or "\\" or contain ".", ".." path segments.',
++          );
++      }
++    });
++
++    it('should throw error if x-forwarded-prefix contains dot segments', () => {
++      const inputs = [
++        '/./',
++        '/../',
++        '/foo/./bar',
++        '/foo/../bar',
++        '/.',
++        '/..',
++        './',
++        '../',
++        '.\\',
++        '..\\',
++        '/foo/.\\bar',
++        '/foo/..\\bar',
++        '.',
++        '..',
++      ];
++
++      for (const prefix of inputs) {
++        const request = new Request('https://example.com', {
++          headers: {
++            'x-forwarded-prefix': prefix,
++          },
++        });
++
++        expect(() => validateRequest(request, allowedHosts))
++          .withContext(`Prefix: "${prefix}"`)
++          .toThrowError(
++            'Header "x-forwarded-prefix" must not start with multiple "/" or "\\" or contain ".", ".." path segments.',
++          );
++      }
++    });
++
++    it('should validate x-forwarded-prefix with valid dot usage', () => {
++      const inputs = ['/foo.bar', '/foo.bar/baz', '/v1.2', '/.well-known'];
++
++      for (const prefix of inputs) {
++        const request = new Request('https://example.com', {
++          headers: {
++            'x-forwarded-prefix': prefix,
++          },
++        });
++
++        expect(() => validateRequest(request, allowedHosts))
++          .withContext(`Prefix: "${prefix}"`)
++          .not.toThrow();
++      }
++    });
+   });
+ 
+   describe('cloneRequestAndPatchHeaders', () => {

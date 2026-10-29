@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PatchClosure-Bench harness POM (recipe-only, no vendored jars).
+     A dummy project whose single dependency is the PUBLISHED HL7 FHIR artifact
+     ca.uhn.hapi.fhir:org.hl7.fhir.r4b at the pinned version. `mvn
+     dependency:copy-dependencies` pulls r4b + its transitive deps at build time
+     so the tiny Driver.java can call the REAL, unmodified
+     org.hl7.fhir.r4b.terminologies.TerminologyCacheManager.unzip(...). -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>fhir-unzip-harness</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <properties>
+    <fhir.version>5.6.92</fhir.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>ca.uhn.hapi.fhir</groupId>
+      <artifactId>org.hl7.fhir.r4b</artifactId>
+      <version>${fhir.version}</version>
+    </dependency>
+  </dependencies>
+</project>

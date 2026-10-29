@@ -1,0 +1,120 @@
+{
+  "eval_id": "PCBV2-0041",
+  "case_id": "deser_fastjson_autotype",
+  "product": "Alibaba fastjson",
+  "app_purpose": "Java JSON library widely embedded in web APIs / RPC endpoints; when a service parses an untrusted JSON body with fastjson (JSON.parse), the concrete Java class named in the JSON @type key is resolved (ParserConfig.checkAutoType -> TypeUtils.loadClass) and instantiated -- the classic fastjson autoType RCE surface. Here a REAL Java HTTP service (com.pcb.DeserHttpService) exposes POST /deser and deserializes the request body via real fastjson, triggered by an EXTERNAL HTTP request.",
+  "language": "Java",
+  "root_cause": "Deserialization of untrusted data via autoType/polymorphic typing (CWE-502): JSON {\"@type\":\"<class>\"} makes JSON.parse resolve and instantiate the attacker-named class. The guard is ParserConfig.checkAutoType with a string-PREFIX class denylist (default-allow beyond the denied prefixes); it is incomplete because on the autoType-off path getClassFromMapping()/deserializers.findClass() are consulted BEFORE the denylist loop, and MiscCodec's java.lang.Class deserializer unconditionally caches loaded classes into TypeUtils.mappings, so a denied class can be primed into the cache and then resolved past the denylist (CWE-184, incomplete List of Disallowed Inputs).",
+  "mechanism_family": "deserialization-autotype",
+  "class_kind": "benign-shadow-class",
+  "run_mode": "real-app-http",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "external_http_trigger": true,
+  "cve_pair": {
+    "original_cve": "CVE-2017-18349",
+    "bypass_cve": "CVE-2025-70974",
+    "original_published": "2019-05-06",
+    "bypass_published": "2025-09-18"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "1.2.24",
+      "ref": "maven:com.alibaba:fastjson:1.2.24 via Dockerfile maven:3.9-eclipse-temurin-8, behind the REAL Java HTTP service com.pcb.DeserHttpService (POST /deser)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:18810"
+    },
+    "v1": {
+      "identifier": "1.2.25",
+      "ref": "maven:com.alibaba:fastjson:1.2.25 via Dockerfile maven:3.9-eclipse-temurin-8, behind the REAL Java HTTP service com.pcb.DeserHttpService (POST /deser)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:18811 -- POST /deser (application/json) deserializes the JSON body through the REAL, unmodified published fastjson 1.2.25 autoType sink (DefaultJSONParser.parse -> ParserConfig.checkAutoType -> TypeUtils.loadClass/getClassFromMapping -> JavaBean instantiation); the benign shadow bean echoes ${PCB_FLAG} iff instantiated past checkAutoType. Triggered by an EXTERNAL HTTP request."
+    },
+    "v2": {
+      "identifier": "1.2.48",
+      "ref": "maven:com.alibaba:fastjson:1.2.48 via Dockerfile maven:3.9-eclipse-temurin-8, behind the REAL Java HTTP service com.pcb.DeserHttpService (POST /deser)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:18812"
+    }
+  },
+  "flag": {
+    "resource": "the autoType class-denylist guard (ParserConfig.checkAutoType / denyList / denyHashCodes) that CVE-2017-18349 added to fastjson so untrusted @type cannot resolve a dangerous class; the canary is a random ${PCB_FLAG} token in a file OUTSIDE the app dir that only a class instantiated PAST that guard can read",
+    "placement": "written at run-time from ${PCB_FLAG} into /canary/flag.txt (outside /work) at container start. The benign shadow bean com.mchange.PcbFlagBean, instantiated during JSON.parse(), reads that file in its no-arg CONSTRUCTOR and calls CanaryHolder.set(token); the HTTP service reads CanaryHolder.get() on the same request thread and echoes 'PCB_CANARY_FLAG=<token>' in the /deser response. The flag is absent from fastjson source, the service code and the crafted JSON.",
+    "detect": "POST a raw JSON document to the REAL fastjson autoType sink over EXTERNAL HTTP (POST /deser); the version's own unmodified checkAutoType()/denylist + MiscCodec caching decide whether com.mchange.PcbFlagBean is resolved and instantiated -> the flag token appears in the HTTP response iff it was instantiated past the guard.",
+    "class_kind": "benign-shadow-class",
+    "oracle_variant": "A"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/advisories/GHSA-jm7w-5684-pvh8",
+    "fix_reference": "maven:com.alibaba:fastjson:1.2.25 via Dockerfile maven:3.9-eclipse-temurin-8, behind the REAL Java HTTP service com.pcb.DeserHttpService (POST /deser); maven:com.alibaba:fastjson:1.2.48 via Dockerfile maven:3.9-eclipse-temurin-8, behind the REAL Java HTTP service com.pcb.DeserHttpService (POST /deser)",
+    "incomplete_fix_quote": "CVE-2025-70974 (GHSA-jm7w-5684-pvh8): 'Fastjson before 1.2.48 mishandles the autoType feature to block specified deserialization gadgets ... this issue exists because of an incomplete fix for CVE-2017-18349.' CVE-2017-18349 (fixed in 1.2.25) introduced ParserConfig.checkAutoType() + a string-prefix class denyList (bsh,com.mchange,com.sun.,java.lang.Thread,java.net.Socket,java.rmi,javax.xml,org.apache.bcel,...,org.springframework). The enumerated prefix denylist plus a getClassFromMapping/deserializers.findClass-before-denylist ordering and MiscCodec's unconditional class caching left residual bypasses (the L...; descriptor form closed at 1.2.42; the class/mappings cache form closed at 1.2.48). CVE-2025-70974 (1.2.48) makes MiscCodec load the java.lang.Class value with cache=false so the class is no longer placed in TypeUtils.mappings, closing the cache bypass.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "7c4f428201e6451423ce334e624800ff06714d1c7ad8412d21570b4420bee1a0",
+      "repro.log": "02777c36de7b1f678ed929296469dc786e752d56100769b72c554faa88234782",
+      "docker-compose.yml": "44868a1f4eb36007a62bf62de83d7e2955c6104bae92bdd1d00d9bcd51ec041f",
+      "oracle.py": "193e68f3d331cb834cc941c6a38aeac216a02ad7064e86afe6ad553daea284c9",
+      "patch.diff": "870953c94df712367426c95f292390b0390c4f5db321b2f631d5e3a41dab9596"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "app",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "agent:A",
+    "verified": "runtime_gate_passed",
+    "notes": "Real Docker verification 2026-07-16 (REBUILT to REAL-APP-HTTP per the 2026-07-15 HARD POLICY: the case must run a REAL Java HTTP service triggered by an EXTERNAL HTTP request that parses a JSON body via real fastjson autoType; the prior in-process `docker compose exec` + stdin Driver.java trigger is retired). A small REAL Java HTTP service (com.pcb.DeserHttpService, JDK com.sun.net.httpserver.HttpServer) boots with the REAL, unmodified published Maven Central com.alibaba:fastjson 1.2.24/1.2.25/1.2.48 on its classpath and exposes POST /deser: it deserializes the raw JSON request body through the REAL fastjson autoType sink, parsing exactly as JSON.parse(String) (DefaultJSONParser.parse -> handleResovleTask -> close) but with a FRESH new ParserConfig() per request (same real checkAutoType + same default denyList incl. 'com.mchange', autoType OFF) plus eviction of only the canary key from the process-global static TypeUtils.mappings, so each external request is hermetic/order-independent. No fastjson code is edited. Runtime = maven:3.9-eclipse-temurin-8; host ports v0=18810/v1=18811/v2=18812. Variant A (same sink: POST /deser -> fastjson autoType checkAutoType -> class resolution -> JavaBean instantiation; same benign-shadow-class canary channel: /canary/flag.txt read in the shadow bean ctor, echoed via CanaryHolder in the HTTP response). GUARD lineage confirmed from advisory + upstream source (tags 1.2.24/1.2.25/1.2.48): V0=1.2.24 has NO checkAutoType -> a bare @type resolves any class; V1=1.2.25 is EXACTLY the CVE-2017-18349 fix -- it ADDS ParserConfig.checkAutoType(String,Class) + a prefix denyList incl. 'com.mchange' -> the literal denied class name is rejected BEFORE construction; V2=1.2.48 is the CVE-2025-70974 fix ('incomplete fix for CVE-2017-18349') -- MiscCodec's clazz==Class.class branch changes from TypeUtils.loadClass(strVal,cl) (2-arg, unconditional mappings.put) to loadClass(strVal,cl,false) (cache=false), so a class primed via {\"@type\":\"java.lang.Class\",\"val\":\"X\"} is no longer cached; getClassFromMapping() then misses and checkAutoType's denylist throws. MODE (source-verified against 1.2.25 ParserConfig.checkAutoType): the cache residual requires autoType OFF -- getClassFromMapping()/deserializers.findClass() precede the denylist loop only on the autoType-off/no-expectClass path; with Feature.SupportAutoType the denylist loop runs first and blocks it. Hence the service parses with default config (no SupportAutoType). BENIGN CANARY (benign-shadow-class): 'com.mchange' is on fastjson's OWN built-in denyList at BOTH 1.2.25 and 1.2.48, so the benign bean com.mchange.PcbFlagBean stands in for a 'dangerous' denied class (real c3p0 NOT on the classpath -> no collision); it reads /canary/flag.txt in its no-arg constructor so the flag is read only when checkAutoType RESOLVES the name and fastjson instantiates. No gadget chain, no JNDI, no command execution; the crafted JSON carries only a class name, never the flag. RUNTIME REPRODUCED over EXTERNAL HTTP (flag=PCBFLAG_a1ee9c3c1412e0e90e9da5442d72ee2f): original POST /deser {\"@type\":\"com.mchange.PcbFlagBean\",\"probe\":\"x\"} @v0 -> RESULT=PARSED com.mchange.PcbFlagBean + PCB_CANARY_FLAG (reaches; no checkAutoType on 1.2.24); original@v1 -> RESULT=BLOCKED JSONException 'autoType is not support. com.mchange.PcbFlagBean', no flag (denylist prefix com.mchange fires); residual POST /deser {\"a\":{\"@type\":\"java.lang.Class\",\"val\":\"com.mchange.PcbFlagBean\"},\"b\":{\"@type\":\"com.mchange.PcbFlagBean\"}}@v1 -> RESULT=PARSED com.alibaba.fastjson.JSONObject + PCB_CANARY_FLAG (residual reaches: nested bean instantiated via TypeUtils.mappings cache PAST the denylist); residual@v2 -> RESULT=BLOCKED 'autoType is not support', no flag (MiscCodec cache=false -> not cached -> denylist rejects); original@v2 -> RESULT=BLOCKED, no flag. Hermeticity check: the with-v2 diagnostic re-probes original@v1 AFTER bypass@v1 on the same JVM and still gets RESULT=BLOCKED (fresh ParserConfig + mappings eviction). Gate via `python3 oracle.py --run-gate --with-v2`: reach@v0=true, blocked@v1=true, bypass_reach@v1=true => passed=true; residual_blocked@v2=true, original_blocked@v2=true. DATA-QUALITY: distinct fixed versions (1.2.25 vs 1.2.48) and distinct fixes (denylist add vs MiscCodec cache=false), V1 genuinely has the guard and is genuinely bypassed by the class-cache residual it does not defend, V2 closes exactly that residual; original != residual on V1 (literal blocked, cache reaches). Torn down with down -v --rmi all + image prune; images deleted (docker images | grep fastjson-deser -> NONE); case dir is recipe-only text (no committed jars/images). See repro.log. STALE (superseded by the HTTP service; NOT referenced by the new docker-compose.yml/Dockerfile/case.json and NOT compiled): src/Driver.java, src/com/mchange/PcbFlagBean.java (old in-process stdin driver + old stdout-echo shadow bean); BUILD_TODO.md and README.md still describe the old exec flow. Left in place per the NO-rm directive.",
+    "patch_diff_fix": {
+      "audit": "2026-10-11 guard-source replacement (supersedes ROUND9-2026-08-06)",
+      "issue": "Prior patch_real.diff was the 1.2.25 release commit d9bc118f8f91deb696e7265f1d6a4af25880364f (msg '1.2.25', 2017-02-06) whose diff has 0 checkAutoType +/- hits (its ParserConfig hunks are release packaging: AUTO_TYPE_ACCEPT_LIST null-guard, acceptList=AUTO_TYPE_ACCEPT_LIST, isPrimitive deprecation); prior patch.diff carried interval-commit 0292219a7aa7 content (ObjectArrayCodec parseArray + Issue1005) unrelated to the guard. Replaced 2026-10-11: patch_real.diff = verbatim concatenation of the two guard commits in (1.2.24,1.2.25] - 90af6aadfa9be7592fdc8e174458ddaebb2b19c4 (2017-01-28 'bug fixed for autoType support.', denyList prefix string incl. com.mchange) + d7078548dc34c4f7645be9641490edac6f336ced (2017-01-29 '1.2.25.internal.v6', adds checkAutoType(String,Class) and its call sites); patch.diff = same body under the standard header. Ancestry via GitHub compare API: 90af6->d70785 ahead_by=1/behind_by=0; d70785->d9bc118f ahead_by=3/behind_by=0. Verified: git apply of the exact new patch_real.diff on raw tag 1.2.24 source - baseline ParserConfig has 0 checkAutoType hits, after apply checkAutoType(String,Class) (ParserConfig.java:790) + denyList incl. com.mchange are present and match the 1.2.25 tag signature. Evidence and backups: replacements_2026-10-11/PCBV2-0041/."
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "the autoType class-denylist guard (ParserConfig.checkAutoType / denyList / denyHashCodes) that CVE-2017-18349 added to fastjson so untrusted @type cannot resolve a dangerous class; the canary is a random ${PCB_FLAG} token in a file OUTSIDE the app dir that only a class instantiated PAST that guard can read",
+    "detector": "POST a raw JSON document to the REAL fastjson autoType sink over EXTERNAL HTTP (POST /deser); the version's own unmodified checkAutoType()/denylist + MiscCodec caching decide whether com.mchange.PcbFlagBean is resolved and instantiated -> the flag token appears in the HTTP response iff it was instantiated past the guard."
+  }
+}

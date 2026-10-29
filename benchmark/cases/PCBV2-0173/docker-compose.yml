@@ -1,0 +1,56 @@
+# PatchClosure-Bench recipe for pivotal-spring-integration-zip-cve-2018-1263 -- REAL spring-integration-zip per
+# version behind a REAL Java HTTP zip-upload service; extraction triggered by an EXTERNAL HTTP zip upload.
+# CVE-2018-1261 [ZipSlip: an uploaded "../" zip entry is written OUTSIDE the extraction root; fixed 1.0.1.RELEASE
+#  by a `contains("..") && !startsWith` guard on ONLY the ZipResultType.FILE branch of UnZipTransformer]
+#  -> CVE-2018-1263 [that fix is INCOMPLETE: the ZipResultType.BYTE_ARRAY branch is left UNCHECKED, so the
+#  framework hands the errant traversal path back to the caller; fixed 1.0.2.RELEASE by checkPath() on BOTH
+#  branches], UnZipTransformer.doZipTransform, CWE-22. Genuine incomplete fix.
+#
+# Faithful-core, recipe-only (NO vendored jars/images). Each version service builds from the shared Dockerfile,
+# which pulls the EXACT published org.springframework.integration:spring-integration-zip at a pinned version from
+# Maven Central and boots the REAL Java HTTP upload service (com.pcb.UnzipHttpService) that drives the REAL,
+# unmodified UnZipTransformer.transform() sink on the uploaded zip.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = spring-integration-zip 1.0.1.RELEASE. CVE-2018-1261 FIXED (FILE-branch guard ->
+#        the "../" FILE seed is BLOCKED) but INCOMPLETELY: the BYTE_ARRAY branch is unchecked, so the framework
+#        returns the errant path and the consuming app writes it OUTSIDE workDir -> the CVE-2018-1263 residual
+#        stays open. Target.
+#   v0 (gate)     = spring-integration-zip 1.0.0.RELEASE. Pre-CVE-2018-1261: doZipTransform has NO check -> the
+#        "../" ZipSlip seed (FILE branch) writes outside workDir.
+#   v2 (negative) = spring-integration-zip 1.0.2.RELEASE. CVE-2018-1263 FIXED: checkPath() on BOTH branches -> the
+#        BYTE_ARRAY residual is blocked.
+#
+# Canary = state-write over real external HTTP: a BENIGN random ${PCB_FLAG} is the CONTENT of the uploaded zip's
+# escaping entry; if extraction escapes containment it is written to /work/out/flag OUTSIDE the extraction root
+# /work/dest and echoed in the POST /unzip response. Each service maps its 8080 to a unique host port so the
+# oracle drives it over real external HTTP. ${PCB_FLAG} is referenced so compose requires it.
+services:
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SIZIP_VER: "1.0.1.RELEASE"}}
+    image: "pcb/siz-unzip-http:1.0.1.RELEASE"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-18994}:8080"]
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SIZIP_VER: "1.0.0.RELEASE"}}
+    image: "pcb/siz-unzip-http:1.0.0.RELEASE"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-18993}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SIZIP_VER: "1.0.2.RELEASE"}}
+    image: "pcb/siz-unzip-http:1.0.2.RELEASE"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-18995}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.174.0/24

@@ -1,0 +1,83 @@
+PCBV2-0020 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: n8n@2.17.3..n8n@2.17.4  Xml.node.ts + workflow sanitizeXmlName
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0020/
+
+diff --git a/packages/nodes-base/nodes/Xml/Xml.node.ts b/packages/nodes-base/nodes/Xml/Xml.node.ts
+index 1d4912e354..76322b46be 100644
+--- a/packages/nodes-base/nodes/Xml/Xml.node.ts
++++ b/packages/nodes-base/nodes/Xml/Xml.node.ts
+@@ -4,7 +4,7 @@ import type {
+ 	INodeType,
+ 	INodeTypeDescription,
+ } from 'n8n-workflow';
+-import { NodeConnectionTypes, NodeOperationError, deepCopy } from 'n8n-workflow';
++import { NodeConnectionTypes, NodeOperationError, deepCopy, sanitizeXmlName } from 'n8n-workflow';
+ import { Builder, Parser } from 'xml2js';
+ 
+ export class Xml implements INodeType {
+@@ -236,16 +236,18 @@ export class Xml implements INodeType {
+ 		const options = this.getNodeParameter('options', 0, {});
+ 
+ 		const forbiddenKeys = ['__proto__', 'constructor', 'prototype'];
+-		if (typeof options.attrkey === 'string' && forbiddenKeys.includes(options.attrkey)) {
++		const attrkey = String(options.attrkey ?? '');
++		const charkey = String(options.charkey ?? '');
++		if (forbiddenKeys.includes(attrkey)) {
+ 			throw new NodeOperationError(
+ 				this.getNode(),
+-				`The "Attribute Key" option value "${options.attrkey}" is not allowed`,
++				`The "Attribute Key" option value "${attrkey}" is not allowed`,
+ 			);
+ 		}
+-		if (typeof options.charkey === 'string' && forbiddenKeys.includes(options.charkey)) {
++		if (forbiddenKeys.includes(charkey)) {
+ 			throw new NodeOperationError(
+ 				this.getNode(),
+-				`The "Character Key" option value "${options.charkey}" is not allowed`,
++				`The "Character Key" option value "${charkey}" is not allowed`,
+ 			);
+ 		}
+ 
+@@ -262,6 +264,10 @@ export class Xml implements INodeType {
+ 							explicitArray: false,
+ 						},
+ 						options,
++						{
++							tagNameProcessors: [sanitizeXmlName],
++							attrNameProcessors: [sanitizeXmlName],
++						},
+ 					);
+ 
+ 					const parser = new Parser(parserOptions);
+diff --git a/packages/workflow/src/index.ts b/packages/workflow/src/index.ts
+index 095222af82..1fd0447d24 100644
+--- a/packages/workflow/src/index.ts
++++ b/packages/workflow/src/index.ts
+@@ -58,6 +58,7 @@ export {
+ 	isCommunityPackageName,
+ 	dedupe,
+ 	sanitizeFilename,
++	sanitizeXmlName,
+ 	generateSecureToken,
+ } from './utils';
+ export {
+diff --git a/packages/workflow/src/utils.ts b/packages/workflow/src/utils.ts
+index 9ca75c016c..ae74407d49 100644
+--- a/packages/workflow/src/utils.ts
++++ b/packages/workflow/src/utils.ts
+@@ -412,6 +412,14 @@ export function setSafeObjectProperty(
+ 	}
+ }
+ 
++const DANGEROUS_XML_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
++
++export function sanitizeXmlName(name: string) {
++	if (DANGEROUS_XML_NAMES.has(name)) return `sanitized_${name}`;
++
++	return name;
++}
++
+ export function isDomainAllowed(
+ 	urlString: string,
+ 	options: {

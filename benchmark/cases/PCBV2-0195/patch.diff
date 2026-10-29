@@ -1,0 +1,37 @@
+PCBV2-0195 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: bb481e1290c4a34255652ede85a546504505d2a7 (3.6.5 /export/ IsSubPath)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0195/
+
+diff --git a/kernel/server/serve.go b/kernel/server/serve.go
+index b7f66140127..d2eb2d67bb6 100644
+--- a/kernel/server/serve.go
++++ b/kernel/server/serve.go
+@@ -319,6 +319,11 @@ func serveExport(ginServer *gin.Engine) {
+ 		}
+ 
+ 		fullPath := filepath.Join(exportBaseDir, decodedPath)
++		if !gulu.File.IsSubPath(exportBaseDir, fullPath) {
++			c.Status(http.StatusUnauthorized)
++			return
++		}
++
+ 		if util.IsSensitivePath(fullPath) {
+ 			logging.LogErrorf("refuse to export sensitive file [%s]", c.Request.URL.Path)
+ 			c.Status(http.StatusForbidden)
+diff --git a/kernel/util/path.go b/kernel/util/path.go
+index f3db6aed7d6..f59db14421a 100644
+--- a/kernel/util/path.go
++++ b/kernel/util/path.go
+@@ -459,6 +459,11 @@ func IsSensitivePath(p string) bool {
+ 		return true
+ 	}
+ 
++	// *.db/*.log
++	if strings.HasSuffix(p, ".db") || strings.HasSuffix(p, ".log") {
++		return true
++	}
++
+ 	// 用户家目录下的敏感目录（小写比较）
+ 	homePrefixes := []string{
+ 		strings.ToLower(filepath.Join(HomeDir, ".ssh")),

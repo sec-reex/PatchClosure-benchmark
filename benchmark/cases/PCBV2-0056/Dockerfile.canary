@@ -1,0 +1,6 @@
+# Canary hosts for the ssrf-sidecar oracle (internal-sidecar flag host + public-app allowlisted host).
+# These are the SSRF target environment, NOT the app under test. Plain node http server (edge.mjs).
+FROM node:20-slim
+WORKDIR /app
+COPY edge.mjs /app/edge.mjs
+CMD ["node", "/app/edge.mjs"]

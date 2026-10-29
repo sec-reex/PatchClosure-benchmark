@@ -1,0 +1,143 @@
+{
+  "eval_id": "PCBV2-0192",
+  "case_id": "simple-git-cve-2026-6951",
+  "run_mode": "real-server-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "lift_kind": "real-library-wrap",
+    "evidence": "harness.mjs require()s the REAL published simple-git bytes (@3.14.1/@3.35.2+argv-parser@1.0.3 pinned/@3.36.0+argv-parser@1.1.1) each in its own tree, driving the REAL git.clone() config-injection sink with real git on node:20-slim over HTTP. Live gate: v0 protocol.ext seed flag, v1 seed blocked, v1 filter.smudge bypass flag, v2 residual blocked (broadened blocklist). 4-way closure."
+  },
+  "product": "simple-git",
+  "app_purpose": "api_service",
+  "language": "JavaScript",
+  "root_cause": "RCE",
+  "mechanism_family": "argument-injection",
+  "class_kind": "rce-oob",
+  "cve_pair": {
+    "original_cve": "CVE-2022-25912",
+    "bypass_cve": "CVE-2026-6951",
+    "original_published": "2022-11-04",
+    "bypass_published": "2026-04-25T06:16:16.453",
+    "advisory_url": "https://github.com/advisories/GHSA-hffm-xvc3-vprc"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "3.14.1",
+      "ref": "npm:simple-git@3.14.1",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39673"
+    },
+    "v1": {
+      "identifier": "3.35.2",
+      "ref": "npm:simple-git@3.35.2 + @simple-git/argv-parser@1.0.3 (PINNED via overrides)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39674"
+    },
+    "v2": {
+      "identifier": "3.36.0",
+      "ref": "npm:simple-git@3.36.0 + @simple-git/argv-parser@1.1.1",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39675"
+    }
+  },
+  "flag": {
+    "resource": "the /canary/flag.txt secret that the block-unsafe-operations config-key guard defends by preventing an injected dangerous git config option from executing a command that reads it",
+    "placement": "entrypoint writes ${PCB_FLAG} to /canary/flag.txt OUTSIDE the app dir; the injected (benign) git command `cat /canary/flag.txt>/canary/out.txt` copies it into /canary/out.txt, read back by the harness",
+    "detect": "flag token substring in candidate result",
+    "class_kind": "rce-oob",
+    "oracle_variant": "A"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/advisories/GHSA-hffm-xvc3-vprc",
+    "fix_reference": "npm:simple-git@3.35.2 + @simple-git/argv-parser@1.0.3 (PINNED via overrides); npm:simple-git@3.36.0 + @simple-git/argv-parser@1.1.1",
+    "incomplete_fix_quote": "Versions of the package simple-git before 3.36.0 are vulnerable to Remote Code Execution (RCE) due to an incomplete fix for CVE-2022-25912 ... an attacker may still achieve remote code execution by enabling protocol.ext.allow=always and using an ext:: clone source.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "49acdf2b2ec4b1a677c318b94d9b7930ce4c48fc5dec58124f3a6d11c2f34b3e",
+      "repro.log": "ac7ccff4d5755d0f02a542da5961111ba35ec18e3cdfbcd97c036a163ab1dd14",
+      "docker-compose.yml": "85ffd19822cee882a0916003b271681e39b63b937982d902934324b44a5c949e",
+      "oracle.py": "8820a8b7e497156e8589feab116044f1729d74dd6a25655547d6d80162fb53f4",
+      "patch.diff": "47e99c4dcce32ce569a9410625dbfe09b214c4accf3d6ad872436f8f0f3676bf"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "A",
+    "is_dos": false,
+    "clean_for": {
+      "faithful_core": true,
+      "benign_canary": true,
+      "same_sink": true
+    }
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "real-docker-gate",
+    "notes": "Faithful-core: harness require()s REAL published simple-git 3.14.1 / 3.35.2(+argv-parser 1.0.3 pinned) / 3.36.0(+argv-parser 1.1.1) bytes -- each in its OWN /app/v{0,1,2} tree so each keeps its own argv-parser guard -- and drives the REAL git.clone() config-injection sink against a LOCAL ext:: helper (seed) and a LOCAL bare repo file:///srv/repo.git with a filter attribute (residual), no network. Benign canary only. Gate passed on real Docker."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-server-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "the /canary/flag.txt secret that the block-unsafe-operations config-key guard defends by preventing an injected dangerous git config option from executing a command that reads it",
+    "detector": "flag token substring in candidate result"
+  },
+  "effect_type": "exfiltration",
+  "ports": {
+    "v1": {
+      "host_default": 39674,
+      "container": 8080
+    },
+    "v0": {
+      "host_default": 39673,
+      "container": 8080
+    },
+    "v2": {
+      "host_default": 39675,
+      "container": 8080
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

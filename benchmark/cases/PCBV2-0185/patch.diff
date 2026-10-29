@@ -1,0 +1,447 @@
+PCBV2-0185 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 71ace879cf92d323bfa4d3e88db0c3059109bbf6 (RESTEASY-637 / 2.3.1)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0185/
+
+diff --git a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/providers/DocumentProvider.java b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/providers/DocumentProvider.java
+index aa47eb6b23d..7d69c4b28e1 100644
+--- a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/providers/DocumentProvider.java
++++ b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/providers/DocumentProvider.java
+@@ -1,12 +1,18 @@
+ package org.jboss.resteasy.plugins.providers;
+ 
++import org.jboss.resteasy.core.request.AcceptHeaders;
++import org.jboss.resteasy.logging.Logger;
++import org.jboss.resteasy.plugins.server.servlet.ResteasyContextParameters;
+ import org.jboss.resteasy.spi.ReaderException;
+ import org.jboss.resteasy.spi.WriterException;
+ import org.w3c.dom.Document;
+ 
++import javax.servlet.ServletConfig;
++import javax.servlet.ServletContext;
+ import javax.ws.rs.Consumes;
+ import javax.ws.rs.Produces;
+ import javax.ws.rs.WebApplicationException;
++import javax.ws.rs.core.Context;
+ import javax.ws.rs.core.MediaType;
+ import javax.ws.rs.core.MultivaluedMap;
+ import javax.ws.rs.ext.Provider;
+@@ -32,13 +38,26 @@
+ @Consumes({"text/*+xml", "application/*+xml"})
+ public class DocumentProvider extends AbstractEntityProvider<Document>
+ {
++   private static final Logger logger = Logger.getLogger(DocumentProvider.class);
++   
+    private final TransformerFactory transformerFactory;
+    private final DocumentBuilderFactory documentBuilder;
++   private boolean expandEntityReferences = true;
+ 
+-   public DocumentProvider()
++   public DocumentProvider(@Context ServletConfig servletConfig)
+    {
+       this.documentBuilder = DocumentBuilderFactory.newInstance();
+       this.transformerFactory = TransformerFactory.newInstance();
++      try
++      {
++         ServletContext context = servletConfig.getServletContext();
++         String s = context.getInitParameter(ResteasyContextParameters.RESTEASY_EXPAND_ENTITY_REFERENCES);
++         expandEntityReferences = (s == null ? true : Boolean.parseBoolean(s));
++      }
++      catch (Exception e)
++      {
++         logger.debug("Unable to retrieve ServletContext: expandEntityReferences defaults to true");
++      }
+    }
+ 
+    public boolean isReadable(Class<?> clazz, Type type,
+@@ -54,6 +73,7 @@ public Document readFrom(Class<Document> clazz, Type type,
+    {
+       try
+       {
++         documentBuilder.setExpandEntityReferences(expandEntityReferences);
+          return documentBuilder.newDocumentBuilder().parse(input);
+       }
+       catch (Exception e)
+diff --git a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/servlet/ResteasyContextParameters.java b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/servlet/ResteasyContextParameters.java
+index 8120696cb1d..de94ebf4d4f 100644
+--- a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/servlet/ResteasyContextParameters.java
++++ b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/servlet/ResteasyContextParameters.java
+@@ -31,6 +31,7 @@ public interface ResteasyContextParameters
+    String RESTEASY_SCANNED_BY_DEPLOYER = "resteasy.scanned.by.deployer";
+    String RESTEASY_JNDI_COMPONENT_RESOURCES = "resteasy.jndi.component.resources";
+    String RESTEASY_UNWRAPPED_EXCEPTIONS = "resteasy.unwrapped.exceptions";
++   String RESTEASY_EXPAND_ENTITY_REFERENCES = "resteasy.document.expand.entity.references";
+ 
+    // these scanned variables are provided by a deployer
+    String RESTEASY_SCANNED_RESOURCES = "resteasy.scanned.resources";
+diff --git a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/tjws/TJWSEmbeddedJaxrsServer.java b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/tjws/TJWSEmbeddedJaxrsServer.java
+index ceed49fb105..86908025c21 100644
+--- a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/tjws/TJWSEmbeddedJaxrsServer.java
++++ b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/tjws/TJWSEmbeddedJaxrsServer.java
+@@ -1,5 +1,8 @@
+ package org.jboss.resteasy.plugins.server.tjws;
+ 
++import java.util.Hashtable;
++import java.util.Map;
++
+ import Acme.Serve.Serve;
+ import org.jboss.resteasy.plugins.server.embedded.EmbeddedJaxrsServer;
+ import org.jboss.resteasy.plugins.server.embedded.SecurityDomain;
+@@ -15,6 +18,8 @@ public class TJWSEmbeddedJaxrsServer extends TJWSServletServer implements Embedd
+    protected TJWSServletDispatcher servlet = new TJWSServletDispatcher();
+ 
+    protected String rootResourcePath = "";
++   protected Hashtable<String,String> initParameters;
++   protected Hashtable<String,String> contextParameters;
+ 
+    public void setRootResourcePath(String rootResourcePath)
+    {
+@@ -35,11 +40,21 @@ public void setDeployment(ResteasyDeployment deployment)
+       this.deployment = deployment;
+    }
+ 
++   public void setInitParameters(Hashtable<String,String> initParameters)
++   {
++      this.initParameters = initParameters;
++   }
++   
++   public void setContextParameters(Hashtable<String,String> contextParameters)
++   {
++      this.contextParameters = contextParameters;
++   }
++
+    @Override
+    public void start()
+    {
+       server.setAttribute(ResteasyDeployment.class.getName(), deployment);
+-      addServlet(rootResourcePath, servlet);
++      addServlet(rootResourcePath, servlet, initParameters, contextParameters);
+       servlet.setContextPath(rootResourcePath);
+       super.start();
+    }
+diff --git a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/tjws/TJWSServletServer.java b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/tjws/TJWSServletServer.java
+index b6f27a2d177..56b4901b5a7 100644
+--- a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/tjws/TJWSServletServer.java
++++ b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/plugins/server/tjws/TJWSServletServer.java
+@@ -28,6 +28,7 @@ public static class FileMappingServe extends Serve
+    {
+       private static final long serialVersionUID = -5031104686755790970L;
+       private PathTreeDictionary mappingTable = null;
++      private Hashtable<String,String> initParams = null;
+ 
+       public void initFileMappings()
+       {
+@@ -46,6 +47,25 @@ public void addFileMapping(String context, File directory)
+          }
+          mappingTable.put(context, directory);
+       }
++      
++      public String getInitParameter(String param)
++      {
++         if (initParams == null)
++         {
++            return null;
++         }
++         return initParams.get(param);
++      }
++
++      public Hashtable<String, String> getInitParams()
++      {
++         return initParams;
++      }
++
++      public void setInitParams(Hashtable<String, String> initParams)
++      {
++         this.initParams = initParams;
++      }
+    }
+ 
+    protected FileMappingServe server = new FileMappingServe();
+@@ -61,7 +81,13 @@ public void addServlet(String bindPath, HttpServlet servlet, Hashtable initParam
+    {
+       server.addServlet(bindPath, servlet, initParams);
+    }
+-
++   
++   public void addServlet(String bindPath, HttpServlet servlet, Hashtable<String,String> initParams, Hashtable<String,String> contextParams)
++   {
++      server.setInitParams(contextParams);
++      server.addServlet(bindPath, servlet, initParams);
++   }
++   
+    public void setProps(Properties props)
+    {
+       this.props.putAll(props);
+diff --git a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/test/EmbeddedContainer.java b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/test/EmbeddedContainer.java
+index 4d445bcf0fe..0231c9e917a 100644
+--- a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/test/EmbeddedContainer.java
++++ b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/test/EmbeddedContainer.java
+@@ -4,6 +4,8 @@
+ import org.jboss.resteasy.spi.ResteasyDeployment;
+ 
+ import java.lang.reflect.Method;
++import java.util.Hashtable;
++import java.util.Map;
+ 
+ /**
+  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
+@@ -11,7 +13,7 @@
+  */
+ public class EmbeddedContainer
+ {
+-   private static Class bootstrap = TJWSServletContainer.class;
++   private static Class<?> bootstrap = TJWSServletContainer.class;
+ 
+    public static Class getBootstrap()
+    {
+@@ -51,22 +53,36 @@ public static void setBootstrap(Class bootstrap)
+ 
+    public static ResteasyDeployment start() throws Exception
+    {
+-      return start("/");
++      return start("/", (Hashtable<String,String>) null);
+    }
+-
+-   public static void start(ResteasyDeployment deployment) throws Exception
++   
++   public static ResteasyDeployment start(String bindPath) throws Exception
+    {
+-      Method start = bootstrap.getMethod("start", ResteasyDeployment.class);
+-      start.invoke(null, deployment);
+-
++      return start(bindPath, null, null);
++   }
++   
++   public static ResteasyDeployment start(Hashtable<String,String> initParams) throws Exception
++   {
++      return start("/", initParams);
+    }
+ 
+-   public static ResteasyDeployment start(String bindPath) throws Exception
++   public static ResteasyDeployment start(Hashtable<String,String> initParams, Hashtable<String,String> contextParams) throws Exception
+    {
+-      Method start = bootstrap.getMethod("start", String.class);
+-      return (ResteasyDeployment) start.invoke(null, bindPath);
++      return start("/", initParams, contextParams);
++   }
++   
++   public static ResteasyDeployment start(String bindPath, Hashtable<String,String> initParams) throws Exception
++   {
++      Method start = bootstrap.getMethod("start", String.class, Hashtable.class);
++      return (ResteasyDeployment) start.invoke(null, bindPath, initParams);
+    }
+ 
++   public static ResteasyDeployment start(String bindPath, Hashtable<String,String> initParams, Hashtable<String,String> contextParams) throws Exception
++   {
++      Method start = bootstrap.getMethod("start", String.class, Hashtable.class, Hashtable.class);
++      return (ResteasyDeployment) start.invoke(null, bindPath, initParams, contextParams);
++   }
++   
+    public static ResteasyDeployment start(String bindPath, SecurityDomain domain) throws Exception
+    {
+       Method start = bootstrap.getMethod("start", String.class, SecurityDomain.class);
+@@ -74,6 +90,12 @@ public static ResteasyDeployment start(String bindPath, SecurityDomain domain) t
+ 
+    }
+ 
++   public static void start(ResteasyDeployment deployment) throws Exception
++   {
++      Method start = bootstrap.getMethod("start", ResteasyDeployment.class);
++      start.invoke(null, deployment);
++
++   }
+ 
+    public static void stop() throws Exception
+    {
+diff --git a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/test/TJWSServletContainer.java b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/test/TJWSServletContainer.java
+index 04042c0ac48..c4f6d911db0 100644
+--- a/resteasy-jaxrs/src/main/java/org/jboss/resteasy/test/TJWSServletContainer.java
++++ b/resteasy-jaxrs/src/main/java/org/jboss/resteasy/test/TJWSServletContainer.java
+@@ -1,5 +1,8 @@
+ package org.jboss.resteasy.test;
+ 
++import java.util.Hashtable;
++import java.util.Map;
++
+ import org.jboss.resteasy.plugins.server.embedded.SecurityDomain;
+ import org.jboss.resteasy.plugins.server.tjws.TJWSEmbeddedJaxrsServer;
+ import org.jboss.resteasy.spi.ResteasyDeployment;
+@@ -19,9 +22,19 @@ public static ResteasyDeployment start() throws Exception
+ 
+    public static ResteasyDeployment start(String bindPath) throws Exception
+    {
+-      return start(bindPath, null);
++      return start(bindPath, null, null, null);
++   }
++
++   public static ResteasyDeployment start(String bindPath, Hashtable<String,String> initParams) throws Exception
++   {
++      return start(bindPath, null, initParams, null);
+    }
+ 
++   public static ResteasyDeployment start(String bindPath, Hashtable<String,String> initParams, Hashtable<String,String> contextParams) throws Exception
++   {
++      return start(bindPath, null, initParams, contextParams);
++   }
++   
+    public static void start(ResteasyDeployment deployment) throws Exception
+    {
+       System.out.println("[Embedded Container Start]");
+@@ -34,19 +47,26 @@ public static void start(ResteasyDeployment deployment) throws Exception
+    }
+ 
+    public static ResteasyDeployment start(String bindPath, SecurityDomain domain) throws Exception
++   {
++      return start(bindPath, domain, null, null);
++   }
++   
++   public static ResteasyDeployment start(String bindPath, SecurityDomain domain, Hashtable<String,String> initParams, Hashtable<String,String> contextParams) throws Exception
+    {
+       ResteasyDeployment deployment = new ResteasyDeployment();
+       deployment.setSecurityEnabled(true);
+-      return start(bindPath, domain, deployment);
++      return start(bindPath, domain, deployment, initParams, contextParams);
+    }
+ 
+-   public static ResteasyDeployment start(String bindPath, SecurityDomain domain, ResteasyDeployment deployment) throws Exception
++   public static ResteasyDeployment start(String bindPath, SecurityDomain domain, ResteasyDeployment deployment, Hashtable<String,String> initParams, Hashtable<String,String> contextParams) throws Exception
+    {
+       tjws = new TJWSEmbeddedJaxrsServer();
+       tjws.setDeployment(deployment);
+       tjws.setPort(TestPortProvider.getPort());
+       tjws.setRootResourcePath(bindPath);
+       tjws.setSecurityDomain(domain);
++      tjws.setInitParameters(initParams);
++      tjws.setContextParameters(contextParams);
+       tjws.start();
+       return tjws.getDeployment();
+    }
+diff --git a/resteasy-jaxrs/src/test/java/org/jboss/resteasy/test/xxe/TestXXE.java b/resteasy-jaxrs/src/test/java/org/jboss/resteasy/test/xxe/TestXXE.java
+new file mode 100644
+index 00000000000..a779b9b796b
+--- /dev/null
++++ b/resteasy-jaxrs/src/test/java/org/jboss/resteasy/test/xxe/TestXXE.java
+@@ -0,0 +1,115 @@
++package org.jboss.resteasy.test.xxe;
++
++import static org.jboss.resteasy.test.TestPortProvider.generateURL;
++
++import java.util.Hashtable;
++
++import javax.ws.rs.Consumes;
++import javax.ws.rs.POST;
++import javax.ws.rs.Path;
++
++import junit.framework.Assert;
++
++import org.jboss.resteasy.client.ClientRequest;
++import org.jboss.resteasy.client.ClientResponse;
++import org.jboss.resteasy.core.Dispatcher;
++import org.jboss.resteasy.plugins.server.servlet.ResteasyContextParameters;
++import org.jboss.resteasy.spi.ResteasyDeployment;
++import org.jboss.resteasy.test.EmbeddedContainer;
++import org.junit.Test;
++import org.w3c.dom.Document;
++import org.w3c.dom.Node;
++import org.w3c.dom.NodeList;
++
++/**
++ * @author <a href="mailto:ron.sigal@jboss.com">Ron Sigal</a>
++ * @date Jan 6, 2012
++ */
++public class TestXXE
++{
++   protected static ResteasyDeployment deployment;
++   protected static Dispatcher dispatcher;
++
++   @Path("/")
++   public static class TestResource
++   {
++      @Consumes("application/xml")
++      @POST
++      public String doPost(Document doc)
++      {
++         Node node = doc.getDocumentElement();
++         System.out.println("name: " + node.getNodeName());
++         NodeList children = doc.getDocumentElement().getChildNodes();
++
++         node = children.item(0);
++         System.out.println("name: " + node.getNodeName());
++         children = node.getChildNodes();
++
++         node = children.item(0);
++         System.out.println("name: " + node.getNodeName());
++         children = node.getChildNodes();
++
++         System.out.println(node.getNodeValue());
++         return node.getNodeValue();
++      }
++   }
++
++   public static void before(String expandEntityReferences) throws Exception
++   {
++      Hashtable<String,String> initParams = new Hashtable<String,String>();
++      Hashtable<String,String> contextParams = new Hashtable<String,String>();
++      contextParams.put(ResteasyContextParameters.RESTEASY_EXPAND_ENTITY_REFERENCES, expandEntityReferences);
++      deployment = EmbeddedContainer.start(initParams, contextParams);
++      dispatcher = deployment.getDispatcher();
++      deployment.getRegistry().addPerRequestResource(TestResource.class);
++   }
++
++   public static void after() throws Exception
++   {
++      EmbeddedContainer.stop();
++      dispatcher = null;
++      deployment = null;
++   }
++
++   @Test
++   public void testXXEWithoutExpansion() throws Exception
++   {
++      before("false");
++      ClientRequest request = new ClientRequest(generateURL("/"));
++      String filename = "src/test/java/org/jboss/resteasy/test/xxe/testpasswd";
++      String str = "<?xml version=\"1.0\"?>\r" +
++                   "<!DOCTYPE foo\r" +
++                   "[<!ENTITY xxe SYSTEM \"" + filename + "\">\r" +
++                   "]>\r" + 
++                   "<search><user>&xxe;</user></search>";
++      System.out.println(str);
++      request.body("application/xml", str);
++      ClientResponse<?> response = request.post();
++      Assert.assertEquals(204, response.getStatus());
++      String entity = response.getEntity(String.class);
++      System.out.println("result: " + entity);
++      Assert.assertEquals(entity, null);
++      after();
++   }
++
++   @Test
++   public void testXXEWithExpansion() throws Exception
++   {
++      before("true");
++      ClientRequest request = new ClientRequest(generateURL("/"));
++      String filename = "src/test/java/org/jboss/resteasy/test/xxe/testpasswd";
++      String str = "<?xml version=\"1.0\"?>\r" +
++                   "<!DOCTYPE foo\r" +
++                   "[<!ENTITY xxe SYSTEM \"" + filename + "\">\r" +
++                   "]>\r" + 
++                   "<search><user>&xxe;</user></search>";
++      System.out.println(str);
++      request.body("application/xml", str);
++      ClientResponse<?> response = request.post();
++      Assert.assertEquals(200, response.getStatus());
++      String entity = response.getEntity(String.class);
++      System.out.println("result: " + entity);
++      Assert.assertEquals("xx:xx:xx:xx:xx:xx:xx", entity);
++      after();
++   }
++}
+diff --git a/resteasy-jaxrs/src/test/java/org/jboss/resteasy/test/xxe/testpasswd b/resteasy-jaxrs/src/test/java/org/jboss/resteasy/test/xxe/testpasswd
+new file mode 100644
+index 00000000000..a823614d73b
+--- /dev/null
++++ b/resteasy-jaxrs/src/test/java/org/jboss/resteasy/test/xxe/testpasswd
+@@ -0,0 +1 @@
++xx:xx:xx:xx:xx:xx:xx
+\ No newline at end of file

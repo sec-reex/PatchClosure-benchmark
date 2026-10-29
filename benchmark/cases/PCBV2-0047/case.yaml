@@ -1,0 +1,24 @@
+case_id: PCBV2-0047
+public_name: dottie-cve-2026-27837
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/mickhansen/dottie.js.git
+  v0: 2.0.3
+  v1: 2.0.4
+service:
+  # Host port is ${PORT_V*_0}, not :8080. start.sh waits after up.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

@@ -1,0 +1,24 @@
+case_id: PCBV2-0020
+public_name: n8n-cve-2026-44791
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: https://github.com/n8n-io/n8n.git
+  v0: 2.17.3
+  v1: 2.20.6
+service:
+  # Host port is ${PORT_V*_0}, not :5678. start.sh waits after up.
+  readiness: none
+  exposed_ports: [5678, 8000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

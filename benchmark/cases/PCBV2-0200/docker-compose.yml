@@ -1,0 +1,48 @@
+# PatchClosure-Bench: ssti_jinjava_objectmapper_sandbox
+# 3-version differential harness for HubSpot Jinjava SSTI sandbox escape.
+#   v0 = 2.8.0 (pre-CVE-2025-59340, fully vulnerable)
+#   v1 = 2.8.1 (CVE-2025-59340 fix = TARGET, incomplete containment)
+#   v2 = 2.8.3 (CVE-2026-25526 fix = complete)
+#
+# Each profile builds a REAL Java HTTP service (./service) that pulls the published
+# com.hubspot.jinjava:jinjava:<ver> from Maven Central and exposes POST /render.
+# Templates are delivered by EXTERNAL HTTP requests to the published host port; the
+# ${PCB_FLAG} canary is planted at /flag by the entrypoint (environment, not app code).
+# No in-process driver, no source-lift, no pinned subnet.
+
+services:
+  v0:
+    build:
+      context: ./service
+      args:
+        JINJAVA_VER: "2.8.0"
+    image: pcb-jinjava-http-v0
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    ports:
+      - "${PORT_V0_0:-18830}:8080"
+    profiles: ["v0"]
+
+  v1:
+    build:
+      context: ./service
+      args:
+        JINJAVA_VER: "2.8.1"
+    image: pcb-jinjava-http-v1
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    ports:
+      - "${PORT_V1_0:-18831}:8080"
+    profiles: ["v1"]
+
+  v2:
+    build:
+      context: ./service
+      args:
+        JINJAVA_VER: "2.8.3"
+    image: pcb-jinjava-http-v2
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    ports:
+      - "${PORT_V2_0:-18832}:8080"
+    profiles: ["v2"]

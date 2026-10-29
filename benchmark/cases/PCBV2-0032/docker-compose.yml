@@ -1,0 +1,48 @@
+# DBI PCB case: CVE-2026-10879 -> CVE-2026-14739 (preparse heap overflow)
+# HTTP gateway wraps the CLI probe: GET /probe?n=N runs perl probe.pl N,
+# returns crash status + flag (released only on crash = vulnerability confirmed).
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DBI_VERSION: "1.647"
+    image: dbi-pcb-v0:latest
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    ports: ["${PORT_V0_0:-39503}:8080"]
+    command: ["python3", "/app/gateway.py"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DBI_VERSION: "1.648"
+    image: dbi-pcb-v1:latest
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    ports: ["${PORT_V1_0:-39504}:8080"]
+    command: ["python3", "/app/gateway.py"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DBI_VERSION: "1.650"
+    image: dbi-pcb-v2:latest
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    ports: ["${PORT_V2_0:-39505}:8080"]
+    command: ["python3", "/app/gateway.py"]
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.32.0/24

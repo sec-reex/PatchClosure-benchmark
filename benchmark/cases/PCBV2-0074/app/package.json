@@ -1,0 +1,7 @@
+{
+  "name": "pcb-angular-ssr-host",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Minimal @angular/ssr Node host (equivalent to ng-build server output) with one benign /old -> /new server redirect. No secret/canary lives here."
+}

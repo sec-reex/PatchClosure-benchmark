@@ -1,0 +1,165 @@
+CVE: CVE-2025-58179
+upstream: https://github.com/withastro/astro
+fix: 9ecf3598e2b29dd74614328fde3047ea90e67252 (@astrojs/cloudflare 12.6.6)
+
+diff --git a/.changeset/evil-rabbits-flow.md b/.changeset/evil-rabbits-flow.md
+new file mode 100644
+index 000000000000..d19176384c45
+--- /dev/null
++++ b/.changeset/evil-rabbits-flow.md
+@@ -0,0 +1,5 @@
++---
++'@astrojs/cloudflare': patch
++---
++
++Improves the image proxy endpoint when using the default compile option to adhere to user configuration regarding the allowed remote domains
+diff --git a/packages/integrations/cloudflare/src/entrypoints/image-endpoint.ts b/packages/integrations/cloudflare/src/entrypoints/image-endpoint.ts
+index dbc1e1f5ae5e..b37ec7432e15 100644
+--- a/packages/integrations/cloudflare/src/entrypoints/image-endpoint.ts
++++ b/packages/integrations/cloudflare/src/entrypoints/image-endpoint.ts
+@@ -1,4 +1,8 @@
++// @ts-expect-error
++import { imageConfig } from 'astro:assets';
++import { isRemotePath } from '@astrojs/internal-helpers/path';
+ import type { APIRoute } from 'astro';
++import { isRemoteAllowed } from 'astro/assets/utils';
+ 
+ export const prerender = false;
+ 
+@@ -11,5 +15,14 @@ export const GET: APIRoute = (ctx) => {
+ 		});
+ 	}
+ 
++	if (isRemotePath(href)) {
++		if (isRemoteAllowed(href, imageConfig) === false) {
++			return new Response('Forbidden', { status: 403 });
++		} else {
++			// Redirect here because it is safer than a proxy, remote image will be served by remote domain and not own domain
++			return Response.redirect(href, 302);
++		}
++	}
++
+ 	return fetch(new URL(href, ctx.url.origin));
+ };
+diff --git a/packages/integrations/cloudflare/test/compile-image-service.test.js b/packages/integrations/cloudflare/test/compile-image-service.test.js
+new file mode 100644
+index 000000000000..72bb1aa5cc6e
+--- /dev/null
++++ b/packages/integrations/cloudflare/test/compile-image-service.test.js
+@@ -0,0 +1,68 @@
++import * as assert from 'node:assert/strict';
++import { after, before, describe, it } from 'node:test';
++import { fileURLToPath } from 'node:url';
++import { astroCli, wranglerCli } from './_test-utils.js';
++
++const root = new URL('./fixtures/compile-image-service/', import.meta.url);
++
++describe('CompileImageService', () => {
++	let wrangler;
++	before(async () => {
++		await astroCli(fileURLToPath(root), 'build');
++
++		wrangler = wranglerCli(fileURLToPath(root));
++		await new Promise((resolve) => {
++			wrangler.stdout.on('data', (data) => {
++				// console.log('[stdout]', data.toString());
++				if (data.toString().includes('http://127.0.0.1:8788')) resolve();
++			});
++			wrangler.stderr.on('data', (_data) => {
++				// console.log('[stderr]', data.toString());
++			});
++		});
++	});
++
++	after(() => {
++		wrangler.kill();
++	});
++
++	it('forbids http://', async () => {
++		const res = await fetch('http://127.0.0.1:8788/_image?href=http://placehold.co/600x400');
++		const html = await res.text();
++		const status = res.status;
++		assert.equal(html, 'Forbidden');
++		assert.equal(status, 403);
++	});
++
++	it('forbids https://', async () => {
++		const res = await fetch('http://127.0.0.1:8788/_image?href=https://placehold.co/600x400');
++		const html = await res.text();
++		const status = res.status;
++		assert.equal(html, 'Forbidden');
++		assert.equal(status, 403);
++	});
++
++	it('forbids //', async () => {
++		const res = await fetch('http://127.0.0.1:8788/_image?href=//placehold.co/600x400');
++		const html = await res.text();
++		const status = res.status;
++		assert.equal(html, 'Forbidden');
++		assert.equal(status, 403);
++	});
++
++	it('allows trusted with redirect', async () => {
++		const res = await fetch('http://127.0.0.1:8788/_image?href=https://astro.build/_astro/HeroBackground.B0iWl89K_2hpsgp.webp', { redirect: "manual" })
++		const header = res.headers.get("location")
++		const status = res.status;
++		assert.equal(header, "https://astro.build/_astro/HeroBackground.B0iWl89K_2hpsgp.webp")
++		assert.equal(status, 302)
++	})
++
++	it('allows local', async () => {
++		const res = await fetch('http://127.0.0.1:8788/_image?href=/_astro/placeholder.gLBdjEDe.jpg');
++		const blob = await res.blob();
++		const status = res.status;
++		assert.equal(blob.type, 'image/jpeg');
++		assert.equal(status, 200);
++	});
++});
+diff --git a/packages/integrations/cloudflare/test/fixtures/compile-image-service/astro.config.mjs b/packages/integrations/cloudflare/test/fixtures/compile-image-service/astro.config.mjs
+index 7c98bbb98803..48244202cd0d 100644
+--- a/packages/integrations/cloudflare/test/fixtures/compile-image-service/astro.config.mjs
++++ b/packages/integrations/cloudflare/test/fixtures/compile-image-service/astro.config.mjs
+@@ -6,4 +6,7 @@ export default defineConfig({
+ 		imageService: 'compile',
+ 	}),
+ 	output: 'static',
++	image: {
++		domains: ["astro.build"]
++	}
+ });
+diff --git a/packages/integrations/cloudflare/test/fixtures/compile-image-service/src/content/blog/post/index.md b/packages/integrations/cloudflare/test/fixtures/compile-image-service/src/content/blog/post/index.md
+index 01654f3eacb6..f43fd57ba593 100644
+--- a/packages/integrations/cloudflare/test/fixtures/compile-image-service/src/content/blog/post/index.md
++++ b/packages/integrations/cloudflare/test/fixtures/compile-image-service/src/content/blog/post/index.md
+@@ -2,4 +2,4 @@
+ image: './placeholder.jpg'
+ ---
+ 
+-![placeholder](./placeholder.jpg)
++![placeholder](./placeholder.jpg)
+\ No newline at end of file
+diff --git a/packages/integrations/cloudflare/test/fixtures/compile-image-service/src/pages/blog/[...slug].astro b/packages/integrations/cloudflare/test/fixtures/compile-image-service/src/pages/blog/[...slug].astro
+index f5f8ed847951..6246901f0cdf 100644
+--- a/packages/integrations/cloudflare/test/fixtures/compile-image-service/src/pages/blog/[...slug].astro
++++ b/packages/integrations/cloudflare/test/fixtures/compile-image-service/src/pages/blog/[...slug].astro
+@@ -1,5 +1,4 @@
+ ---
+-import { Image } from "astro:assets";
+ import { getEntry, type CollectionEntry } from "astro:content";
+ 
+ export const prerender = false;
+@@ -21,14 +20,6 @@ const { Content } = await post.render();
+     <title>Document</title>
+   </head>
+   <body>
+-    <div class="aspect-video w-full overflow-hidden flex items-end rounded-lg">
+-      <Image
+-        class="aspect-[4/3] object-cover object-left w-full"
+-        src={post.data.image}
+-        alt=""
+-      />
+-    </div>
+-
+     <Content />
+   </body>
+ </html>

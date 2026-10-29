@@ -1,0 +1,23 @@
+case_id: PCBV2-0003
+public_name: vite-cve-2025-31125
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/vitejs/vite.git
+  v0: 5.4.14
+  v1: 5.4.15
+service:
+  readiness: http://127.0.0.1:5173/
+  exposed_ports: [5173]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

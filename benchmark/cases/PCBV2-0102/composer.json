@@ -1,0 +1,23 @@
+{
+  "name": "pcb/yii2-behavior",
+  "require": {
+    "php": ">=8.1"
+  },
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://asset-packagist.org"
+    }
+  ],
+  "config": {
+    "allow-plugins": {
+      "yiisoft/yii2-composer": true,
+      "composer/installers": true,
+      "oomphinc/composer-installers-extender": true
+    },
+    "audit": {
+      "abandoned": "ignore"
+    },
+    "secure-http": true
+  }
+}

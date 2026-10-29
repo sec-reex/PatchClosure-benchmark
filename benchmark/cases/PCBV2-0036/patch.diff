@@ -1,0 +1,38 @@
+PCBV2-0036 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 6feb2bc8ec2dc2d58d62faad68caeec705dbf62d (3.5.10 IsSensitivePath, ":lock:" commit for GHSA-2h2p-mvfx-868w, 2026-03-06)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0036/
+
+diff --git a/kernel/server/serve.go b/kernel/server/serve.go
+index 94897546f94..81a217e23ca 100644
+--- a/kernel/server/serve.go
++++ b/kernel/server/serve.go
+@@ -318,6 +318,11 @@ func serveExport(ginServer *gin.Engine) {
+ 		}
+ 
+ 		fullPath := filepath.Join(exportBaseDir, decodedPath)
++		if util.IsSensitivePath(fullPath) {
++			logging.LogErrorf("refuse to export sensitive file [%s]", c.Request.URL.Path)
++			c.Status(http.StatusForbidden)
++			return
++		}
+ 
+ 		fileInfo, err := os.Stat(fullPath)
+ 		if os.IsNotExist(err) {
+diff --git a/kernel/util/path.go b/kernel/util/path.go
+index c60d1eec1d3..6e45255bf57 100644
+--- a/kernel/util/path.go
++++ b/kernel/util/path.go
+@@ -391,6 +391,12 @@ func IsSensitivePath(p string) bool {
+ 		}
+ 	}
+ 
++	// 工作空间/conf 目录（小写比较）
++	workspaceConfPrefix := strings.ToLower(filepath.Join(WorkspaceDir, "conf"))
++	if strings.HasPrefix(pp, workspaceConfPrefix) {
++		return true
++	}
++
+ 	homePrefixes := []string{
+ 		strings.ToLower(filepath.Join(HomeDir, ".ssh")),
+ 		strings.ToLower(filepath.Join(HomeDir, ".config")),

@@ -1,0 +1,12 @@
+.git
+_heldout
+poc
+scripts
+reports
+*.md
+INCOMPLETE_FIX_ANALYSIS.md
+repro.log
+patch.diff
+case.json
+case.yaml
+original_poc.py

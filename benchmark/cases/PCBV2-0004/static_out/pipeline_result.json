@@ -1,0 +1,194 @@
+{
+  "case_dir": "PCBV2-0004",
+  "a_paper_version": "1.0",
+  "k_limit": 8,
+  "n_limit": 4,
+  "status": "candidates_ready",
+  "P": {
+    "methods": [
+      "print",
+      "json.dumps",
+      "candidate"
+    ],
+    "paths": [],
+    "params": [
+      "id",
+      "probe_class",
+      "json_body",
+      "indent"
+    ],
+    "dangerous_spans": [],
+    "assert_literals": [],
+    "all_string_literals": [
+      "[GIVEN] CVE-2017-7525 seed for jackson-databind-cve-2018-5968 -- REAL jackson-databind behind a REAL HTTP\nREST service, driven over external HTTP.\n\nThe classic jackson-databind polymorphic-deserialization vector: with default typing enabled, an untrusted JSON\ndocument of the form [\"<class>\", {..}] makes ObjectMapper.readValue() resolve and instantiate the attacker-named\nclass. Here the benign shadow-class name is `org.apache.commons.collections.functors.InvokerTransformer` --\nVERBATIM one of the gadget entries the CVE-2017-7525 remediation (databind#1599) ADDED to jackson-databind's\nDEFAULT_NO_DESER_CLASS_NAMES blacklist, and it is STILL blacklisted in this case's V1 (2.8.11) and V2 (2.8.11.1).\nNo real gadget, no exec: the request body is a benign default-typing JSON array naming the class; POSTing it to\nthe service's /deser endpoint makes the running version's REAL blacklist decide pass/block, and the service\nechoes the planted ${PCB_FLAG} canary IFF the class was instantiated past the filter.\n\nOn V0 (jackson-databind 2.8.8, pre-blacklist; SubTypeValidator @since 2.8.11) there is NO blacklist ->\nreadValue() resolves the name and instantiates it -> its constructor reads /canary/flag.txt -> flag echoed\n(REACHES).\nOn V1 (2.8.11, CVE-2017-7525 + -15095 + -17485 patched) validateSubType() finds this exact name in\nDEFAULT_NO_DESER_CLASS_NAMES and throws \"Illegal type ... to deserialize: prevented for security reasons\" BEFORE\nthe object is constructed -> the constructor never runs and the flag never appears (BLOCKED). The block on V1 is\nspecifically the class-blacklist guard the CVE-2017-7525 fix added.\n\nThe body below is the exact default-typing JSON the CVE concerns; it carries only the class NAME + an empty\nobject, never the flag.\n",
+      "org.apache.commons.collections.functors.InvokerTransformer",
+      "[\"",
+      "\", {}]",
+      "id",
+      "cve-2017-7525-invokertransformer-seed",
+      "probe_class",
+      "json_body",
+      "__main__"
+    ]
+  },
+  "O": {
+    "added_comparison_literals": [],
+    "removed_comparison_literals": [],
+    "new_calls": [
+      {
+        "name": "Collections",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "name": "checkIllegalTypes",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "name": "ctxt",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "name": "s",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "name": "type",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "name": "aposToQuotes",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "name": "fail",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "name": "mapper",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "name": "verifyException",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      }
+    ],
+    "changed_functions": [],
+    "new_string_constants": [
+      {
+        "value": "org.apache.commons.collections.functors.InvokerTransformer",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "value": "org.apache.commons.collections.functors.InstantiateTransformer",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "value": "org.apache.commons.collections4.functors.InvokerTransformer",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "value": "org.apache.commons.collections4.functors.InstantiateTransformer",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "value": "org.codehaus.groovy.runtime.ConvertedClosure",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "value": "org.codehaus.groovy.runtime.MethodClosure",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "value": "org.springframework.beans.factory.ObjectFactory",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "value": "com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "value": "Illegal type (%s) to deserialize: prevented for security reasons",
+        "file": "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java"
+      },
+      {
+        "value": "{'id': 124,",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": " 'obj':[ 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": "  {",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": "    'transletBytecodes' : [ 'AAIAZQ==' ],",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": "    'transletName' : 'a.b',",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": "    'outputProperties' : { }",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": "  }",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": " ]",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": "}",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": "Should not pass",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": "Illegal type",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": "to deserialize",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      },
+      {
+        "value": "prevented for security reasons",
+        "file": "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+      }
+    ],
+    "new_regex_patterns": [],
+    "files_touched": [
+      "src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java",
+      "src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java"
+    ],
+    "is_empty": false
+  },
+  "D": {
+    "skipped": "no source_dir provided"
+  },
+  "a_paper_candidates": 0,
+  "a_code_candidates": 22,
+  "siblings": [],
+  "sibling_count": 0,
+  "candidate_summary": {
+    "a_paper_count": 0,
+    "a_code_count": 22,
+    "sibling_count": 0,
+    "total": 22,
+    "a_paper_families": [],
+    "a_paper_version": "1.0"
+  },
+  "graph_connectivity": {
+    "entry_to_sink_connected": false,
+    "reason": "no tool graph"
+  },
+  "test_template": "\"\"\"Residual test: auto-generated by static pipeline.\n\nPath: /\nMethod: GET\nO obligations: []\nO removed: []\nN limit: 4\nA_paper version: 1.0\n\"\"\"\n\nimport os\nimport sys\nimport json\nimport urllib.request\nimport urllib.error\n\nBASE_URL = os.environ.get(\"BASE_URL\", \"http://localhost:8080\")\nMARKER = os.environ.get(\"MARKER\", \"\")\nMAX_ATTEMPTS = 4\n\n# Obligation set from AST diff\nO_ADDED = []\nO_REMOVED = []\n\n# A_paper candidates (encoding families on dangerous spans)\nA_PAPER = [\n]\n\n# A_code candidates (source literals)\nA_CODE = [\n    \"org.apache.commons.collections.functors.InvokerTransformer\",  # O:new_string:src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java\n    \"org.apache.commons.collections.functors.InstantiateTransformer\",  # O:new_string:src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java\n    \"org.apache.commons.collections4.functors.InvokerTransformer\",  # O:new_string:src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java\n    \"org.apache.commons.collections4.functors.InstantiateTransformer\",  # O:new_string:src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java\n    \"org.codehaus.groovy.runtime.ConvertedClosure\",  # O:new_string:src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java\n    \"org.codehaus.groovy.runtime.MethodClosure\",  # O:new_string:src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java\n    \"org.springframework.beans.factory.ObjectFactory\",  # O:new_string:src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java\n    \"com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl\",  # O:new_string:src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java\n    \"Illegal type (%s) to deserialize: prevented for security reasons\",  # O:new_string:src/main/java/com/fasterxml/jackson/databind/deser/BeanDeserializerFactory.java\n    \"{'id': 124,\",  # O:new_string:src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java\n    \" 'obj':[ 'com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl',\",  # O:new_string:src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java\n    \"  {\",  # O:new_string:src/test/java/com/fasterxml/jackson/databind/interop/IllegalTypesCheckTest.java\n]\n\nSIBLINGS = []\n\n\ndef probe(candidate_value: str) -> dict:\n    \"\"\"Send a black-box probe to V1 via GET /.\"\"\"\n    url = BASE_URL.rstrip(\"/\") + candidate_value\n    req = urllib.request.Request(url, method=\"GET\")\n    req.add_header(\"User-Agent\", \"residual-test/1.0\")\n    try:\n        with urllib.request.urlopen(req, timeout=10) as resp:\n            body = resp.read().decode(\"utf-8\", errors=\"replace\")\n            headers = dict(resp.headers)\n            return {\"status\": resp.status, \"body\": body, \"headers\": headers}\n    except urllib.error.HTTPError as e:\n        body = e.read().decode(\"utf-8\", errors=\"replace\") if e.fp else \"\"\n        return {\"status\": e.code, \"body\": body, \"headers\": dict(e.headers)}\n    except Exception as e:\n        return {\"status\": \"error\", \"body\": str(e), \"headers\": {}}\n\n\ndef check_effect(response: dict) -> dict:\n    \"\"\"Check if the external effect marker appears in response.\"\"\"\n    body = response.get(\"body\", \"\")\n    headers = response.get(\"headers\", {})\n    \n    # Check body for marker\n    if MARKER and MARKER in body:\n        return {\"found\": True, \"location\": \"body\", \"marker\": MARKER}\n    \n    # Check headers for marker\n    for hname, hval in headers.items():\n        if MARKER and MARKER in str(hval):\n            return {\"found\": True, \"location\": f\"header:{hname}\", \"marker\": MARKER}\n    \n    return {\"found\": False}\n\n\ndef run():\n    \"\"\"Run candidates against V1, up to N attempts.\"\"\"\n    witnesses = []\n    attempts = 0\n    \n    all_candidates = []\n    for c in A_PAPER:\n        all_candidates.append((\"a_paper\", c))\n    for c in A_CODE:\n        all_candidates.append((\"a_code\", c))\n    for c in SIBLINGS:\n        all_candidates.append((\"sibling\", c))\n    \n    for source, candidate in all_candidates:\n        if attempts >= MAX_ATTEMPTS:\n            break\n        \n        attempts += 1\n        resp = probe(candidate)\n        effect = check_effect(resp)\n        \n        result = {\n            \"candidate\": candidate,\n            \"source\": source,\n            \"status\": resp[\"status\"],\n            \"effect\": effect,\n        }\n        \n        if effect.get(\"found\"):\n            # Check obligation binding\n            bound_o = None\n            for o_lit in O_ADDED + O_REMOVED:\n                if o_lit in candidate or any(o_lit in str(v) for v in [candidate]):\n                    bound_o = o_lit\n                    break\n            result[\"obligation_binding\"] = bound_o\n            result[\"verdict\"] = \"witness\" if bound_o else \"effect_only\"\n            witnesses.append(result)\n        else:\n            result[\"verdict\"] = \"no_effect\"\n    \n    return {\n        \"attempts\": attempts,\n        \"witnesses\": witnesses,\n        \"total_candidates\": len(all_candidates),\n    }\n\n\nif __name__ == \"__main__\":\n    if not MARKER:\n        print(\"Warning: MARKER not set\", file=sys.stderr)\n    result = run()\n    print(json.dumps(result, indent=2))\n",
+  "elapsed_s": 0.0
+}

@@ -1,0 +1,251 @@
+PCBV2-0096 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 9132ad958c83a0d0b199de12b69b877f63edab4c
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0096/
+
+diff --git a/ext/node/polyfills/internal/child_process.ts b/ext/node/polyfills/internal/child_process.ts
+index 32e4dd9..48b440d 100644
+--- a/ext/node/polyfills/internal/child_process.ts
++++ b/ext/node/polyfills/internal/child_process.ts
+@@ -968,7 +968,16 @@ export function normalizeSpawnArguments(
+   ]);
+ 
+   if (options.shell) {
+-    let command = ArrayPrototypeJoin([file, ...args], " ");
++    // When args are provided, escape them to prevent shell injection.
++    // When no args are provided (just a string command), the user intends
++    // for shell interpretation, so don't escape.
++    let command;
++    if (args.length > 0) {
++      const escapedParts = [escapeShellArg(file), ...args.map(escapeShellArg)];
++      command = ArrayPrototypeJoin(escapedParts, " ");
++    } else {
++      command = file;
++    }
+     // Transform Node.js flags to Deno equivalents in shell commands that invoke Deno
+     command = transformDenoShellCommand(command, options.env);
+     // Set the shell, switches, and commands.
+@@ -1086,6 +1095,43 @@ function waitForStreamToClose(stream: Stream) {
+   return deferred.promise;
+ }
+ 
++/**
++ * Escapes a string for safe use as a shell argument.
++ * On Unix, wraps in single quotes and escapes embedded single quotes.
++ * On Windows, wraps in double quotes and escapes embedded double quotes and backslashes.
++ */
++function escapeShellArg(arg: string): string {
++  if (process.platform === "win32") {
++    // Windows: use double quotes, escape double quotes and backslashes
++    // Empty string needs to be quoted
++    if (arg === "") {
++      return '""';
++    }
++    // If no special characters, return as-is
++    if (!/[\s"\\]/.test(arg)) {
++      return arg;
++    }
++    // Escape backslashes before quotes, then escape quotes
++    let escaped = arg.replace(/(\\*)"/g, '$1$1\\"');
++    // Escape trailing backslashes
++    escaped = escaped.replace(/(\\+)$/, "$1$1");
++    return `"${escaped}"`;
++  } else {
++    // Unix: use single quotes, escape embedded single quotes
++    // Empty string needs to be quoted
++    if (arg === "") {
++      return "''";
++    }
++    // If no special characters, return as-is
++    if (!/[^a-zA-Z0-9_./-]/.test(arg)) {
++      return arg;
++    }
++    // Wrap in single quotes and escape any embedded single quotes
++    // Single quotes are escaped by ending the string, adding an escaped quote, and starting a new string
++    return "'" + arg.replace(/'/g, "'\\''") + "'";
++  }
++}
++
+ /**
+  * Simple shell argument splitter that handles double and single quotes.
+  * Used to parse the arguments portion of a shell command string.
+@@ -1182,7 +1228,7 @@ function transformDenoShellCommand(
+     // Check if any translated arg contains shell metacharacters (e.g. from eval
+     // wrapping). If so, the result can't be safely used in a shell command.
+     for (let i = 0; i < result.deno_args.length; i++) {
+-      if (/[();&|<>`!]/.test(result.deno_args[i])) {
++      if (/[();&|<>`!\n\r]/.test(result.deno_args[i])) {
+         return command;
+       }
+     }
+diff --git a/tests/specs/node/child_process_shell_escape/__test__.jsonc b/tests/specs/node/child_process_shell_escape/__test__.jsonc
+new file mode 100644
+index 0000000..2b6f724
+--- /dev/null
++++ b/tests/specs/node/child_process_shell_escape/__test__.jsonc
+@@ -0,0 +1,10 @@
++{
++  "tempDir": true,
++  "tests": {
++    "shell_args_escaped": {
++      "if": "unix",
++      "args": "run -A main.ts",
++      "output": "main.out"
++    }
++  }
++}
+diff --git a/tests/specs/node/child_process_shell_escape/main.out b/tests/specs/node/child_process_shell_escape/main.out
+new file mode 100644
+index 0000000..e67c93a
+--- /dev/null
++++ b/tests/specs/node/child_process_shell_escape/main.out
+@@ -0,0 +1,19 @@
++Test 1: Newline injection in args
++PASS: Newline injection blocked
++Test 2: Semicolon injection in args
++PASS: Semicolon injection blocked
++Test 3: Pipe injection in args
++PASS: Pipe injection blocked
++Test 4: Backtick injection in args
++PASS: Backtick injection blocked
++Test 5: $() injection in args
++PASS: $() injection blocked
++Test 6: Normal args work correctly
++PASS: Normal args work
++Test 7: Args with spaces preserved
++PASS: Args with spaces work
++Test 8: Shell features work with string command
++PASS: Shell features work
++Test 9: Async spawn escapes args
++PASS: Async spawn injection blocked
++All tests passed!
+diff --git a/tests/specs/node/child_process_shell_escape/main.ts b/tests/specs/node/child_process_shell_escape/main.ts
+new file mode 100644
+index 0000000..8101c30
+--- /dev/null
++++ b/tests/specs/node/child_process_shell_escape/main.ts
+@@ -0,0 +1,124 @@
++// Test that shell metacharacters in arguments are properly escaped
++// when using shell: true with spawn/spawnSync to prevent command injection.
++
++import { spawn, spawnSync } from "node:child_process";
++import * as fs from "node:fs";
++import * as path from "node:path";
++
++const tempDir = Deno.cwd();
++const markerFile = path.join(tempDir, "injection_marker");
++
++// Clean up any existing marker file
++try {
++  fs.unlinkSync(markerFile);
++} catch {
++  // ignore
++}
++
++// Test 1: Newline injection should be blocked
++console.log("Test 1: Newline injection in args");
++const newlinePayload = `dummy\ntouch ${markerFile}`;
++spawnSync("echo", [newlinePayload], { shell: true });
++if (fs.existsSync(markerFile)) {
++  console.log("FAIL: Newline injection was not blocked");
++  Deno.exit(1);
++} else {
++  console.log("PASS: Newline injection blocked");
++}
++
++// Test 2: Semicolon injection should be blocked
++console.log("Test 2: Semicolon injection in args");
++const semicolonPayload = `dummy; touch ${markerFile}`;
++spawnSync("echo", [semicolonPayload], { shell: true });
++if (fs.existsSync(markerFile)) {
++  console.log("FAIL: Semicolon injection was not blocked");
++  Deno.exit(1);
++} else {
++  console.log("PASS: Semicolon injection blocked");
++}
++
++// Test 3: Pipe injection should be blocked
++console.log("Test 3: Pipe injection in args");
++const pipePayload = `dummy | touch ${markerFile}`;
++spawnSync("echo", [pipePayload], { shell: true });
++if (fs.existsSync(markerFile)) {
++  console.log("FAIL: Pipe injection was not blocked");
++  Deno.exit(1);
++} else {
++  console.log("PASS: Pipe injection blocked");
++}
++
++// Test 4: Backtick injection should be blocked
++console.log("Test 4: Backtick injection in args");
++const backtickPayload = "`touch " + markerFile + "`";
++spawnSync("echo", [backtickPayload], { shell: true });
++if (fs.existsSync(markerFile)) {
++  console.log("FAIL: Backtick injection was not blocked");
++  Deno.exit(1);
++} else {
++  console.log("PASS: Backtick injection blocked");
++}
++
++// Test 5: $() injection should be blocked
++console.log("Test 5: $() injection in args");
++const dollarPayload = "$(touch " + markerFile + ")";
++spawnSync("echo", [dollarPayload], { shell: true });
++if (fs.existsSync(markerFile)) {
++  console.log("FAIL: $() injection was not blocked");
++  Deno.exit(1);
++} else {
++  console.log("PASS: $() injection blocked");
++}
++
++// Test 6: Normal functionality still works - args are passed correctly
++console.log("Test 6: Normal args work correctly");
++const result = spawnSync("echo", ["hello", "world"], {
++  shell: true,
++  encoding: "utf-8",
++});
++if (result.stdout?.trim() === "hello world") {
++  console.log("PASS: Normal args work");
++} else {
++  console.log("FAIL: Normal args broken, got:", result.stdout?.trim());
++  Deno.exit(1);
++}
++
++// Test 7: Args with spaces are preserved
++console.log("Test 7: Args with spaces preserved");
++const result2 = spawnSync("echo", ["hello world"], {
++  shell: true,
++  encoding: "utf-8",
++});
++if (result2.stdout?.trim() === "hello world") {
++  console.log("PASS: Args with spaces work");
++} else {
++  console.log("FAIL: Args with spaces broken, got:", result2.stdout?.trim());
++  Deno.exit(1);
++}
++
++// Test 8: Shell features work when using string command (no args)
++console.log("Test 8: Shell features work with string command");
++const result3 = spawnSync("echo foo | cat", { shell: true, encoding: "utf-8" });
++if (result3.stdout?.trim() === "foo") {
++  console.log("PASS: Shell features work");
++} else {
++  console.log("FAIL: Shell features broken, got:", result3.stdout?.trim());
++  Deno.exit(1);
++}
++
++// Test 9: Async spawn also escapes args
++console.log("Test 9: Async spawn escapes args");
++await new Promise<void>((resolve) => {
++  const child = spawn("echo", [`dummy; touch ${markerFile}`], { shell: true });
++  child.on("close", () => {
++    if (fs.existsSync(markerFile)) {
++      console.log("FAIL: Async spawn injection was not blocked");
++      Deno.exit(1);
++    } else {
++      console.log("PASS: Async spawn injection blocked");
++    }
++    resolve();
++  });
++});
++
++console.log("All tests passed!");

@@ -1,0 +1,28 @@
+case_id: PCBV2-0174
+public_name: plexus-archiver-symlink-extraction-bypass
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  # Runtime pulls the published Maven Central artifact
+  # org.codehaus.plexus:plexus-archiver (CVE-2018-1002200 seed on 3.5;
+  # incomplete 3.6.0; CVE-2023-37460 closed on 4.8.0).
+  type: maven
+  repo: org.codehaus.plexus:plexus-archiver
+  v0: "3.5"
+  v1: "3.6.0"
+service:
+  # Compose publishes ${PORT_V*_0}:8080. Platform HTTP on :8080 would miss.
+  # start.sh / reset.sh wait until POST /extract answers on the published port.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

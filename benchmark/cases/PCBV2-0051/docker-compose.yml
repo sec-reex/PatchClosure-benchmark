@@ -1,0 +1,100 @@
+# PatchClosure-Bench recipe for admin-and-site-enhancements-ase-wordpress-plugin-cve-2026-12083.
+# Pair: CVE-2024-43333 -> CVE-2026-12083  (ASE WP plugin, broken access control / CWE-862).
+#
+# AUTHZ-SEEDED. official `wordpress:*-apache` + `mariadb` + wp-cli. Per profile ONE
+# wp container installs core + the ASE plugin at a PINNED version at up-time.
+#
+# Vulnerable action: ASE "View Admin as Role" role-restoration handler
+#   role_switcher_to_view_admin_as() on `init`, `?reset-for=<username>` branch —
+#   no auth / nonce / capability check (runs for UNAUTHENTICATED requests).
+#
+# Profiles:
+#   v0 = ASE 7.6.2  (vulnerable to CVE-2024-43333: NO cleanup on any demotion path)
+#   v1 = ASE 7.6.3  (CVE-2024-43333 patched: cleanup on `profile_update` ONLY,
+#        so a role change via a non-profile_update path -> CVE-2026-12083)  <- TARGET
+#   v2 = ASE 8.8.4  (CVE-2026-12083 fixed: `set_user_role` cleanup + token-gated reset)
+#
+# Canary (authz-seeded): ${PCB_FLAG} planted at /flag/pcb_flag.txt, returned ONLY by
+# an admin-only `pcb_secret` admin-ajax action (mu-plugin). A subscriber cannot read
+# it; only after the reset-for escalation makes `viewer` an administrator does it leak.
+x-wp: &wp
+  image: "wordpress:php8.2-apache"
+  restart: unless-stopped
+  entrypoint: ["/bin/bash", "/pcb/wp-entrypoint.sh"]
+  volumes:
+    - ./wp-entrypoint.sh:/pcb/wp-entrypoint.sh:ro
+    - ./_run:/pcb/_run:ro
+  healthcheck:
+    test: ["CMD", "sh", "-c", "test -f /flag/pcb_flag.txt && curl -fsS http://127.0.0.1/wp-login.php >/dev/null 2>&1"]
+    interval: 5s
+    timeout: 5s
+    retries: 80
+
+x-db: &db
+  image: "mariadb:11"
+  restart: unless-stopped
+  environment:
+    MARIADB_DATABASE: wordpress
+    MARIADB_USER: wp
+    MARIADB_PASSWORD: wp
+    MARIADB_ROOT_PASSWORD: rootpass
+  healthcheck:
+    test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+    interval: 5s
+    timeout: 5s
+    retries: 40
+
+services:
+  db-v0:
+    <<: *db
+    profiles: ["v0"]
+  wp-v0:
+    <<: *wp
+    profiles: ["v0"]
+    depends_on:
+      db-v0: {condition: service_healthy}
+    ports: ["${PORT_WP_V0_0:-39450}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      WP_HOST_PORT: "${PORT_WP_V0_0:-39450}"
+      ASE_VERSION: "7.6.2"
+      WORDPRESS_DB_HOST: "db-v0"
+      WORDPRESS_DB_NAME: "wordpress"
+      WORDPRESS_DB_USER: "wp"
+      WORDPRESS_DB_PASSWORD: "wp"
+
+  db-v1:
+    <<: *db
+    profiles: ["v1"]
+  wp-v1:
+    <<: *wp
+    profiles: ["v1"]
+    depends_on:
+      db-v1: {condition: service_healthy}
+    ports: ["${PORT_WP_V1_0:-39451}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      WP_HOST_PORT: "${PORT_WP_V1_0:-39451}"
+      ASE_VERSION: "7.6.3"
+      WORDPRESS_DB_HOST: "db-v1"
+      WORDPRESS_DB_NAME: "wordpress"
+      WORDPRESS_DB_USER: "wp"
+      WORDPRESS_DB_PASSWORD: "wp"
+
+  db-v2:
+    <<: *db
+    profiles: ["v2"]
+  wp-v2:
+    <<: *wp
+    profiles: ["v2"]
+    depends_on:
+      db-v2: {condition: service_healthy}
+    ports: ["${PORT_WP_V2_0:-39452}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      WP_HOST_PORT: "${PORT_WP_V2_0:-39452}"
+      ASE_VERSION: "8.8.4"
+      WORDPRESS_DB_HOST: "db-v2"
+      WORDPRESS_DB_NAME: "wordpress"
+      WORDPRESS_DB_USER: "wp"
+      WORDPRESS_DB_PASSWORD: "wp"

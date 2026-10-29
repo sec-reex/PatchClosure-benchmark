@@ -1,0 +1,25 @@
+case_id: PCBV2-0008
+public_name: semver_regex_prerelease_redos
+run_mode: real-app-http
+oracle_family: dos_threshold
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: npm
+  repo: https://github.com/sindresorhus/semver-regex.git
+  v0: "3.1.1"
+  v1: "3.1.3"
+service:
+  # Compose publishes ${PORT_V*_0}:3000. Platform HTTP on container :3000 would miss
+  # the randomized host port; start.sh / reset.sh wait until GET /health answers.
+  readiness: none
+  exposed_ports: [3000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

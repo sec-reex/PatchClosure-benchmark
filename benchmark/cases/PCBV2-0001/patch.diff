@@ -1,0 +1,105 @@
+PCBV2-0001 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: e412c8a15b3334b30193f40412c0fbc47e478e83 (GHSA-v7ff-8wcx-gmc5, 2021-03-24, Request.java always-normalize-ambiguous-URIs)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0001/
+
+diff --git a/jetty-server/src/main/java/org/eclipse/jetty/server/Request.java b/jetty-server/src/main/java/org/eclipse/jetty/server/Request.java
+index 7ff819066f90..66a568d44a49 100644
+--- a/jetty-server/src/main/java/org/eclipse/jetty/server/Request.java
++++ b/jetty-server/src/main/java/org/eclipse/jetty/server/Request.java
+@@ -1824,7 +1824,8 @@ public void setMetaData(org.eclipse.jetty.http.MetaData.Request request)
+         setMethod(request.getMethod());
+         HttpURI uri = request.getURI();
+ 
+-        if (uri.isAmbiguous())
++        boolean ambiguous = uri.isAmbiguous();
++        if (ambiguous)
+         {
+             // replaced in jetty-10 with URICompliance from the HttpConfiguration
+             Connection connection = _channel == null ? null : _channel.getConnection();
+@@ -1852,6 +1853,13 @@ public void setMetaData(org.eclipse.jetty.http.MetaData.Request request)
+         else if (encoded.startsWith("/"))
+         {
+             path = (encoded.length() == 1) ? "/" : uri.getDecodedPath();
++
++            // Strictly speaking if a URI is legal and encodes ambiguous segments, then they should be
++            // reflected in the decoded string version.  However, previous behaviour was to always normalize
++            // so we will continue to do so.  If an application wishes to see ambiguous URIs, then they can look
++            // at the encoded form of the URI
++            if (ambiguous)
++                path = URIUtil.canonicalPath(path);
+         }
+         else if ("*".equals(encoded) || HttpMethod.CONNECT.is(getMethod()))
+         {
+diff --git a/jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java b/jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java
+index 4b652d9168c5..03a4aa7a327a 100644
+--- a/jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java
++++ b/jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java
+@@ -33,8 +33,10 @@
+ import javax.servlet.ServletRequest;
+ import javax.servlet.ServletResponse;
+ 
++import org.eclipse.jetty.http.HttpCompliance;
+ import org.eclipse.jetty.http.HttpStatus;
+ import org.eclipse.jetty.http.HttpTester;
++import org.eclipse.jetty.server.HttpConnectionFactory;
+ import org.eclipse.jetty.server.LocalConnector;
+ import org.eclipse.jetty.server.Server;
+ import org.eclipse.jetty.server.ServerConnector;
+@@ -247,6 +249,42 @@ public void testIsProtected()
+         assertFalse(context.isProtectedTarget("/something-else/web-inf"));
+     }
+ 
++    @Test
++    public void testProtectedTarget() throws Exception
++    {
++        Server server = newServer();
++        server.getConnectors()[0].getConnectionFactory(HttpConnectionFactory.class).setHttpCompliance(HttpCompliance.LEGACY);
++
++        HandlerList handlers = new HandlerList();
++        ContextHandlerCollection contexts = new ContextHandlerCollection();
++        WebAppContext context = new WebAppContext();
++        Path testWebapp = MavenTestingUtils.getProjectDirPath("src/test/webapp");
++        context.setBaseResource(new PathResource(testWebapp));
++        context.setContextPath("/");
++        server.setHandler(handlers);
++        handlers.addHandler(contexts);
++        contexts.addHandler(context);
++
++        LocalConnector connector = new LocalConnector(server);
++        server.addConnector(connector);
++
++        server.start();
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /test.xml HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.OK_200));
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /%2e/%2e/test.xml HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.OK_200));
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /foo/%2e%2e/test.xml HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.OK_200));
++
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /WEB-INF HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.NOT_FOUND_404));
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /WEB-INF/ HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.NOT_FOUND_404));
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /WEB-INF/test.xml HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.NOT_FOUND_404));
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /web-inf/test.xml HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.NOT_FOUND_404));
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /%2e/WEB-INF/test.xml HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.NOT_FOUND_404));
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /%2e/%2e/WEB-INF/test.xml HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.NOT_FOUND_404));
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /foo/%2e%2e/WEB-INF/test.xml HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.NOT_FOUND_404));
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /%2E/WEB-INF/test.xml HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.NOT_FOUND_404));
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET //WEB-INF/test.xml HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.NOT_FOUND_404));
++        assertThat(HttpTester.parseResponse(connector.getResponse("GET /WEB-INF%2ftest.xml HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")).getStatus(), is(HttpStatus.NOT_FOUND_404));
++    }
++
+     @Test
+     public void testNullPath() throws Exception
+     {
+diff --git a/jetty-webapp/src/test/webapp/WEB-INF/test.xml b/jetty-webapp/src/test/webapp/WEB-INF/test.xml
+new file mode 100644
+index 000000000000..9daeafb9864c
+--- /dev/null
++++ b/jetty-webapp/src/test/webapp/WEB-INF/test.xml
+@@ -0,0 +1 @@
++test
+diff --git a/jetty-webapp/src/test/webapp/test.xml b/jetty-webapp/src/test/webapp/test.xml
+new file mode 100644
+index 000000000000..9daeafb9864c
+--- /dev/null
++++ b/jetty-webapp/src/test/webapp/test.xml
+@@ -0,0 +1 @@
++test

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcb-certification-1",
+  "title": "Certification",
+  "type": "object",
+  "required": ["case_id", "status", "trials"],
+  "properties": {
+    "case_id": {"type": "string"},
+    "status": {"enum": ["certified_candidate_scoring_ready", "unready",
+                         "source_error", "build_startup_error", "readiness_error",
+                         "reference_failure", "scorer_failure", "cleanup_failure",
+                         "unknown"]},
+    "trials": {"type": "array"},
+    "failures": {"type": "array"},
+    "blockers": {"type": "array"}
+  }
+}

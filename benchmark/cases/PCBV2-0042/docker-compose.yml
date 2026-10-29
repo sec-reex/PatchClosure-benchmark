@@ -1,0 +1,57 @@
+# PatchClosure-Bench recipe for knp-snappy-cve-2023-41330.
+#
+# Profiles:
+#   v0 = knp-snappy 1.4.1  (CVE-2023-28115 vulnerable: no phar:// guard)
+#   v1 = knp-snappy 1.4.2  (CVE-2023-28115 patched: case-SENSITIVE phar:// check = TARGET)
+#   v2 = knp-snappy 1.4.3  (CVE-2023-41330 patched: allowlist + mb_strtolower = fully fixed)
+#
+# PHP 7.4 base — PHAR metadata auto-deserialization on file_exists requires PHP <= 7.x.
+# The canary (PCB_FLAG) is planted via the entrypoint into /tmp/pcb_flag.txt.
+
+x-snappy-boot: &boot
+  entrypoint:
+    - /bin/sh
+    - -c
+    - |
+      printf '%s' "${PCB_FLAG:?set PCB_FLAG}" > /tmp/pcb_flag.txt
+      chmod 644 /tmp/pcb_flag.txt
+      exec php -S 0.0.0.0:80 -t /app
+
+services:
+  v0:
+    <<: *boot
+    profiles: ["v0"]
+    build:
+      context: .
+      args:
+        SNAPPY_VERSION: "1.4.1"
+    ports: ["${PORT_V0_0:-48100}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+  v1:
+    <<: *boot
+    profiles: ["v1"]
+    build:
+      context: .
+      args:
+        SNAPPY_VERSION: "1.4.2"
+    ports: ["${PORT_V1_0:-48101}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+  v2:
+    <<: *boot
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        SNAPPY_VERSION: "1.4.3"
+    ports: ["${PORT_V2_0:-48102}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.43.0/24

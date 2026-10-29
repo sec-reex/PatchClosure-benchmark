@@ -1,0 +1,339 @@
+# CVE: CVE-2019-20920
+# Upstream: https://github.com/handlebars-lang/handlebars.js.git
+# Fix: 198887808780bbef9dba67a8af68ece091d5baa7 f7f05d7558e674856686b62a00cde5758f3b7a08
+
+diff --git a/.eslintrc.js b/.eslintrc.js
+index 3ba4230..5c55b10 100644
+--- a/.eslintrc.js
++++ b/.eslintrc.js
+@@ -57,6 +57,7 @@ module.exports = {
+     "no-with": "error",
+     "radix": "error",
+     "wrap-iife": "error",
++    "no-prototype-builtins": "error",
+ 
+ 
+     // Variables //
+@@ -114,4 +115,4 @@ module.exports = {
+     "ecmaVersion": 6,
+     "ecmaFeatures": {}
+   }
+-}
++};
+diff --git a/bench/util/benchwarmer.js b/bench/util/benchwarmer.js
+index 49f66f7..58f138a 100644
+--- a/bench/util/benchwarmer.js
++++ b/bench/util/benchwarmer.js
+@@ -29,7 +29,7 @@ BenchWarmer.prototype = {
+     });
+   },
+   push: function(name, fn) {
+-    if (this.names.indexOf(name) == -1) {
++    if (this.names.indexOf(name) === -1) {
+       this.names.push(name);
+     }
+ 
+@@ -77,7 +77,7 @@ BenchWarmer.prototype = {
+ 
+         var errors = false, prop, bench;
+         for (prop in self.errors) {
+-          if (self.errors.hasOwnProperty(prop)
++          if (Object.prototype.hasOwnProperty.call(self, prop)
+               && self.errors[prop].error.message !== 'EWOT') {
+             errors = true;
+             break;
+@@ -86,9 +86,8 @@ BenchWarmer.prototype = {
+ 
+         if (errors) {
+           print('\n\nErrors:\n');
+-          for (prop in self.errors) {
+-            if (self.errors.hasOwnProperty(prop)
+-                && self.errors[prop].error.message !== 'EWOT') {
++          Object.keys(self.errors).forEach(function(prop) {
++            if (self.errors[prop].error.message !== 'EWOT') {
+               bench = self.errors[prop];
+               print('\n' + bench.name + ':\n');
+               print(bench.error.message);
+@@ -97,7 +96,7 @@ BenchWarmer.prototype = {
+               }
+               print('\n');
+             }
+-          }
++          });
+         }
+ 
+         callback();
+diff --git a/lib/handlebars/compiler/code-gen.js b/lib/handlebars/compiler/code-gen.js
+index 43c0481..30c5af7 100644
+--- a/lib/handlebars/compiler/code-gen.js
++++ b/lib/handlebars/compiler/code-gen.js
+@@ -125,14 +125,12 @@ CodeGen.prototype = {
+   objectLiteral: function(obj) {
+     let pairs = [];
+ 
+-    for (let key in obj) {
+-      if (obj.hasOwnProperty(key)) {
+-        let value = castChunk(obj[key], this);
+-        if (value !== 'undefined') {
+-          pairs.push([this.quotedString(key), ':', value]);
+-        }
++    Object.keys(obj).forEach(key => {
++      let value = castChunk(obj[key], this);
++      if (value !== 'undefined') {
++        pairs.push([this.quotedString(key), ':', value]);
+       }
+-    }
++    });
+ 
+     let ret = this.generateList(pairs);
+     ret.prepend('{');
+diff --git a/lib/handlebars/compiler/compiler.js b/lib/handlebars/compiler/compiler.js
+index 894f7a7..b56ca5c 100644
+--- a/lib/handlebars/compiler/compiler.js
++++ b/lib/handlebars/compiler/compiler.js
+@@ -54,9 +54,7 @@ Compiler.prototype = {
+ 
+     options.blockParams = options.blockParams || [];
+ 
+-    // These changes will propagate to the other compiler components
+-    let knownHelpers = options.knownHelpers;
+-    options.knownHelpers = {
++    options.knownHelpers = extend(Object.create(null), {
+       'helperMissing': true,
+       'blockHelperMissing': true,
+       'each': true,
+@@ -65,15 +63,7 @@ Compiler.prototype = {
+       'with': true,
+       'log': true,
+       'lookup': true
+-    };
+-    if (knownHelpers) {
+-      // the next line should use "Object.keys", but the code has been like this a long time and changing it, might
+-      // cause backwards-compatibility issues... It's an old library...
+-      // eslint-disable-next-line guard-for-in
+-      for (let name in knownHelpers) {
+-          this.options.knownHelpers[name] = knownHelpers[name];
+-      }
+-    }
++    }, options.knownHelpers);
+ 
+     return this.accept(program);
+   },
+@@ -369,7 +359,6 @@ Compiler.prototype = {
+     if (isEligible && !isHelper) {
+       let name = sexpr.path.parts[0],
+           options = this.options;
+-
+       if (options.knownHelpers[name]) {
+         isHelper = true;
+       } else if (options.knownHelpersOnly) {
+diff --git a/lib/handlebars/compiler/javascript-compiler.js b/lib/handlebars/compiler/javascript-compiler.js
+index b21df1d..9a4c02d 100644
+--- a/lib/handlebars/compiler/javascript-compiler.js
++++ b/lib/handlebars/compiler/javascript-compiler.js
+@@ -2,6 +2,7 @@ import { COMPILER_REVISION, REVISION_CHANGES } from '../base';
+ import Exception from '../exception';
+ import {isArray} from '../utils';
+ import CodeGen from './code-gen';
++import {dangerousPropertyRegex} from '../helpers/lookup';
+ 
+ function Literal(value) {
+   this.value = value;
+@@ -13,9 +14,8 @@ JavaScriptCompiler.prototype = {
+   // PUBLIC API: You can override these methods in a subclass to provide
+   // alternative compiled forms for name lookup and buffering semantics
+   nameLookup: function(parent, name/* , type*/) {
+-    const isEnumerable = [ this.aliasable('container.propertyIsEnumerable'), '.call(', parent, ',"constructor")'];
+-
+-    if (name === 'constructor') {
++    if (dangerousPropertyRegex.test(name)) {
++      const isEnumerable = [ this.aliasable('container.propertyIsEnumerable'), '.call(', parent, ',', JSON.stringify(name), ')'];
+       return ['(', isEnumerable, '?', _actualLookup(), ' : undefined)'];
+     }
+     return _actualLookup();
+@@ -218,13 +218,13 @@ JavaScriptCompiler.prototype = {
+     // aliases will not be used, but this case is already being run on the client and
+     // we aren't concern about minimizing the template size.
+     let aliasCount = 0;
+-    for (let alias in this.aliases) { // eslint-disable-line guard-for-in
++    Object.keys(this.aliases).forEach(alias => {
+       let node = this.aliases[alias];
+-      if (this.aliases.hasOwnProperty(alias) && node.children && node.referenceCount > 1) {
++      if (node.children && node.referenceCount > 1) {
+         varDeclarations += ', alias' + (++aliasCount) + '=' + alias;
+         node.children[0] = 'alias' + aliasCount;
+       }
+-    }
++    });
+ 
+     let params = ['container', 'depth0', 'helpers', 'partials', 'data'];
+ 
+diff --git a/lib/handlebars/helpers/each.js b/lib/handlebars/helpers/each.js
+index ce549b5..8e57b77 100644
+--- a/lib/handlebars/helpers/each.js
++++ b/lib/handlebars/helpers/each.js
+@@ -62,18 +62,16 @@ export default function(instance) {
+       } else {
+         let priorKey;
+ 
+-        for (let key in context) {
+-          if (context.hasOwnProperty(key)) {
+-            // We're running the iterations one step out of sync so we can detect
+-            // the last iteration without have to scan the object twice and create
+-            // an itermediate keys array.
+-            if (priorKey !== undefined) {
+-              execIteration(priorKey, i - 1);
+-            }
+-            priorKey = key;
+-            i++;
++        Object.keys(context).forEach(key => {
++          // We're running the iterations one step out of sync so we can detect
++          // the last iteration without have to scan the object twice and create
++          // an itermediate keys array.
++          if (priorKey !== undefined) {
++            execIteration(priorKey, i - 1);
+           }
+-        }
++          priorKey = key;
++          i++;
++        });
+         if (priorKey !== undefined) {
+           execIteration(priorKey, i - 1, true);
+         }
+diff --git a/lib/handlebars/helpers/lookup.js b/lib/handlebars/helpers/lookup.js
+index 0654cc3..8c1b604 100644
+--- a/lib/handlebars/helpers/lookup.js
++++ b/lib/handlebars/helpers/lookup.js
+@@ -1,9 +1,11 @@
++export const dangerousPropertyRegex = /^(constructor|__defineGetter__|__defineSetter__|__lookupGetter__|__proto__)$/;
++
+ export default function(instance) {
+   instance.registerHelper('lookup', function(obj, field) {
+     if (!obj) {
+       return obj;
+     }
+-    if (String(field) === 'constructor' && !obj.propertyIsEnumerable(field)) {
++    if (dangerousPropertyRegex.test(String(field)) && !Object.prototype.propertyIsEnumerable.call(obj, field)) {
+       return undefined;
+     }
+     return obj[field];
+diff --git a/spec/compiler.js b/spec/compiler.js
+index 02dad67..3d37b59 100644
+--- a/spec/compiler.js
++++ b/spec/compiler.js
+@@ -59,7 +59,7 @@ describe('compiler', function() {
+         Handlebars.compile(' \n  {{#if}}\n{{/def}}')();
+         equal(true, false, 'Statement must throw exception. This line should not be executed.');
+       } catch (err) {
+-        equal(err.propertyIsEnumerable('column'), true, 'Checking error column');
++        equal(Object.prototype.propertyIsEnumerable.call(err, 'column'), true, 'Checking error column');
+       }
+     });
+ 
+diff --git a/spec/env/common.js b/spec/env/common.js
+index 3903e35..ac94218 100644
+--- a/spec/env/common.js
++++ b/spec/env/common.js
+@@ -142,24 +142,35 @@ HandlebarsTestBench.prototype.withMessage = function(message) {
+ };
+ 
+ HandlebarsTestBench.prototype.toCompileTo = function(expectedOutputAsString) {
++  expect(this._compileAndExeute()).to.equal(expectedOutputAsString);
++};
++
++// see chai "to.throw" (https://www.chaijs.com/api/bdd/#method_throw)
++HandlebarsTestBench.prototype.toThrow = function(errorLike, errMsgMatcher, msg) {
+   var self = this;
++  expect(function() {
++    self._compileAndExeute();
++  }).to.throw(errorLike, errMsgMatcher, msg);
++};
++
++HandlebarsTestBench.prototype._compileAndExeute = function() {
+   var compile = Object.keys(this.partials).length > 0
+       ? CompilerContext.compileWithPartial
+       : CompilerContext.compile;
+ 
++  var combinedRuntimeOptions = this._combineRuntimeOptions();
++
++  var template = compile(this.templateAsString, this.compileOptions);
++  return template(this.input, combinedRuntimeOptions);
++};
++
++HandlebarsTestBench.prototype._combineRuntimeOptions = function() {
++  var self = this;
+   var combinedRuntimeOptions = {};
+   Object.keys(this.runtimeOptions).forEach(function(key) {
+     combinedRuntimeOptions[key] = self.runtimeOptions[key];
+   });
+   combinedRuntimeOptions.helpers = this.helpers;
+   combinedRuntimeOptions.partials = this.partials;
+-
+-  var template = compile(this.templateAsString, this.compileOptions);
+-  var output = template(this.input, combinedRuntimeOptions);
+-
+-  if (output !== expectedOutputAsString) {
+-    // Error message formatted so that IntelliJ-Idea shows "diff"-button
+-    // https://stackoverflow.com/a/10945655/4251384
+-    throw new AssertError(this.message + '\nexpected:' + expectedOutputAsString + 'but was:' + output);
+-  }
++  return combinedRuntimeOptions;
+ };
+diff --git a/spec/regressions.js b/spec/regressions.js
+index a887906..74594de 100644
+--- a/spec/regressions.js
++++ b/spec/regressions.js
+@@ -211,12 +211,12 @@ describe('Regressions', function() {
+         // It's valid to execute a block against an undefined context, but
+         // helpers can not do so, so we expect to have an empty object here;
+         for (var name in this) {
+-          if (this.hasOwnProperty(name)) {
++          if (Object.prototype.hasOwnProperty.call(this, name)) {
+             return 'found';
+           }
+         }
+         // And to make IE happy, check for the known string as length is not enumerated.
+-        return (this == 'bat' ? 'found' : 'not');
++        return (this === 'bat' ? 'found' : 'not');
+       }
+     };
+ 
+diff --git a/spec/security.js b/spec/security.js
+index 876b672..18bfa5d 100644
+--- a/spec/security.js
++++ b/spec/security.js
+@@ -114,13 +114,31 @@ describe('security issues', function() {
+     describe('GH-1563', function() {
+         it('should not allow to access constructor after overriding via __defineGetter__', function() {
+             if (({}).__defineGetter__ == null || ({}).__lookupGetter__ == null) {
+-                return; // Browser does not support this exploit anyway
++                return this.skip(); // Browser does not support this exploit anyway
+             }
+-            shouldCompileTo('{{__defineGetter__ "undefined" valueOf }}' +
++            expectTemplate('{{__defineGetter__ "undefined" valueOf }}' +
+                 '{{#with __lookupGetter__ }}' +
+                 '{{__defineGetter__ "propertyIsEnumerable" (this.bind (this.bind 1)) }}' +
+                 '{{constructor.name}}' +
+-                '{{/with}}', {}, '');
++                '{{/with}}')
++                .withInput({})
++                .toThrow(/Missing helper: "__defineGetter__"/);
+         });
+     });
++
++    describe('GH-1595', function() {
++      it('properties, that are required to be enumerable', function() {
++        expectTemplate('{{constructor}}').withInput({}).toCompileTo('');
++        expectTemplate('{{__defineGetter__}}').withInput({}).toCompileTo('');
++        expectTemplate('{{__defineSetter__}}').withInput({}).toCompileTo('');
++        expectTemplate('{{__lookupGetter__}}').withInput({}).toCompileTo('');
++        expectTemplate('{{__proto__}}').withInput({}).toCompileTo('');
++
++        expectTemplate('{{lookup "constructor"}}').withInput({}).toCompileTo('');
++        expectTemplate('{{lookup "__defineGetter__"}}').withInput({}).toCompileTo('');
++        expectTemplate('{{lookup "__defineSetter__"}}').withInput({}).toCompileTo('');
++        expectTemplate('{{lookup "__lookupGetter__"}}').withInput({}).toCompileTo('');
++        expectTemplate('{{lookup "__proto__"}}').withInput({}).toCompileTo('');
++      });
++    });
+ });

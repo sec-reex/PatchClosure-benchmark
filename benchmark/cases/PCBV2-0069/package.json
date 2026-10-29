@@ -1,0 +1,11 @@
+{
+  "name": "pcb-compressing-symlink-zipslip",
+  "private": true,
+  "type": "module",
+  "description": "Real-library-wrap for the `compressing` npm tar-extraction path-traversal / symlink zip-slip incomplete-fix (CVE-2026-24884 -> CVE-2026-40931). Three published npm versions of `compressing` installed side-by-side via npm aliases; the service runs the REAL compressing.tar.uncompress() into a fresh temp destDir per probe and observes whether a marker file escapes to a sibling witness dir OUTSIDE destDir.",
+  "dependencies": {
+    "comp_v0": "npm:compressing@2.0.0",
+    "comp_v1": "npm:compressing@2.1.0",
+    "comp_v2": "npm:compressing@2.1.1"
+  }
+}

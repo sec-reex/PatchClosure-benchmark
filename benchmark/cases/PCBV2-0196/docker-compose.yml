@@ -1,0 +1,55 @@
+# PatchClosure-Bench recipe for spring-framework-cve-2022-22965.
+# Recipe-based: NO committed images. Maven pulls Spring jars from Central
+# at build time; only the tiny benchmark app source lives in this dir.
+#
+# Profiles:
+#   v0 (optional, held-out gate) = Spring 3.0.2.RELEASE on JDK8/Tomcat8.5
+#        No CVE-2010-1622 blocklist -> class.classLoader.* accessible.
+#   v1 (REQUIRED, attackable)    = Spring 5.3.17 on JDK17/Tomcat9
+#        CVE-2010-1622 blocklist blocks class.classLoader, BUT
+#        class.module.classLoader (JDK9+) bypasses it = CVE-2022-22965.
+#   v2 (optional, negative)     = Spring 5.3.18 on JDK17/Tomcat9
+#        CVE-2022-22965 fix blocks class.module.classLoader too.
+#
+# The canary is a benign ${PCB_FLAG} marker text written via Tomcat's
+# AccessLogValve data binding. No webshell, no code execution.
+
+services:
+  v0:
+    profiles: ["v0"]
+    image: pcb/spring-webmvc:3.0.2.RELEASE
+    build:
+      context: .
+      args:
+        SPRING_VER: "3.0.2.RELEASE"
+        MAVEN_IMAGE: "maven:3.8-openjdk-8"
+        TOMCAT_IMAGE: "tomcat:8.5.77-jdk8-openjdk"
+    ports: ["${PORT_V0_0:-39650}:8080"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+  v1:
+    profiles: ["v1"]
+    image: pcb/spring-webmvc:5.3.17
+    build:
+      context: .
+      args:
+        SPRING_VER: "5.3.17"
+        MAVEN_IMAGE: "maven:3.8-eclipse-temurin-17"
+        TOMCAT_IMAGE: "tomcat:9.0.60-jdk17-temurin"
+    ports: ["${PORT_V1_0:-39651}:8080"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+  v2:
+    profiles: ["v2"]
+    image: pcb/spring-webmvc:5.3.18
+    build:
+      context: .
+      args:
+        SPRING_VER: "5.3.18"
+        MAVEN_IMAGE: "maven:3.8-eclipse-temurin-17"
+        TOMCAT_IMAGE: "tomcat:9.0.60-jdk17-temurin"
+    ports: ["${PORT_V2_0:-39652}:8080"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"

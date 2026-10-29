@@ -1,0 +1,25 @@
+case_id: PCBV2-0204
+public_name: suitecrm-cve-2026-29103
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/salesagility/SuiteCRM.git
+  v0: "7.14.5"
+  v1: "7.15.0"
+service:
+  # Compose publishes ${PORT_V*_0}:80. start.sh waits for silent install + login.
+  # Platform must not HTTP-probe host :80.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

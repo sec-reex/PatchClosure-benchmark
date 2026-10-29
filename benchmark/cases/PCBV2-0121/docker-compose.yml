@@ -1,0 +1,93 @@
+services:
+  v0:
+    profiles: ["v0"]
+    container_name: pcb-gogs-v0
+    image: gogs/gogs:0.13.2
+    pull_policy: never
+    restart: unless-stopped
+    healthcheck:
+      # PatchClosure: `disable: true` makes gate.sh external deploy `up -d --wait` abort with
+      # "no healthcheck configured" before the oracle runs. gogs serves its install page (200) on
+      # :3000 at boot; a real check lets --wait block until the HTTP listener is up. gogs image is
+      # alpine (has wget).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+    ports: ["${PORT_V0_0:-23400}:3000", "${PORT_V0_1:-23410}:22"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /data/pcb
+        echo "$PCB_FLAG" > /data/pcb/flag.txt
+        chmod 644 /data/pcb/flag.txt
+        printf '#!/bin/sh\ncat /data/pcb/flag.txt > /tmp/pcb_result.txt\n' > /data/pcb/fsmon.sh
+        chmod 755 /data/pcb/fsmon.sh
+        exec /app/gogs/docker/start.sh /usr/bin/s6-svscan /app/gogs/docker/s6/
+
+  v1:
+    profiles: ["v1"]
+    container_name: pcb-gogs-v1
+    image: gogs/gogs:0.13.3
+    pull_policy: never
+    restart: unless-stopped
+    healthcheck:
+      # PatchClosure: `disable: true` makes gate.sh external deploy `up -d --wait` abort with
+      # "no healthcheck configured" before the oracle runs. gogs serves its install page (200) on
+      # :3000 at boot; a real check lets --wait block until the HTTP listener is up. gogs image is
+      # alpine (has wget).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+    ports: ["${PORT_V1_0:-23401}:3000", "${PORT_V1_1:-23411}:22"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /data/pcb
+        echo "$PCB_FLAG" > /data/pcb/flag.txt
+        chmod 644 /data/pcb/flag.txt
+        printf '#!/bin/sh\ncat /data/pcb/flag.txt > /tmp/pcb_result.txt\n' > /data/pcb/fsmon.sh
+        chmod 755 /data/pcb/fsmon.sh
+        exec /app/gogs/docker/start.sh /usr/bin/s6-svscan /app/gogs/docker/s6/
+
+  v2:
+    profiles: ["v2"]
+    container_name: pcb-gogs-v2
+    image: gogs/gogs:0.13.4
+    pull_policy: never
+    restart: unless-stopped
+    healthcheck:
+      # PatchClosure: `disable: true` makes gate.sh external deploy `up -d --wait` abort with
+      # "no healthcheck configured" before the oracle runs. gogs serves its install page (200) on
+      # :3000 at boot; a real check lets --wait block until the HTTP listener is up. gogs image is
+      # alpine (has wget).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+    ports: ["${PORT_V2_0:-23402}:3000", "${PORT_V2_1:-23412}:22"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /data/pcb
+        echo "$PCB_FLAG" > /data/pcb/flag.txt
+        chmod 644 /data/pcb/flag.txt
+        printf '#!/bin/sh\ncat /data/pcb/flag.txt > /tmp/pcb_result.txt\n' > /data/pcb/fsmon.sh
+        chmod 755 /data/pcb/fsmon.sh
+        exec /app/gogs/docker/start.sh /usr/bin/s6-svscan /app/gogs/docker/s6/
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.122.0/24

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PersistentManager + FileStore configuration for PatchClosure-Bench.
+  The store directory is intentionally named "sessions" so that a sibling
+  directory "sessions-extra" can exploit the String.startsWith() check
+  present in Tomcat 9.0.35-9.0.41 (CVE-2021-25329).
+-->
+<Context>
+    <Manager className="org.apache.catalina.session.PersistentManager"
+             maxIdleBackup="1">
+        <Store className="org.apache.catalina.session.FileStore"
+               directory="/usr/local/tomcat/sessions"/>
+    </Manager>
+</Context>

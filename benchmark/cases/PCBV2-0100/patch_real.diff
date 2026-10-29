@@ -1,0 +1,28 @@
+# CVE-2021-26295
+# upstream: https://github.com/apache/ofbiz-framework
+# fix: 00200bfaca296991a6d1925423c71d74842882b0 (17.12.06 / OFBIZ-12167)
+diff --git a/framework/base/src/main/java/org/apache/ofbiz/base/util/SafeObjectInputStream.java b/framework/base/src/main/java/org/apache/ofbiz/base/util/SafeObjectInputStream.java
+index d50cfbf11fc..a24e027701e 100644
+--- a/framework/base/src/main/java/org/apache/ofbiz/base/util/SafeObjectInputStream.java
++++ b/framework/base/src/main/java/org/apache/ofbiz/base/util/SafeObjectInputStream.java
+@@ -63,9 +63,18 @@ public SafeObjectInputStream(InputStream in) throws IOException {
+ 
+     @Override
+     protected Class<?> resolveClass(ObjectStreamClass classDesc) throws IOException, ClassNotFoundException {
+-        if (!whitelistPattern.matcher(classDesc.getName()).find()) {
++        String className = classDesc.getName();
++        // BlackList exploits; eg: don't allow RMI here
++        if (className.contains("java.rmi.server")) {
++            Debug.logWarning("***Incompatible class***: "
++                    + classDesc.getName()
++                    + ". java.rmi.server classes are not allowed for security reason",
++                    "SafeObjectInputStream");
++            return null;
++        }
++        if (!whitelistPattern.matcher(className).find()) {
+             // DiskFileItem, FileItemHeadersImpl are not serializable.
+-            if (classDesc.getName().contains("org.apache.commons.fileupload")) {
++            if (className.contains("org.apache.commons.fileupload")) {
+                 return null;
+             }
+             Debug.logWarning("***Incompatible class***: "

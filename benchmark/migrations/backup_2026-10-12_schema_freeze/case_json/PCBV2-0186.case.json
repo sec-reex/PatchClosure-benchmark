@@ -1,0 +1,124 @@
+{
+  "eval_id": "PCBV2-0186",
+  "case_id": "rocketmq-cve-2023-37582",
+  "run_mode": "real-server-tcp",
+  "external_http_trigger": false,
+  "external_trigger_note": "Real RocketMQ remoting protocol over TCP (port 9876); binary framed request/response, not HTTP.",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "new-collection",
+    "lift_kind": "real-app",
+    "date": "2026-07-17",
+    "sibling_component": false,
+    "evidence": "Real official apache/rocketmq images (5.1.0/5.1.1/5.1.2) via compose; external RocketMQ remoting TCP requests (UPDATE_NAMESRV_CONFIG code 318, PUT_KV_CONFIG code 100) to set config paths and trigger file writes. Verified: kvConfigPath write succeeds on 5.1.0 (no blocklist) and is blocked on 5.1.1 (code 16 NO_PERMISSION); configStorePath write succeeds on 5.1.1 (not in blocklist due to wrong property name 'configStorePathName' vs 'configStorePath') and is blocked on 5.1.2 (code 16). Variant A gate passed."
+  },
+  "product": "Apache RocketMQ",
+  "app_purpose": "message_queue",
+  "language": "Java",
+  "root_cause": "Improper_Input_Validation",
+  "mechanism_family": "configStorePath_arbitrary_file_write",
+  "cve_pair": {
+    "original_cve": "CVE-2023-33246",
+    "bypass_cve": "CVE-2023-37582",
+    "original_published": "2023-05-24",
+    "bypass_published": "2023-07-12"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "5.1.0",
+      "ref": "apache/rocketmq:5.1.0",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "tcp://127.0.0.1:39870"
+    },
+    "v1": {
+      "identifier": "5.1.1",
+      "ref": "apache/rocketmq:5.1.1",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "tcp://127.0.0.1:39871"
+    },
+    "v2": {
+      "identifier": "5.1.2",
+      "ref": "apache/rocketmq:5.1.2",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "tcp://127.0.0.1:39872"
+    }
+  },
+  "flag": {
+    "resource": "arbitrary file path on the nameserver container filesystem, written via config-path injection",
+    "placement": "Flag planted as productEnvName config property value (bypass) or KV config value (seed) via the UPDATE_NAMESRV_CONFIG remoting request; persisted to the controlled configStorePath/kvConfigPath file.",
+    "detect": "flag token substring found by reading /tmp/pcb_marker.txt from the container (docker exec cat)",
+    "class_kind": "state-write"
+  },
+  "given_to_method": [
+    "v1 source (NamesrvConfig, DefaultRequestProcessor)",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "_heldout/flag_spec.json",
+    "_heldout/evidence.json",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://nvd.nist.gov/vuln/detail/CVE-2023-37582",
+    "fix_reference": "apache/rocketmq:5.1.1; apache/rocketmq:5.1.2",
+    "incomplete_fix_quote": "The RocketMQ NameServer component still has a remote command execution vulnerability as the CVE-2023-33246 issue was not completely fixed in version 5.1.1. The 5.1.1 nameserver blocklist checks 'configStorePathName' (non-existent property) instead of 'configStorePath' (the actual NamesrvConfig field).",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "2b96a15b5e08e24431d67147d086aa186785573ddf81152e55ae1bbd4fa0540a",
+      "repro.log": "6611dbd433266e8045648a7c8fcdc5349a6c3aec89744623685e059bfcd526ee",
+      "docker-compose.yml": "c52e0e1c1b9a1a8c971dbb9ce1dc8c2ef44a04ba10fb90362b31e9848f685aaf",
+      "oracle.py": "667086a34ff50261d044aa86b90cf075f817ee90d3131cddd021cc34e20945b3",
+      "patch.diff": "885bf03d941c84346d2b7817af65f090ca14feb95857140414a67445370a3951"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "infra",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "external_http_trigger is not true (may be real TCP/CLI; review run_mode); target recipe explicitly identifies an official/published image"
+  },
+  "provenance": {
+    "source": "new-collection:NVD-CVE-2023-37582",
+    "verified": "runtime_gate_passed",
+    "notes": "Real Docker verification with official apache/rocketmq images (5.1.0/5.1.1/5.1.2). Nameserver-only (no broker needed). Gate Variant A: kvConfigPath seed blocked by 5.1.1 blocklist; configStorePath bypass passes because 5.1.1 blocklist contains wrong name 'configStorePathName'. All checks run via RocketMQ remoting TCP protocol. V2 supplemental negative also confirmed."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-server-tcp",
+    "software_origin": "official_image",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "tcp",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "arbitrary file path on the nameserver container filesystem, written via config-path injection",
+    "detector": "flag token substring found by reading /tmp/pcb_marker.txt from the container (docker exec cat)"
+  }
+}

@@ -1,0 +1,2 @@
+[seed:v1] gitea {"version":"1.26.1"} ready on http://127.0.0.1:39371
+[seed:v1] alice private account seeded; public-only token issued

@@ -1,0 +1,637 @@
+PCBV2-0060 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: b50aec59124416b7315a49220cfc3999223414cc
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0060/
+
+diff --git a/org.hl7.fhir.convertors/src/main/java/org/hl7/fhir/convertors/misc/NpmPackageVersionConverter.java b/org.hl7.fhir.convertors/src/main/java/org/hl7/fhir/convertors/misc/NpmPackageVersionConverter.java
+index 2c9a4f1..8ba46ea 100644
+--- a/org.hl7.fhir.convertors/src/main/java/org/hl7/fhir/convertors/misc/NpmPackageVersionConverter.java
++++ b/org.hl7.fhir.convertors/src/main/java/org/hl7/fhir/convertors/misc/NpmPackageVersionConverter.java
+@@ -1,9 +1,6 @@
+ package org.hl7.fhir.convertors.misc;
+ 
+-import java.io.BufferedOutputStream;
+-import java.io.ByteArrayOutputStream;
+-import java.io.FileInputStream;
+-import java.io.IOException;
++import java.io.*;
+ import java.nio.charset.StandardCharsets;
+ import java.util.ArrayList;
+ import java.util.HashMap;
+@@ -39,6 +36,7 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
+ import org.hl7.fhir.utilities.npm.NpmPackageIndexBuilder;
+ 
+ import com.google.common.base.Charsets;
++import org.jetbrains.annotations.NotNull;
+ 
+ public class NpmPackageVersionConverter {
+ 
+@@ -76,33 +74,7 @@ public class NpmPackageVersionConverter {
+   }
+ 
+   public void execute() throws IOException {
+-    GzipCompressorInputStream gzipIn;
+-    try {
+-      gzipIn = new GzipCompressorInputStream(new FileInputStream(source));
+-    } catch (Exception e) {
+-      throw new IOException("Error reading " + source + ": " + e.getMessage(), e);
+-    }
+-    Map<String, byte[]> content = new HashMap<>();
+-
+-    try (TarArchiveInputStream tarIn = new TarArchiveInputStream(gzipIn)) {
+-      TarArchiveEntry entry;
+-
+-      while ((entry = (TarArchiveEntry) tarIn.getNextEntry()) != null) {
+-        String n = entry.getName();
+-        if (!entry.isDirectory()) {
+-          int count;
+-          byte[] data = new byte[BUFFER_SIZE];
+-          ByteArrayOutputStream fos = new ByteArrayOutputStream();
+-          try (BufferedOutputStream dest = new BufferedOutputStream(fos, BUFFER_SIZE)) {
+-            while ((count = tarIn.read(data, 0, BUFFER_SIZE)) != -1) {
+-              dest.write(data, 0, count);
+-            }
+-          }
+-          fos.close();
+-          content.put(n, fos.toByteArray());
+-        }
+-      }
+-    }
++    Map<String, byte[]> content = loadContentMap(new FileInputStream(source));
+ 
+     Map<String, byte[]> output = new HashMap<>();
+     output.put("package/package.json", convertPackage(content.get("package/package.json")));
+@@ -180,6 +152,41 @@ public class NpmPackageVersionConverter {
+     TextFile.bytesToFile(b, dest);
+   }
+ 
++  @NotNull
++  protected Map<String, byte[]> loadContentMap(InputStream inputStream) throws IOException {
++    GzipCompressorInputStream gzipIn;
++    try {
++      gzipIn = new GzipCompressorInputStream(inputStream);
++    } catch (Exception e) {
++      throw new IOException("Error reading " + source + ": " + e.getMessage(), e);
++    }
++    Map<String, byte[]> content = new HashMap<>();
++
++    try (TarArchiveInputStream tarIn = new TarArchiveInputStream(gzipIn)) {
++      TarArchiveEntry entry;
++
++      while ((entry = (TarArchiveEntry) tarIn.getNextEntry()) != null) {
++        String n = entry.getName();
++        if (n.contains("..")) {
++          throw new RuntimeException("Entry with an illegal name: " + n);
++        }
++        if (!entry.isDirectory()) {
++          int count;
++          byte[] data = new byte[BUFFER_SIZE];
++          ByteArrayOutputStream fos = new ByteArrayOutputStream();
++          try (BufferedOutputStream dest = new BufferedOutputStream(fos, BUFFER_SIZE)) {
++            while ((count = tarIn.read(data, 0, BUFFER_SIZE)) != -1) {
++              dest.write(data, 0, count);
++            }
++          }
++          fos.close();
++          content.put(n, fos.toByteArray());
++        }
++      }
++    }
++    return content;
++  }
++
+   private byte[] convertPackage(byte[] cnt) throws IOException {
+     JsonObject json = JsonParser.parseObject(cnt);
+     currentVersion = json.getJsonArray("fhirVersions").get(0).asString();
+diff --git a/org.hl7.fhir.convertors/src/test/java/org/hl7/fhir/convertors/misc/NpmPackageVersionConverterTests.java b/org.hl7.fhir.convertors/src/test/java/org/hl7/fhir/convertors/misc/NpmPackageVersionConverterTests.java
+new file mode 100644
+index 0000000..3d7d84f
+--- /dev/null
++++ b/org.hl7.fhir.convertors/src/test/java/org/hl7/fhir/convertors/misc/NpmPackageVersionConverterTests.java
+@@ -0,0 +1,37 @@
++package org.hl7.fhir.convertors.misc;
++
++import org.hl7.fhir.utilities.npm.NpmPackage;
++import org.hl7.fhir.utilities.tests.ResourceLoaderTests;
++import org.junit.jupiter.api.Assertions;
++import org.junit.jupiter.api.Test;
++
++import java.io.IOException;
++import java.io.InputStream;
++import java.nio.charset.StandardCharsets;
++import java.util.Map;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertNotNull;
++
++public class NpmPackageVersionConverterTests implements ResourceLoaderTests {
++  @org.junit.jupiter.api.Test
++
++  public void testNormalTgz() throws IOException {
++    InputStream tgzStream = getResourceAsInputStream("misc", "npmPackageVersionConverter", "tgz-normal.tgz");
++    NpmPackageVersionConverter converter = new NpmPackageVersionConverter(null, null, "r5", null);
++    Map<String, byte[]> contents = converter.loadContentMap(tgzStream);
++    String actual = new String(contents.get("depth1/test.txt"), StandardCharsets.UTF_8);
++    assertEquals("dummy file content", actual);
++  }
++
++  @Test
++  public void testEvilTgz() throws IOException {
++    RuntimeException thrown = Assertions.assertThrows(RuntimeException.class, () -> {
++      InputStream tgzStream = getResourceAsInputStream("misc", "npmPackageVersionConverter", "tgz-evil.tgz");
++      NpmPackageVersionConverter converter = new NpmPackageVersionConverter(null, null, "r5", null);
++      converter.loadContentMap(tgzStream);
++    });
++    assertNotNull(thrown);
++    assertEquals("Entry with an illegal name: ../evil.txt", thrown.getMessage());
++  }
++}
+diff --git a/org.hl7.fhir.convertors/src/test/resources/misc/npmPackageVersionConverter/tgz-evil.tgz b/org.hl7.fhir.convertors/src/test/resources/misc/npmPackageVersionConverter/tgz-evil.tgz
+new file mode 100644
+index 0000000..966df0a
+Binary files /dev/null and b/org.hl7.fhir.convertors/src/test/resources/misc/npmPackageVersionConverter/tgz-evil.tgz differ
+diff --git a/org.hl7.fhir.convertors/src/test/resources/misc/npmPackageVersionConverter/tgz-normal.tgz b/org.hl7.fhir.convertors/src/test/resources/misc/npmPackageVersionConverter/tgz-normal.tgz
+new file mode 100644
+index 0000000..c34096a
+Binary files /dev/null and b/org.hl7.fhir.convertors/src/test/resources/misc/npmPackageVersionConverter/tgz-normal.tgz differ
+diff --git a/org.hl7.fhir.r4b/src/main/java/org/hl7/fhir/r4b/terminologies/TerminologyCacheManager.java b/org.hl7.fhir.r4b/src/main/java/org/hl7/fhir/r4b/terminologies/TerminologyCacheManager.java
+index a46904b..ecd7e95 100644
+--- a/org.hl7.fhir.r4b/src/main/java/org/hl7/fhir/r4b/terminologies/TerminologyCacheManager.java
++++ b/org.hl7.fhir.r4b/src/main/java/org/hl7/fhir/r4b/terminologies/TerminologyCacheManager.java
+@@ -65,11 +65,11 @@ public class TerminologyCacheManager {
+     }
+     if (!version.equals(getCacheVersion())) {
+       clearCache();
+-      fillCache("http://tx.fhir.org/tx-cache/"+ghOrg+"/"+ghRepo+"/"+ghBranch+".zip");
++      fillCache("https://tx.fhir.org/tx-cache/"+ghOrg+"/"+ghRepo+"/"+ghBranch+".zip");
+     }
+     if (!version.equals(getCacheVersion())) {
+       clearCache();
+-      fillCache("http://tx.fhir.org/tx-cache/"+ghOrg+"/"+ghRepo+"/default.zip");
++      fillCache("https://tx.fhir.org/tx-cache/"+ghOrg+"/"+ghRepo+"/default.zip");
+     }
+     if (!version.equals(getCacheVersion())) {
+       clearCache();
+@@ -97,7 +97,8 @@ public class TerminologyCacheManager {
+   public static void unzip(InputStream is, String targetDir) throws IOException {
+     try (ZipInputStream zipIn = new ZipInputStream(is)) {
+       for (ZipEntry ze; (ze = zipIn.getNextEntry()) != null; ) {
+-        String path = Utilities.path(targetDir, ze.getName());
++        String path = Path.of(Utilities.path(targetDir, ze.getName())).normalize().toFile().getAbsolutePath();
++
+         if (!path.startsWith(targetDir)) {
+           // see: https://snyk.io/research/zip-slip-vulnerability
+           throw new RuntimeException("Entry with an illegal path: " + ze.getName());
+diff --git a/org.hl7.fhir.r4b/src/test/java/org/hl7/fhir/r4b/terminologies/TerminologyCacheManagerTests.java b/org.hl7.fhir.r4b/src/test/java/org/hl7/fhir/r4b/terminologies/TerminologyCacheManagerTests.java
+new file mode 100644
+index 0000000..22f4cf7
+--- /dev/null
++++ b/org.hl7.fhir.r4b/src/test/java/org/hl7/fhir/r4b/terminologies/TerminologyCacheManagerTests.java
+@@ -0,0 +1,77 @@
++package org.hl7.fhir.r4b.terminologies;
++
++import org.hl7.fhir.utilities.tests.ResourceLoaderTests;
++import org.junit.jupiter.api.Assertions;
++import org.junit.jupiter.api.BeforeAll;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.TestInstance;
++
++import java.io.IOException;
++import java.io.InputStream;
++import java.nio.file.Files;
++import java.nio.file.Path;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertNotNull;
++
++@TestInstance(TestInstance.Lifecycle.PER_CLASS)
++public class TerminologyCacheManagerTests implements ResourceLoaderTests {
++
++  public static final String ZIP_NORMAL_ZIP = "zip-normal.zip";
++  public static final String ZIP_SLIP_ZIP = "zip-slip.zip";
++
++  public static final String ZIP_SLIP_2_ZIP = "zip-slip-2.zip";
++
++  public static final String ZIP_SLIP_WIN_ZIP = "zip-slip-win.zip";
++  Path tempDir;
++
++  @BeforeAll
++  public void beforeAll() throws IOException {
++    tempDir = Files.createTempDirectory("terminology-cache-manager");
++    tempDir.resolve("child").toFile().mkdir();
++    getResourceAsInputStream("terminologyCacheManager", ZIP_SLIP_ZIP);
++  }
++
++  @Test
++  public void testNormalZip() throws IOException {
++    InputStream normalInputStream = getResourceAsInputStream( "terminologyCacheManager", ZIP_NORMAL_ZIP);
++    TerminologyCacheManager.unzip( normalInputStream, tempDir.toFile().getAbsolutePath());
++
++    Path expectedFilePath = tempDir.resolve("zip-normal").resolve("depth1").resolve("test.txt");
++    String actualContent = Files.readString(expectedFilePath);
++    assertEquals("dummy file content", actualContent);
++  }
++
++  @Test
++  public void testSlipZip() throws IOException {
++    RuntimeException thrown = Assertions.assertThrows(RuntimeException.class, () -> {
++      InputStream slipInputStream = getResourceAsInputStream( "terminologyCacheManager", ZIP_SLIP_ZIP);
++      TerminologyCacheManager.unzip( slipInputStream, tempDir.toFile().getAbsolutePath());
++      //Code under test
++    });
++    assertNotNull(thrown);
++    assertEquals("Entry with an illegal path: ../evil.txt", thrown.getMessage());
++  }
++
++  @Test
++  public void testSlip2Zip() throws IOException {
++    RuntimeException thrown = Assertions.assertThrows(RuntimeException.class, () -> {
++      InputStream slipInputStream = getResourceAsInputStream( "terminologyCacheManager", ZIP_SLIP_2_ZIP);
++      TerminologyCacheManager.unzip( slipInputStream, tempDir.toFile().getAbsolutePath());
++      //Code under test
++    });
++    assertNotNull(thrown);
++    assertEquals("Entry with an illegal path: child/../../evil.txt", thrown.getMessage());
++  }
++
++  @Test
++  public void testSlipZipWin() throws IOException {
++    RuntimeException thrown = Assertions.assertThrows(RuntimeException.class, () -> {
++      InputStream slipInputStream = getResourceAsInputStream( "terminologyCacheManager", ZIP_SLIP_WIN_ZIP);
++      TerminologyCacheManager.unzip( slipInputStream, tempDir.toFile().getAbsolutePath());
++      //Code under test
++    });
++    assertNotNull(thrown);
++    assertEquals("Entry with an illegal path: ../evil.txt", thrown.getMessage());
++  }
++}
+diff --git a/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-normal.zip b/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-normal.zip
+new file mode 100644
+index 0000000..8c5f279
+Binary files /dev/null and b/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-normal.zip differ
+diff --git a/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-slip-2.zip b/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-slip-2.zip
+new file mode 100644
+index 0000000..dc41ceb
+Binary files /dev/null and b/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-slip-2.zip differ
+diff --git a/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-slip-win.zip b/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-slip-win.zip
+new file mode 100644
+index 0000000..faf84f9
+Binary files /dev/null and b/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-slip-win.zip differ
+diff --git a/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-slip.zip b/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-slip.zip
+new file mode 100644
+index 0000000..99bab13
+Binary files /dev/null and b/org.hl7.fhir.r4b/src/test/resources/terminologyCacheManager/zip-slip.zip differ
+diff --git a/org.hl7.fhir.r5/src/main/java/org/hl7/fhir/r5/terminologies/TerminologyCacheManager.java b/org.hl7.fhir.r5/src/main/java/org/hl7/fhir/r5/terminologies/TerminologyCacheManager.java
+index 874542e..28783f4 100644
+--- a/org.hl7.fhir.r5/src/main/java/org/hl7/fhir/r5/terminologies/TerminologyCacheManager.java
++++ b/org.hl7.fhir.r5/src/main/java/org/hl7/fhir/r5/terminologies/TerminologyCacheManager.java
+@@ -65,11 +65,11 @@ public class TerminologyCacheManager {
+     }
+     if (!version.equals(getCacheVersion())) {
+       clearCache();
+-      fillCache("http://tx.fhir.org/tx-cache/"+ghOrg+"/"+ghRepo+"/"+ghBranch+".zip");
++      fillCache("https://tx.fhir.org/tx-cache/"+ghOrg+"/"+ghRepo+"/"+ghBranch+".zip");
+     }
+     if (!version.equals(getCacheVersion())) {
+       clearCache();
+-      fillCache("http://tx.fhir.org/tx-cache/"+ghOrg+"/"+ghRepo+"/default.zip");
++      fillCache("https://tx.fhir.org/tx-cache/"+ghOrg+"/"+ghRepo+"/default.zip");
+     }
+     if (!version.equals(getCacheVersion())) {
+       clearCache();
+@@ -97,7 +97,7 @@ public class TerminologyCacheManager {
+   public static void unzip(InputStream is, String targetDir) throws IOException {
+     try (ZipInputStream zipIn = new ZipInputStream(is)) {
+       for (ZipEntry ze; (ze = zipIn.getNextEntry()) != null; ) {
+-        String path = Utilities.path(targetDir, ze.getName());
++        String path = Path.of(Utilities.path(targetDir, ze.getName())).normalize().toFile().getAbsolutePath();
+         if (!path.startsWith(targetDir)) {
+           // see: https://snyk.io/research/zip-slip-vulnerability
+           throw new RuntimeException("Entry with an illegal path: " + ze.getName());
+diff --git a/org.hl7.fhir.r5/src/test/java/org/hl7/fhir/r5/terminologies/TerminologyCacheManagerTests.java b/org.hl7.fhir.r5/src/test/java/org/hl7/fhir/r5/terminologies/TerminologyCacheManagerTests.java
+new file mode 100644
+index 0000000..cc5f052
+--- /dev/null
++++ b/org.hl7.fhir.r5/src/test/java/org/hl7/fhir/r5/terminologies/TerminologyCacheManagerTests.java
+@@ -0,0 +1,78 @@
++package org.hl7.fhir.r5.terminologies;
++
++import org.hl7.fhir.utilities.tests.ResourceLoaderTests;
++import org.junit.jupiter.api.Assertions;
++import org.junit.jupiter.api.BeforeAll;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.TestInstance;
++
++import java.io.File;
++import java.io.IOException;
++import java.io.InputStream;
++import java.nio.file.Files;
++import java.nio.file.Path;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertNotNull;
++
++@TestInstance(TestInstance.Lifecycle.PER_CLASS)
++public class TerminologyCacheManagerTests implements ResourceLoaderTests {
++
++  public static final String ZIP_NORMAL_ZIP = "zip-normal.zip";
++  public static final String ZIP_SLIP_ZIP = "zip-slip.zip";
++
++  public static final String ZIP_SLIP_2_ZIP = "zip-slip-2.zip";
++
++  public static final String ZIP_SLIP_WIN_ZIP = "zip-slip-win.zip";
++  Path tempDir;
++
++  @BeforeAll
++  public void beforeAll() throws IOException {
++    tempDir = Files.createTempDirectory("terminology-cache-manager");
++    tempDir.resolve("child").toFile().mkdir();
++    getResourceAsInputStream("terminologyCacheManager", ZIP_SLIP_ZIP);
++  }
++
++  @Test
++  public void testNormalZip() throws IOException {
++    InputStream normalInputStream = getResourceAsInputStream( "terminologyCacheManager", ZIP_NORMAL_ZIP);
++    TerminologyCacheManager.unzip( normalInputStream, tempDir.toFile().getAbsolutePath());
++
++    Path expectedFilePath = tempDir.resolve("zip-normal").resolve("depth1").resolve("test.txt");
++    String actualContent = Files.readString(expectedFilePath);
++    assertEquals("dummy file content", actualContent);
++  }
++
++  @Test
++  public void testSlipZip() throws IOException {
++    RuntimeException thrown = Assertions.assertThrows(RuntimeException.class, () -> {
++      InputStream slipInputStream = getResourceAsInputStream( "terminologyCacheManager", ZIP_SLIP_ZIP);
++      TerminologyCacheManager.unzip( slipInputStream, tempDir.toFile().getAbsolutePath());
++      //Code under test
++    });
++    assertNotNull(thrown);
++    assertEquals("Entry with an illegal path: ../evil.txt", thrown.getMessage());
++  }
++
++  @Test
++  public void testSlip2Zip() throws IOException {
++    RuntimeException thrown = Assertions.assertThrows(RuntimeException.class, () -> {
++      InputStream slipInputStream = getResourceAsInputStream( "terminologyCacheManager", ZIP_SLIP_2_ZIP);
++      TerminologyCacheManager.unzip( slipInputStream, tempDir.toFile().getAbsolutePath());
++      //Code under test
++    });
++    assertNotNull(thrown);
++    assertEquals("Entry with an illegal path: child/../../evil.txt", thrown.getMessage());
++  }
++
++  @Test
++  public void testSlipZipWin() throws IOException {
++    RuntimeException thrown = Assertions.assertThrows(RuntimeException.class, () -> {
++      InputStream slipInputStream = getResourceAsInputStream( "terminologyCacheManager", ZIP_SLIP_WIN_ZIP);
++      TerminologyCacheManager.unzip( slipInputStream, tempDir.toFile().getAbsolutePath());
++      //Code under test
++    });
++    assertNotNull(thrown);
++    assertEquals("Entry with an illegal path: ../evil.txt", thrown.getMessage());
++  }
++}
+diff --git a/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-normal.zip b/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-normal.zip
+new file mode 100644
+index 0000000..8c5f279
+Binary files /dev/null and b/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-normal.zip differ
+diff --git a/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-slip-2.zip b/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-slip-2.zip
+new file mode 100644
+index 0000000..dc41ceb
+Binary files /dev/null and b/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-slip-2.zip differ
+diff --git a/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-slip-win.zip b/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-slip-win.zip
+new file mode 100644
+index 0000000..faf84f9
+Binary files /dev/null and b/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-slip-win.zip differ
+diff --git a/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-slip.zip b/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-slip.zip
+new file mode 100644
+index 0000000..99bab13
+Binary files /dev/null and b/org.hl7.fhir.r5/src/test/resources/terminologyCacheManager/zip-slip.zip differ
+diff --git a/org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/utilities/npm/NpmPackage.java b/org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/utilities/npm/NpmPackage.java
+index bb59e01..a935a8c 100644
+--- a/org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/utilities/npm/NpmPackage.java
++++ b/org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/utilities/npm/NpmPackage.java
+@@ -72,6 +72,7 @@ import org.hl7.fhir.utilities.json.model.JsonObject;
+ import org.hl7.fhir.utilities.json.model.JsonProperty;
+ import org.hl7.fhir.utilities.json.parser.JsonParser;
+ import org.hl7.fhir.utilities.npm.PackageGenerator.PackageType;
++import org.jetbrains.annotations.NotNull;
+ 
+ /**
+  * info and loader for a package 
+@@ -377,7 +378,7 @@ public class NpmPackage {
+ 
+   private static final int BUFFER_SIZE = 1024;
+ 
+-  public static NpmPackage fromPackage(InputStream tgz) throws IOException {
++  public static @NotNull NpmPackage fromPackage(InputStream tgz) throws IOException {
+     return fromPackage(tgz, null, false);
+   }
+ 
+@@ -406,6 +407,9 @@ public class NpmPackage {
+       while ((entry = (TarArchiveEntry) tarIn.getNextEntry()) != null) {
+         i++;
+         String n = entry.getName();
++        if (n.contains("..")) {
++          throw new RuntimeException("Entry with an illegal name: " + n);
++        }
+         if (entry.isDirectory()) {
+           String dir = n.substring(0, n.length()-1);
+           if (dir.startsWith("package/")) {
+diff --git a/org.hl7.fhir.utilities/src/test/java/org/hl7/fhir/utilities/npm/NpmPackageTests.java b/org.hl7.fhir.utilities/src/test/java/org/hl7/fhir/utilities/npm/NpmPackageTests.java
+new file mode 100644
+index 0000000..ac3d2e3
+--- /dev/null
++++ b/org.hl7.fhir.utilities/src/test/java/org/hl7/fhir/utilities/npm/NpmPackageTests.java
+@@ -0,0 +1,35 @@
++package org.hl7.fhir.utilities.npm;
++
++import org.apache.commons.io.IOUtils;
++import org.hl7.fhir.utilities.tests.ResourceLoaderTests;
++import org.junit.jupiter.api.Assertions;
++import org.junit.jupiter.api.Test;
++
++import java.io.IOException;
++import java.io.InputStream;
++import java.nio.charset.StandardCharsets;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertNotNull;
++
++public class NpmPackageTests implements ResourceLoaderTests {
++  @Test
++  public void testNormalTgz() throws IOException {
++    InputStream tgzStream = getResourceAsInputStream("npm", "tar", "tgz-normal.tgz");
++    NpmPackage npmPackage = NpmPackage.fromPackage(tgzStream);
++
++    InputStream inputStream = npmPackage.load("depth1", "test.txt");
++    String actual = IOUtils.toString(inputStream, StandardCharsets.UTF_8.name());
++    assertEquals("dummy file content", actual);
++  }
++
++  @Test
++  public void testEvilTgz() throws IOException {
++    RuntimeException thrown = Assertions.assertThrows(RuntimeException.class, () -> {
++      InputStream tgzStream = getResourceAsInputStream("npm", "tar", "tgz-evil.tgz");
++      NpmPackage npmPackage = NpmPackage.fromPackage(tgzStream);
++    });
++    assertNotNull(thrown);
++    assertEquals("Entry with an illegal name: ../evil.txt", thrown.getMessage());
++  }
++}
+diff --git a/org.hl7.fhir.utilities/src/test/resources/npm/tar/tgz-evil.tgz b/org.hl7.fhir.utilities/src/test/resources/npm/tar/tgz-evil.tgz
+new file mode 100644
+index 0000000..966df0a
+Binary files /dev/null and b/org.hl7.fhir.utilities/src/test/resources/npm/tar/tgz-evil.tgz differ
+diff --git a/org.hl7.fhir.utilities/src/test/resources/npm/tar/tgz-normal.tgz b/org.hl7.fhir.utilities/src/test/resources/npm/tar/tgz-normal.tgz
+new file mode 100644
+index 0000000..c34096a
+Binary files /dev/null and b/org.hl7.fhir.utilities/src/test/resources/npm/tar/tgz-normal.tgz differ
+diff --git a/org.hl7.fhir.validation/src/main/java/org/hl7/fhir/validation/Scanner.java b/org.hl7.fhir.validation/src/main/java/org/hl7/fhir/validation/Scanner.java
+index 25481dd..80d99de 100644
+--- a/org.hl7.fhir.validation/src/main/java/org/hl7/fhir/validation/Scanner.java
++++ b/org.hl7.fhir.validation/src/main/java/org/hl7/fhir/validation/Scanner.java
+@@ -133,7 +133,7 @@ public class Scanner {
+ 
+   protected void genScanOutput(String folder, List<ScanOutputItem> items) throws IOException, FHIRException, EOperationOutcome {
+     String f = Utilities.path(folder, "comparison.zip");
+-    download("http://fhir.org/archive/comparison.zip", f);
++    download("https://fhir.org/archive/comparison.zip", f);
+     unzip(f, folder);
+ 
+     for (int i = 0; i < items.size(); i++) {
+@@ -342,13 +342,18 @@ public class Scanner {
+     // iterates over entries in the zip file
+     while (entry != null) {
+       String filePath = destDirectory + File.separator + entry.getName();
++
++      final File zipEntryFile = new File(destDirectory, entry.getName());
++      if (!zipEntryFile.toPath().normalize().startsWith(destDirectory)) {
++        throw new RuntimeException("Entry with an illegal path: " + entry.getName());
++      }
++
+       if (!entry.isDirectory()) {
+-        // if the entry is a file, extracts it
++        // if the entry is a file, extract it
+         extractFile(zipIn, filePath);
+       } else {
+         // if the entry is a directory, make the directory
+-        File dir = new File(filePath);
+-        dir.mkdir();
++        zipEntryFile.mkdir();
+       }
+       zipIn.closeEntry();
+       entry = zipIn.getNextEntry();
+diff --git a/org.hl7.fhir.validation/src/test/java/org/hl7/fhir/validation/ScannerTest.java b/org.hl7.fhir.validation/src/test/java/org/hl7/fhir/validation/ScannerTest.java
+new file mode 100644
+index 0000000..aa427bf
+--- /dev/null
++++ b/org.hl7.fhir.validation/src/test/java/org/hl7/fhir/validation/ScannerTest.java
+@@ -0,0 +1,90 @@
++package org.hl7.fhir.validation;
++
++import org.hl7.fhir.utilities.tests.ResourceLoaderTests;
++import org.junit.jupiter.api.Assertions;
++import org.junit.jupiter.api.BeforeAll;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.TestInstance;
++
++import java.io.IOException;
++import java.nio.file.Files;
++import java.nio.file.Path;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertNotNull;
++
++@TestInstance(TestInstance.Lifecycle.PER_CLASS)
++public class ScannerTest implements ResourceLoaderTests {
++
++  public static final String ZIP_NORMAL_ZIP = "zip-normal.zip";
++  public static final String ZIP_SLIP_ZIP = "zip-slip.zip";
++  public static final String ZIP_SLIP_2_ZIP = "zip-slip-2.zip";
++
++  public static final String ZIP_SLIP_WIN_ZIP = "zip-slip-win.zip";
++
++  Path tempDir;
++  Path zipNormalPath;
++  Path zipSlipPath;
++
++  Path zipSlip2Path;
++
++  Path zipSlipWinPath;
++
++  @BeforeAll
++  public void beforeAll() throws IOException {
++    tempDir = Files.createTempDirectory("scanner-zip");
++    tempDir.resolve("child").toFile().mkdir();
++    zipNormalPath = tempDir.resolve(ZIP_NORMAL_ZIP);
++    zipSlipPath = tempDir.resolve(ZIP_SLIP_ZIP);
++    zipSlip2Path = tempDir.resolve(ZIP_SLIP_2_ZIP);
++    zipSlipWinPath = tempDir.resolve(ZIP_SLIP_WIN_ZIP);
++
++    copyResourceToFile(zipNormalPath, "scanner", ZIP_NORMAL_ZIP);
++    copyResourceToFile(zipSlipPath, "scanner", ZIP_SLIP_ZIP);
++    copyResourceToFile(zipSlip2Path, "scanner", ZIP_SLIP_2_ZIP);
++    copyResourceToFile(zipSlipWinPath, "scanner", ZIP_SLIP_WIN_ZIP);
++  }
++  
++  @Test
++  public void testNormalZip() throws IOException {
++    Scanner scanner = new Scanner(null,null,null,null);
++    scanner.unzip(zipNormalPath.toFile().getAbsolutePath(), tempDir.toFile().getAbsolutePath());
++
++    Path expectedFilePath = tempDir.resolve("zip-normal").resolve("depth1").resolve("test.txt");
++    String actualContent = Files.readString(expectedFilePath);
++    assertEquals("dummy file content", actualContent);
++  }
++
++  @Test
++  public void testSlipZip() throws IOException {
++    RuntimeException thrown = Assertions.assertThrows(RuntimeException.class, () -> {
++      Scanner scanner = new Scanner(null,null,null,null);
++      scanner.unzip(zipSlipPath.toFile().getAbsolutePath(), tempDir.toFile().getAbsolutePath());
++      //Code under test
++    });
++    assertNotNull(thrown);
++    assertEquals("Entry with an illegal path: ../evil.txt", thrown.getMessage());
++  }
++
++  @Test
++  public void testSlipZip2() throws IOException {
++    RuntimeException thrown = Assertions.assertThrows(RuntimeException.class, () -> {
++      Scanner scanner = new Scanner(null,null,null,null);
++      scanner.unzip(zipSlip2Path.toFile().getAbsolutePath(), tempDir.toFile().getAbsolutePath());
++      //Code under test
++    });
++    assertNotNull(thrown);
++    assertEquals("Entry with an illegal path: child/../../evil.txt", thrown.getMessage());
++  }
++
++  @Test
++  public void testSlipZipWin() throws IOException {
++    RuntimeException thrown = Assertions.assertThrows(RuntimeException.class, () -> {
++      Scanner scanner = new Scanner(null,null,null,null);
++      scanner.unzip(zipSlipWinPath.toFile().getAbsolutePath(), tempDir.toFile().getAbsolutePath());
++      //Code under test
++    });
++    assertNotNull(thrown);
++    assertEquals("Entry with an illegal path: ../evil.txt", thrown.getMessage());
++  }
++}
+diff --git a/org.hl7.fhir.validation/src/test/resources/scanner/zip-normal.zip b/org.hl7.fhir.validation/src/test/resources/scanner/zip-normal.zip
+new file mode 100644
+index 0000000..8c5f279
+Binary files /dev/null and b/org.hl7.fhir.validation/src/test/resources/scanner/zip-normal.zip differ
+diff --git a/org.hl7.fhir.validation/src/test/resources/scanner/zip-slip-2.zip b/org.hl7.fhir.validation/src/test/resources/scanner/zip-slip-2.zip
+new file mode 100644
+index 0000000..dc41ceb
+Binary files /dev/null and b/org.hl7.fhir.validation/src/test/resources/scanner/zip-slip-2.zip differ
+diff --git a/org.hl7.fhir.validation/src/test/resources/scanner/zip-slip-win.zip b/org.hl7.fhir.validation/src/test/resources/scanner/zip-slip-win.zip
+new file mode 100644
+index 0000000..faf84f9
+Binary files /dev/null and b/org.hl7.fhir.validation/src/test/resources/scanner/zip-slip-win.zip differ
+diff --git a/org.hl7.fhir.validation/src/test/resources/scanner/zip-slip.zip b/org.hl7.fhir.validation/src/test/resources/scanner/zip-slip.zip
+new file mode 100644
+index 0000000..99bab13
+Binary files /dev/null and b/org.hl7.fhir.validation/src/test/resources/scanner/zip-slip.zip differ

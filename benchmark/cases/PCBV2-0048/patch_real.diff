@@ -1,0 +1,178 @@
+# CVE-2017-12636
+# upstream: https://github.com/apache/couchdb
+# fix: da27d4dcc7a98c76486f97c356f1c0f4a614b48b (2.1.1 config-section blacklist)
+diff --git a/Makefile b/Makefile
+index cbf2a2a9570..14de1a7715d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -122,6 +122,7 @@ else
+ endif
+ 	@rm -rf dev/lib
+ 	@dev/run -n 1 -q --with-admin-party-please \
++            --enable-erlang-views \
+             -c 'startup_jitter=0' \
+             test/javascript/run $(suites)
+ 
+diff --git a/dev/run b/dev/run
+index 5693e1273e5..4924de1f609 100755
+--- a/dev/run
++++ b/dev/run
+@@ -113,6 +113,9 @@ def setup_argparse():
+                       dest='with_admin_party', default=False,
+                       action='store_true',
+                       help='Runs a dev cluster with admin party mode on')
++    parser.add_option('--enable-erlang-views',
++                      action='store_true',
++                      help='Enables the Erlang view server')
+     parser.add_option('--no-join',
+                       dest='no_join', default=False,
+                       action='store_true',
+@@ -135,6 +138,7 @@ def setup_context(opts, args):
+     return {'N': opts.nodes,
+             'no_join': opts.no_join,
+             'with_admin_party': opts.with_admin_party,
++            'enable_erlang_views': opts.enable_erlang_views,
+             'admin': opts.admin.split(':', 1) if opts.admin else None,
+             'nodes': ['node%d' % (i + opts.node_number) for i in range(opts.nodes)],
+             'node_number': opts.node_number,
+@@ -274,6 +278,13 @@ def hack_default_ini(ctx, node, contents):
+     repl = toposixpath("coffeescript = %s %s" % (couchjs, coffeejs))
+     contents = re.sub("(?m)^coffeescript.*$", repl, contents)
+ 
++    if ctx['enable_erlang_views']:
++        contents = re.sub(
++            "^\[native_query_servers\]$",
++            "[native_query_servers]\nerlang = {couch_native_process, start_link, []}",
++            contents,
++            flags=re.MULTILINE)
++
+     return contents
+ 
+ 
+diff --git a/src/chttpd/src/chttpd_misc.erl b/src/chttpd/src/chttpd_misc.erl
+index cfeeb3ff734..fefb85284a4 100644
+--- a/src/chttpd/src/chttpd_misc.erl
++++ b/src/chttpd/src/chttpd_misc.erl
+@@ -256,6 +256,7 @@ handle_node_req(#httpd{path_parts=[_, _Node, <<"_config">>, _Section]}=Req) ->
+ % PUT /_node/$node/_config/Section/Key
+ % "value"
+ handle_node_req(#httpd{method='PUT', path_parts=[_, Node, <<"_config">>, Section, Key]}=Req) ->
++    couch_util:check_config_blacklist(Section),
+     Value = chttpd:json_body(Req),
+     Persist = chttpd:header_value(Req, "X-Couch-Persist") /= "false",
+     OldValue = call_node(Node, config, get, [Section, Key, ""]),
+@@ -271,6 +272,7 @@ handle_node_req(#httpd{method='GET', path_parts=[_, Node, <<"_config">>, Section
+     end;
+ % DELETE /_node/$node/_config/Section/Key
+ handle_node_req(#httpd{method='DELETE',path_parts=[_, Node, <<"_config">>, Section, Key]}=Req) ->
++    couch_util:check_config_blacklist(Section),
+     Persist = chttpd:header_value(Req, "X-Couch-Persist") /= "false",
+     case call_node(Node, config, get, [Section, Key, undefined]) of
+     undefined ->
+diff --git a/src/couch/src/couch_httpd_misc_handlers.erl b/src/couch/src/couch_httpd_misc_handlers.erl
+index eb75a9461ca..1def948533c 100644
+--- a/src/couch/src/couch_httpd_misc_handlers.erl
++++ b/src/couch/src/couch_httpd_misc_handlers.erl
+@@ -199,6 +199,7 @@ handle_config_req(#httpd{method='POST', path_parts=[_, <<"_reload">>]}=Req) ->
+ handle_config_req(#httpd{method=Method, path_parts=[_, Section, Key]}=Req)
+       when (Method == 'PUT') or (Method == 'DELETE') ->
+     ok = couch_httpd:verify_is_server_admin(Req),
++    couch_util:check_config_blacklist(Section),
+     Persist = couch_httpd:header_value(Req, "X-Couch-Persist") /= "false",
+     case config:get("httpd", "config_whitelist", undefined) of
+         undefined ->
+diff --git a/src/couch/src/couch_util.erl b/src/couch/src/couch_util.erl
+index 54a92fcc124..4d3d73d6612 100644
+--- a/src/couch/src/couch_util.erl
++++ b/src/couch/src/couch_util.erl
+@@ -35,12 +35,25 @@
+ -export([with_proc/4]).
+ -export([process_dict_get/2, process_dict_get/3]).
+ -export([unique_monotonic_integer/0]).
++-export([check_config_blacklist/1]).
+ 
+ -include_lib("couch/include/couch_db.hrl").
+ 
+ % arbitrarily chosen amount of memory to use before flushing to disk
+ -define(FLUSH_MAX_MEM, 10000000).
+ 
++-define(BLACKLIST_CONFIG_SECTIONS, [
++    <<"daemons">>,
++    <<"external">>,
++    <<"httpd_design_handlers">>,
++    <<"httpd_db_handlers">>,
++    <<"httpd_global_handlers">>,
++    <<"native_query_servers">>,
++    <<"os_daemons">>,
++    <<"query_servers">>
++]).
++
++
+ priv_dir() ->
+     case code:priv_dir(couch) of
+         {error, bad_name} ->
+@@ -640,3 +653,12 @@ unique_monotonic_integer() ->
+     erlang:unique_integer([monotonic, positive]).
+ 
+ -endif.
++
++check_config_blacklist(Section) ->
++    case lists:member(Section, ?BLACKLIST_CONFIG_SECTIONS) of
++    true ->
++        Msg = <<"Config section blacklisted for modification over HTTP API.">>,
++        throw({forbidden, Msg});
++    _ ->
++        ok
++    end.
+diff --git a/test/javascript/tests/config.js b/test/javascript/tests/config.js
+index ee51ef5b9ea..8c7ce991785 100644
+--- a/test/javascript/tests/config.js
++++ b/test/javascript/tests/config.js
+@@ -212,4 +212,12 @@ couchTests.config = function(debug) {
+     headers: {"X-Couch-Persist": "false"}
+   });
+   TEquals(200, xhr.status, "Reset config whitelist to undefined");
++
++  // Confirm that the blacklist is functional
++  ["daemons", "external", "httpd_design_handlers", "httpd_db_handlers", "native_query_servers", "os_daemons", "query_servers"].forEach(function(section) {
++    xhr = CouchDB.request("PUT", "/_node/node1@127.0.0.1/_config/" + section + "/wohali",{
++      body: "\"rules\""
++    });
++    TEquals(403, xhr.status, "Blacklisted config section " + section);
++  });
+ };
+diff --git a/test/javascript/tests/erlang_views.js b/test/javascript/tests/erlang_views.js
+index 8ce9a7e4267..ec78e65061b 100644
+--- a/test/javascript/tests/erlang_views.js
++++ b/test/javascript/tests/erlang_views.js
+@@ -17,9 +17,7 @@ couchTests.erlang_views = function(debug) {
+   if (debug) debugger;
+ 
+   run_on_modified_server(
+-    [{section: "native_query_servers",
+-      key: "erlang",
+-      value: "{couch_native_process, start_link, []}"}],
++    [],
+     function() {
+       // Note we just do some basic 'smoke tests' here - the
+       // test/query_server_spec.rb tests have more comprehensive tests
+diff --git a/test/javascript/tests/view_sandboxing.js b/test/javascript/tests/view_sandboxing.js
+index 9e7fa8694e9..1f97218b759 100644
+--- a/test/javascript/tests/view_sandboxing.js
++++ b/test/javascript/tests/view_sandboxing.js
+@@ -148,6 +148,7 @@ couchTests.view_sandboxing = function(debug) {
+   // cleanup
+   db.deleteDb();
+ 
++/* TODO: re-enable this test once --no-eval is the default
+   // test that runtime code evaluation can be prevented
+   var couchjs_command_xhr = CouchDB.request(
+     "GET", "_node/node1@127.0.0.1/_config/query_servers/javascript");
+@@ -179,6 +180,7 @@ couchTests.view_sandboxing = function(debug) {
+ 
+       TEquals(0, results.rows.length);
+     });
++*/
+ 
+   // cleanup
+   CouchDB.request("POST", "_reload_query_servers");

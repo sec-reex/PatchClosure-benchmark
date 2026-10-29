@@ -1,0 +1,17 @@
+CVE: CVE-2025-48471
+upstream: https://github.com/freescout-help-desk/freescout
+fix: e136660e8dbc220454b8d3f646dd1b144e49e9ed (1.8.179)
+
+diff --git a/app/Misc/Helper.php b/app/Misc/Helper.php
+index 214cfd4530..be0fdb87ba 100644
+--- a/app/Misc/Helper.php
++++ b/app/Misc/Helper.php
+@@ -63,6 +63,8 @@ class Helper
+         'php.*',
+         'sh',
+         'pl',
++        'phtml',
++        'phar',
+     ];
+ 
+     /**

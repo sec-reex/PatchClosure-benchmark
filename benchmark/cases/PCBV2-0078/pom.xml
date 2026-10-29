@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PatchClosure-Bench harness POM for apache-shiro-cve-2020-13933.
+     A minimal Spring Boot app that wires the REAL, unmodified Apache Shiro
+     shiro-spring / shiro-web / shiro-core at a pinned version (build-arg
+     ${shiro.version} = 1.5.2 / 1.5.3 / 1.6.0) via a plain ShiroFilterFactoryBean
+     protecting /admin/** = authc. No Shiro code is edited; only the published
+     Maven artifacts are consumed. The auth-bypass is exercised over real HTTP
+     against embedded Tomcat. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>2.3.12.RELEASE</version>
+    <relativePath/>
+  </parent>
+  <groupId>pcb</groupId>
+  <artifactId>shiro-authbypass-harness</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <properties>
+    <java.version>8</java.version>
+    <!-- Overridden per profile via -Dshiro.version=1.5.2|1.5.3|1.6.0 -->
+    <shiro.version>1.5.3</shiro.version>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.shiro</groupId>
+      <artifactId>shiro-spring</artifactId>
+      <version>${shiro.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.shiro</groupId>
+      <artifactId>shiro-web</artifactId>
+      <version>${shiro.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.shiro</groupId>
+      <artifactId>shiro-core</artifactId>
+      <version>${shiro.version}</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <finalName>app</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

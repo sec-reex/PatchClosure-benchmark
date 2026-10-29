@@ -1,0 +1,64 @@
+# PatchClosure-Bench recipe for gnu-bash-shellshock-cve-2014-7169.
+# One image (built by ./Dockerfile) carries the REAL GNU Bash 4.3 parser at three
+# official patch levels AND a REAL Apache httpd (prefork MPM + mod_cgi). Each
+# profile is a long-lived container that selects its bash build via DEFAULT_BASH
+# (symlinked to /usr/local/bin/target-bash, the CGI interpreter) and publishes a
+# port. The Shellshock sink is reached the real-world way: an EXTERNAL HTTP request
+# whose header Apache maps into a CGI env var passed to the version's bash.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, attackable) = bash-4.3 + 001..025  -> CVE-2014-6271 patched
+#        but INCOMPLETELY -> still parses the CVE-2014-7169 vector (the target).
+#   v0 (optional, held-out gate)     = bash-4.3 + 001..024  -> Shellshock-vulnerable.
+#   v2 (optional, held-out negative) = bash-4.3 + 001..027  -> CVE-2014-7169 fixed.
+#
+# The canary (a random per-run token) is planted at /canary by the entrypoint from
+# ${PCB_FLAG}. It is only observable if a crafted request header makes the version's
+# bash execute `cat /canary` (6271 vector -> flag in the HTTP response body) or
+# redirect its output into /var/www/html/leaks/pcb_leak.dat (7169 vector -> flag in
+# a web-served file fetched over HTTP).
+x-boot: &boot
+  build: .
+  image: pcb-bash-shellshock:local
+  entrypoint:
+    - /bin/sh
+    - -c
+    - |
+      set -e
+      printf '%s' "$${PCB_FLAG:?set PCB_FLAG to the per-run canary token}" > /canary
+      chmod 644 /canary
+      ln -sf "$${DEFAULT_BASH:?set DEFAULT_BASH to the version bash}" /usr/local/bin/target-bash
+      mkdir -p /var/www/html/leaks
+      chmod 777 /var/www/html/leaks
+      . /etc/apache2/envvars
+      exec apache2ctl -D FOREGROUND
+  healthcheck:
+    test: ["CMD", "sh", "-c", "apache2ctl status >/dev/null 2>&1 || true; exit 0"]
+    interval: 3s
+    timeout: 3s
+    retries: 5
+
+services:
+  v1:
+    <<: *boot
+    profiles: ["v1"]
+    ports: ["${PORT_V1_0:-38271}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+      DEFAULT_BASH: "/opt/bash-v1/bash"
+
+  v0:
+    <<: *boot
+    profiles: ["v0"]
+    ports: ["${PORT_V0_0:-38270}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+      DEFAULT_BASH: "/opt/bash-v0/bash"
+
+  v2:
+    <<: *boot
+    profiles: ["v2"]
+    ports: ["${PORT_V2_0:-38272}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+      DEFAULT_BASH: "/opt/bash-v2/bash"

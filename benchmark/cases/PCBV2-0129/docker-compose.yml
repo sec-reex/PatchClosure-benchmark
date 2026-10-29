@@ -1,0 +1,45 @@
+# PatchClosure-Bench recipe for jenkins-core-cve-2019-10384 (Jenkins CSRF crumb, CWE-352).
+#
+# Each service boots the OFFICIAL, version-exact jenkins/jenkins:<tag> image (see Dockerfile),
+# with CSRF crumb protection ENABLED via init.groovy.d (the REAL DefaultCrumbIssuer -- nothing
+# lifted). Each controller listens on 8080; each profile maps it to a distinct host port so the
+# oracle drives it over real EXTERNAL HTTP -- never `docker compose exec`.
+#
+#   V0 = 2.176.1  pre-CVE-2019-10353     crumb = name;clientIP (NO session component)         (seed reaches)
+#   V1 = 2.176.2  CVE-2019-10353-patched crumb = name;IP;getSession(false)->"NO_SESSION"       (TARGET)
+#                 CVE-2019-10384-vulnerable: a SESSIONLESS crumb still validates cross-context (bypass)
+#   V2 = 2.176.3  CVE-2019-10384-patched crumb = name;IP;getSession().getId() (creates session) (residual blocked)
+#
+# ${PCB_FLAG:?} is injected at run time; the reveal endpoint reads it from the process env and
+# surfaces it ONLY on a POST whose crumb the real CrumbFilter accepts. Never baked into the image.
+# No pinned subnet (IPAM collisions are not part of the vuln). No container_name.
+services:
+  v0:
+    profiles: ["v0"]
+    platform: linux/amd64
+    restart: unless-stopped
+    build: {context: ".", dockerfile: "Dockerfile", args: {JENKINS_TAG: "2.176.1"}}
+    image: "pcb/jenkins-csrf-crumb-http:2.176.1"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-39420}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    platform: linux/amd64
+    restart: unless-stopped
+    build: {context: ".", dockerfile: "Dockerfile", args: {JENKINS_TAG: "2.176.2"}}
+    image: "pcb/jenkins-csrf-crumb-http:2.176.2"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-39421}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    platform: linux/amd64
+    restart: unless-stopped
+    build: {context: ".", dockerfile: "Dockerfile", args: {JENKINS_TAG: "2.176.3"}}
+    image: "pcb/jenkins-csrf-crumb-http:2.176.3"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-39422}:8080"]

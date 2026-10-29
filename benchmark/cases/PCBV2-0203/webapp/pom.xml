@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PatchClosure-Bench faithful-core webapp for struts-fileupload-interceptor-path-traversal-rce
+     (CVE-2023-50164 [S2-066] -> CVE-2024-53677 [S2-067], Apache Struts 2 file-upload
+     path-traversal via the legacy FileUploadInterceptor, CWE-434/CWE-22). Genuine incomplete fix.
+
+     Pulls the EXACT published org.apache.struts:struts2-core:${struts.version} (+ its real,
+     unmodified transitive OGNL / freemarker / commons-fileupload / commons-io / xwork classes)
+     from Maven Central. NO struts code is modified. servlet-api is provided-scoped (Tomcat 9
+     supplies it). log4j-api+core pinned to an aligned pair so struts logging inits identically
+     across all three struts builds; logging is not part of the upload path under test. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>struts-fileupload</artifactId>
+  <version>1.0</version>
+  <packaging>war</packaging>
+  <properties>
+    <struts.version>6.3.0.2</struts.version>
+    <maven.compiler.source>8</maven.compiler.source>
+    <maven.compiler.target>8</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <failOnMissingWebXml>false</failOnMissingWebXml>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.struts</groupId>
+      <artifactId>struts2-core</artifactId>
+      <version>${struts.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>javax.servlet</groupId>
+      <artifactId>javax.servlet-api</artifactId>
+      <version>3.1.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-api</artifactId>
+      <version>2.17.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-core</artifactId>
+      <version>2.17.1</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <finalName>ROOT</finalName>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-war-plugin</artifactId>
+          <version>3.3.2</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.11.0</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

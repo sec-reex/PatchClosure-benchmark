@@ -1,0 +1,21 @@
+# Traefik dynamic configuration (file provider) — REAL Traefik reverse-proxy install.
+# One router on the `web` entrypoint routes ALL paths to the internal `upstream` sidecar
+# (no host port). Traefik's per-entrypoint forwardedheaders middleware runs automatically
+# with the default config (insecure=false, empty trustedIPs) => Traefik OWNS X-Real-Ip:
+# it clears any attacker-supplied X-* headers and sets X-Real-Ip to the real client IP.
+# The upstream serves ${PCB_FLAG} at /admin/secret ONLY when X-Real-Ip is ABSENT, so the
+# attacker can only reach the flag by STRIPPING Traefik's managed X-Real-Ip via a hop-by-hop
+# `Connection:` token — the CVE-2024-45410 / CVE-2026-29054 mechanism.
+http:
+  routers:
+    to-upstream:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - web
+      service: upstream-svc
+  services:
+    upstream-svc:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://upstream:8080"

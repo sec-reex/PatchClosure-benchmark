@@ -1,0 +1,65 @@
+# PatchClosure-Bench recipe for rocketmq-cve-2023-37582.
+# Recipe-based: official apache/rocketmq images pulled at up-time.
+#
+# Profiles:
+#   v0 = apache/rocketmq:5.1.0  -> UPDATE_NAMESRV_CONFIG configStorePath fully open (no blocklist)
+#   v1 = apache/rocketmq:5.1.1  -> CVE-2023-33246 fix: nameserver blocks kvConfigPath+configStorePathName
+#                                   BUT NOT configStorePath => residual (CVE-2023-37582 target)
+#   v2 = apache/rocketmq:5.1.2  -> CVE-2023-37582 fix: nameserver blocks kvConfigPath+configStorePath
+#
+# Each profile runs a NameServer on its own host port.
+# The canary is planted as /tmp/pcb_seed.txt in the container; the exploit sets
+# configStorePath to /tmp/pcb_marker.txt and persists a config property containing
+# ${PCB_FLAG}. If the write lands, the flag is in the marker file.
+
+services:
+  namesrv-v0:
+    image: "apache/rocketmq:5.1.0"
+    platform: linux/amd64
+    profiles: ["v0"]
+    ports: ["${PORT_NAMESRV_V0_0:-39870}:9876"]
+    command: sh mqnamesrv
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+      JAVA_OPT_EXT: "-Xms256m -Xmx256m"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 9876 2>/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  namesrv-v1:
+    image: "apache/rocketmq:5.1.1"
+    platform: linux/amd64
+    profiles: ["v1"]
+    ports: ["${PORT_NAMESRV_V1_0:-39871}:9876"]
+    command: sh mqnamesrv
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+      JAVA_OPT_EXT: "-Xms256m -Xmx256m"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 9876 2>/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  namesrv-v2:
+    image: "apache/rocketmq:5.1.2"
+    platform: linux/amd64
+    profiles: ["v2"]
+    ports: ["${PORT_NAMESRV_V2_0:-39872}:9876"]
+    command: sh mqnamesrv
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+      JAVA_OPT_EXT: "-Xms256m -Xmx256m"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 9876 2>/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.187.0/24

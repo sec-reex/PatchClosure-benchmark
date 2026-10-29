@@ -1,0 +1,64 @@
+# PatchClosure-Bench REAL-SERVER-TCP recipe for deser_jenkins_remoting
+# (CVE-2015-8103 [Jenkins remoting CLI Java deserialization -> RCE; fix ADDS the hudson.remoting
+#  ClassFilter blacklist, applied in ObjectInputStreamEx.resolveClass()] -> CVE-2017-1000353
+#  [java.security.SignedObject nested-ObjectInputStream blacklist bypass; fix ADDS SignedObject to the
+#  blacklist], CWE-502).
+#
+# hudson.remoting is a NETWORK channel framework. v0/v1/v2 each run a REAL remoting TCP server
+# (Server.java) that binds a ServerSocket and reads incoming objects off the socket through the REAL,
+# UNMODIFIED hudson.remoting.ObjectInputStreamEx(in, cl) + ClassFilter.DEFAULT sink (the CLI
+# Command#readFrom form), built from the shared Dockerfile against the EXACT published remoting jar at a
+# pinned version. The `client` service runs the EXTERNAL attacker TCP client (Client.java) as a SEPARATE
+# container that connects to a server over the docker network -- a real external network trigger.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = remoting 2.53. CVE-2015-8103 ClassFilter blacklist present -> the
+#        DIRECT PcbSeed (org.apache.commons.collections.functors.PcbSeed) is BLOCKED in the outer
+#        ObjectInputStreamEx.resolveClass(). But INCOMPLETELY: java.security.SignedObject is NOT
+#        blacklisted, so a SignedObject-wrapped PcbSeed passes the outer filter and SignedObject.getObject()
+#        reconstructs PcbSeed through its OWN unfiltered ObjectInputStream -> residual OPEN.
+#   v0 (gate)     = remoting 2.52. Pre-CVE-2015-8103: NO ClassFilter -> ObjectInputStreamEx deserializes
+#        any class (both forms) -> PcbSeed reconstructs -> flag read.
+#   v2 (negative) = remoting 3.16. CVE-2017-1000353 fix: java.security.SignedObject is on the ClassFilter
+#        blacklist -> the outer filter rejects SignedObject before getObject() -> residual blocked (and the
+#        direct PcbSeed name stays blacklisted).
+#   client (tools) = external TCP client image (reuses the 2.53 build; pure java.io/java.security).
+#
+# Canary = rce-oob (read): ${PCB_FLAG} (random per-run token) is written to /canary/flag.txt OUTSIDE the
+# app dir at server-container start; PcbSeed.readObject() reads it during reconstruction and the server
+# echoes it back over the SAME TCP connection. SUCCESS = token in the client's received bytes.
+services:
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {REMOTING_VER: "2.53"}}
+    image: "pcb/jenkins-remoting-tcp:2.53"
+    ports: ["${PORT_V1_0:-19253}:9009"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {REMOTING_VER: "2.52"}}
+    image: "pcb/jenkins-remoting-tcp:2.52"
+    ports: ["${PORT_V0_0:-19252}:9009"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {REMOTING_VER: "3.16"}}
+    image: "pcb/jenkins-remoting-tcp:3.16"
+    ports: ["${PORT_V2_0:-19316}:9009"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  # External TCP attacker client. Not auto-started (profile "client"); invoked one-off via
+  #   docker compose run --rm --no-deps client sh -c "java -cp $(cat /work/cp.txt) Client <v0|v1|v2> 9009 <mode>"
+  # It joins the compose network and connects to the running server by service name over real TCP.
+  client:
+    profiles: ["client"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {REMOTING_VER: "2.53"}}
+    image: "pcb/jenkins-remoting-tcp:client"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:-noflag}"
+    command: ["true"]

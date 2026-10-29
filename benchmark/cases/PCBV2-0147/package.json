@@ -1,0 +1,11 @@
+{
+  "name": "pcb-mongoose-populate-where-core",
+  "private": true,
+  "type": "module",
+  "description": "Faithful-core Mongoose populate().match $where search-injection guard, REAL npm `mongoose` per version (CVE-2024-53900 -> CVE-2025-23061). npm aliases hold all three versions side-by-side; the harness selects one by HARNESS_VER.",
+  "dependencies": {
+    "mongoose-v0": "npm:mongoose@8.8.2",
+    "mongoose-v1": "npm:mongoose@8.8.3",
+    "mongoose-v2": "npm:mongoose@8.9.5"
+  }
+}

@@ -1,0 +1,86 @@
+# PatchClosure-Bench recipe for spring-framework-cve-2024-22262
+# (CVE-2024-22259 -> CVE-2024-22262, Spring Framework UriComponentsBuilder
+#  host-parsing open-redirect / SSRF, CWE-601 / CWE-918).
+#
+# THIRD link of the sequential chain CVE-2024-22243 -> CVE-2024-22259 ->
+# CVE-2024-22262. The -22259 case's V2 (spring-web 6.1.5) is THIS case's V1
+# (target): 6.1.5 fixed -22259 but is still vulnerable to -22262.
+#
+# Recipe-based: NO vendored jars/images. Each version service builds from the
+# shared Dockerfile, which pulls the PUBLISHED org.springframework:spring-web at a
+# pinned version from Maven Central and compiles a tiny Driver.java that invokes
+# the REAL, unmodified UriComponentsBuilder.fromUriString(url).build().getHost()
+# guard. The guard + real browser-equivalent navigation are driven via driver.py
+# (mounted, NOT app code).
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target)  = spring-web 6.1.5  -> CVE-2024-22259 patched
+#        (USERINFO allows '@'; HOST_IPV4 allows '['; checkSchemeAndHost added), but
+#        INCOMPLETELY -> still vulnerable to CVE-2024-22262: backslash '\' is NOT
+#        excluded from SCHEME/USERINFO/HOST_IPV4/PORT, and a browser (WHATWG) treats
+#        '\' as '/' in special schemes, ending the authority early. The target.
+#   v0 (gate)                     = spring-web 6.1.4  -> vulnerable to CVE-2024-22259
+#        (USERINFO "([^@/?#]*)" still excludes '@'; HOST_IPV4 still excludes '[', so
+#        the leading-'@' bracket payload makes getHost()=trusted.internal).
+#   v2 (negative)                 = spring-web 6.1.6  -> CVE-2024-22262 patched
+#        (SCHEME/USERINFO/HOST_IPV4/PORT patterns now exclude '\').
+#
+# Canary = ssrf-sidecar / redirect: an internal-only sidecar (network alias
+# sidecar.internal, NO host port) serves ${PCB_FLAG}. Success = a malformed URL
+# makes Spring getHost() return the allow-listed 'trusted.internal' (guard passes)
+# BUT the real WHATWG navigation resolves to sidecar.internal -> ${PCB_FLAG}
+# observed. No Spring business code is modified; the flag lives only in the sidecar.
+services:
+  sidecar:
+    image: "python:3.12-slim"
+    environment: {PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"}
+    # internal only: NO host port. Reachable on the compose network as sidecar.internal.
+    networks:
+      default:
+        aliases: ["sidecar.internal"]
+    command:
+      - "python3"
+      - "-c"
+      - |
+        import os, http.server, socketserver
+        FLAG = os.environ["PCB_FLAG"].encode()
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200); self.end_headers(); self.wfile.write(FLAG)
+            def log_message(self, *a): pass
+        socketserver.TCPServer(("", 8080), H).serve_forever()
+
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SPRING_VERSION: "6.1.5"}}
+    image: "pcb/spring-web:6.1.5"
+    depends_on: ["sidecar"]
+    working_dir: /work
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-39516}:8080"]
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SPRING_VERSION: "6.1.4"}}
+    image: "pcb/spring-web:6.1.4"
+    depends_on: ["sidecar"]
+    working_dir: /work
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-39515}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SPRING_VERSION: "6.1.6"}}
+    image: "pcb/spring-web:6.1.6"
+    depends_on: ["sidecar"]
+    working_dir: /work
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-39517}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.198.0/24

@@ -1,0 +1,371 @@
+# CVE: CVE-2009-1339
+# Upstream: https://twiki.org/cgi-bin/view/Codev/SecurityAlert-CVE-2009-1339
+# Fix: TWiki-4.3.0-c-diff-cve-2009-1339.txt (TWiki 4.3.1)
+
+diff -u TWiki-4.3.0/lib/TWiki/Plugins/EditTablePlugin/Core.pm TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/Plugins/EditTablePlugin/Core.pm
+--- TWiki-4.3.0/lib/TWiki/Plugins/EditTablePlugin/Core.pm	2009-03-30 02:05:10.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/Plugins/EditTablePlugin/Core.pm	2009-04-17 23:29:30.000000000 -0700
+@@ -1,7 +1,7 @@
+ # Plugin for TWiki Enterprise Collaboration Platform, http://TWiki.org/
+ #
+ # Copyright (C) 2008 Arthur Clemens, arthur@visiblearea.com
+-# Copyright (C) 2002-2007 Peter Thoeny, peter@thoeny.org and
++# Copyright (C) 2002-2009 Peter Thoeny, peter@thoeny.org and
+ # TWiki Contributors.
+ #
+ # This program is free software; you can redistribute it and/or
+@@ -584,10 +584,13 @@
+     }    # foreach my $tableText (@tableTexts) {
+ 
+     if ($doSave) {
+-        my $error =
+-          TWiki::Func::saveTopic( $theWeb, $theTopic, $meta,
+-            $tablesTakenOutText, { dontlog => $doSaveQuiet } );
+-
++        my $error = '';
++        if( $query && $query->request_method() !~ /^POST$/i ) {
++            $error = 'Table can only be saved with http POST method.';
++        } else {
++            $error = TWiki::Func::saveTopic( $theWeb, $theTopic, $meta,
++              $tablesTakenOutText, { dontlog => $doSaveQuiet } );
++        }
+         TWiki::Func::setTopicEditLock( $theWeb, $theTopic, 0 );   # unlock Topic
+         my $url = TWiki::Func::getViewUrl( $theWeb, $theTopic );
+         if ($error) {
+diff -u TWiki-4.3.0/lib/TWiki/Plugins/EditTablePlugin.pm TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/Plugins/EditTablePlugin.pm
+--- TWiki-4.3.0/lib/TWiki/Plugins/EditTablePlugin.pm	2009-03-30 02:05:10.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/Plugins/EditTablePlugin.pm	2009-04-17 23:34:46.000000000 -0700
+@@ -1,7 +1,7 @@
+ # Plugin for TWiki Enterprise Collaboration Platform, http://TWiki.org/
+ #
+ # Copyright (C) 2008 Arthur Clemens, arthur@visiblearea.com
+-# Copyright (C) 2002-2007 Peter Thoeny, peter@thoeny.org and TWiki
++# Copyright (C) 2002-2009 Peter Thoeny, peter@thoeny.org and TWiki
+ # Contributors.
+ #
+ # This program is free software; you can redistribute it and/or
+@@ -28,15 +28,15 @@
+   %editMode %saveMode $ASSET_URL
+ );
+ 
+-# This should always be $Rev: 17718 (30 Mar 2009) $ so that TWiki can determine the checked-in
++# This should always be $Rev: 18014 $ so that TWiki can determine the checked-in
+ # status of the plugin. It is used by the build automation tools, so
+ # you should leave it alone.
+-$VERSION = '$Rev: 17718 (30 Mar 2009) $';
++$VERSION = '$Rev: 18014 $';
+ 
+ # This is a free-form string you can use to "name" your own plugin version.
+ # It is *not* used by the build automation tools, but is reported as part
+ # of the version number in PLUGINDESCRIPTIONS.
+-$RELEASE = '4.9';
++$RELEASE = '4.9.1';
+ 
+ $encodeStart = '--EditTableEncodeStart--';
+ $encodeEnd   = '--EditTableEncodeEnd--';
+diff -u TWiki-4.3.0/lib/TWiki/Plugins/PreferencesPlugin.pm TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/Plugins/PreferencesPlugin.pm
+--- TWiki-4.3.0/lib/TWiki/Plugins/PreferencesPlugin.pm	2009-03-30 02:05:14.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/Plugins/PreferencesPlugin.pm	2009-04-17 23:45:54.000000000 -0700
+@@ -30,15 +30,15 @@
+ 
+ use vars qw( $VERSION $RELEASE @shelter );
+ 
+-# This should always be $Rev: 17889 (30 Mar 2009) $ so that TWiki can determine the checked-in
++# This should always be $Rev: 18016 $ so that TWiki can determine the checked-in
+ # status of the plugin. It is used by the build automation tools, so
+ # you should leave it alone.
+-$VERSION = '$Rev: 17889 (30 Mar 2009) $';
++$VERSION = '$Rev: 18016 $';
+ 
+ # This is a free-form string you can use to "name" your own plugin version.
+ # It is *not* used by the build automation tools, but is reported as part
+ # of the version number in PLUGINDESCRIPTIONS.
+-$RELEASE = 'TWiki-4.2';
++$RELEASE = 'TWiki-4.3';
+ 
+ my $MARKER = "\007";
+ 
+@@ -122,10 +122,13 @@
+ 
+     } elsif( $action eq 'save' ) {
+ 
+-        my( $meta, $text ) = TWiki::Func::readTopic( $web, $topic );
+-        $text =~ s(^((?:\t|   )+\*\sSet\s)(\w+)\s\=\s(.*)$)
+-          ($1._saveSet($query, $web, $topic, $2, $3, $formDef))mgeo;
+-        TWiki::Func::saveTopic( $web, $topic, $meta, $text );
++        # save can only be used with POST method, not GET
++        unless( $query && $query->request_method() !~ /^POST$/i ) {
++            my( $meta, $text ) = TWiki::Func::readTopic( $web, $topic );
++            $text =~ s(^((?:\t|   )+\*\sSet\s)(\w+)\s\=\s(.*)$)
++              ($1._saveSet($query, $web, $topic, $2, $3, $formDef))mgeo;
++            TWiki::Func::saveTopic( $web, $topic, $meta, $text );
++        }
+         TWiki::Func::setTopicEditLock( $web, $topic, 0 );
+         # Finish with a redirect so that the *new* values are seen
+         my $viewUrl = TWiki::Func::getScriptUrl( $web, $topic, 'view' );
+diff -u TWiki-4.3.0/lib/TWiki/Plugins/WysiwygPlugin.pm TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/Plugins/WysiwygPlugin.pm
+--- TWiki-4.3.0/lib/TWiki/Plugins/WysiwygPlugin.pm	2009-03-30 02:05:22.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/Plugins/WysiwygPlugin.pm	2009-04-18 16:26:34.000000000 -0700
+@@ -54,9 +54,9 @@
+ 
+ $SHORTDESCRIPTION = 'Translator framework for Wysiwyg editors';
+ $NO_PREFS_IN_TOPIC = 1;
+-$VERSION = '$Rev: 17829 (30 Mar 2009) $';
++$VERSION = '$Rev: 18020 $';
+ 
+-$RELEASE = '03 Aug 2008';
++$RELEASE = '18 Apr 2009';
+ 
+ $SECRET_ID = 'WYSIWYG content - do not remove this comment, and never use this identical text in your topics';
+ 
+@@ -743,6 +743,12 @@
+ sub _restUpload {
+     my ($session, $plugin, $verb, $response) = @_;
+     my $query = TWiki::Func::getCgiQuery();
++
++    if( $query && $query->method() !~ /^POST$/i ) { 
++        returnRESTResult( $response, 405, 'REST upload requires http POST method' ); 
++        return undef; 
++    }
++
+     my $topic = $query->param('topic');
+     $topic =~ /^(.*)\.([^.]*)$/;
+     my $web = $1;
+diff -u TWiki-4.3.0/lib/TWiki/UI/Manage.pm TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/UI/Manage.pm
+--- TWiki-4.3.0/lib/TWiki/UI/Manage.pm	2009-03-30 02:05:08.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/UI/Manage.pm	2009-04-17 21:28:08.000000000 -0700
+@@ -89,6 +89,16 @@
+     my $query = $session->{cgiQuery};
+     my $cUID = $session->{user};
+ 
++    if( $query->request_method() !~ /^POST$/i ) {
++        # manage script to delete user can only be called with POST method
++        throw TWiki::OopsException(
++            'attention',
++            def => 'post_method_only',
++            web => $webName,
++            topic => $topic,
++            params => [ 'manage' ]);
++    }
++
+     my $password = $query->param( 'password' );
+ 
+     # check if user entry exists
+@@ -152,6 +162,16 @@
+     my $query = $session->{cgiQuery};
+     my $cUID = $session->{user};
+ 
++    if( $query->request_method() !~ /^POST$/i ) {
++        # manage script to create web can only be called with POST method
++        throw TWiki::OopsException(
++            'attention',
++            def => 'post_method_only',
++            web => $webName,
++            topic => $topicName,
++            params => [ 'manage' ]);
++    }
++
+     my $newWeb = $query->param( 'newweb' ) || '';
+     unless( $newWeb ) {
+         throw TWiki::OopsException( 'attention', def => 'web_missing' );
+@@ -378,6 +398,8 @@
+         return;
+     }
+ 
++    return undef unless (!$query || $query->request_method() =~ /^POST$/i ); 
++
+     # Update references in referring pages - not applicable to attachments.
+     my $refs;
+     unless( $attachment ) {
+@@ -683,6 +705,8 @@
+         }
+     }
+ 
++    return undef unless (!$query || $query->request_method() =~ /^POST$/i );
++
+     # Update references in referring pages 
+     my $refs = _getReferringTopicsListFromURL(
+         $session, $oldWeb, $TWiki::cfg{HomeTopicName},
+diff -u TWiki-4.3.0/lib/TWiki/UI/Register.pm TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/UI/Register.pm 
+--- TWiki-4.3.0/lib/TWiki/UI/Register.pm	2009-03-30 02:05:08.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/UI/Register.pm	2009-04-17 20:34:36.000000000 -0700
+@@ -79,7 +79,19 @@
+ 
+     # NB. bulkRegister invoked from ManageCgiScript.
+ 
+-    my $action = $session->{cgiQuery}->param('action') || '';
++    my $query = $session->{cgiQuery};
++
++    if( $query->request_method() !~ /^POST$/i ) {
++        # register script can only be called with POST method
++        throw TWiki::OopsException(
++            'attention',
++            def => 'post_method_only',
++            web => $session->{webName},
++            topic => $session->{topicName},
++            params => [ 'register' ]);
++    }
++
++    my $action = $query->param('action') || '';
+ 
+     if ($action eq 'register') {
+       if (!$session->inContext('registration_supported')) {
+@@ -452,6 +464,16 @@
+     my $web = $session->{webName};
+     my $user = $session->{user};
+ 
++    if( $query->request_method() !~ /^POST$/i ) {
++        # resetpasswd script can only be called with POST method
++        throw TWiki::OopsException(
++            'attention',
++            def => 'post_method_only',
++            web => $web,
++            topic => $topic,
++            params => [ 'resetpasswd' ]);
++    }
++
+     unless( $TWiki::cfg{EnableEmail} ) {
+         my $err=$session->i18n->maketext(
+                   'Email has been disabled for this TWiki installation');
+diff -u TWiki-4.3.0/lib/TWiki/UI/Save.pm TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/UI/Save.pm 
+--- TWiki-4.3.0/lib/TWiki/UI/Save.pm	2009-03-30 02:05:08.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/UI/Save.pm	2009-04-17 17:23:18.000000000 -0700
+@@ -51,6 +51,17 @@
+     my $topic = $session->{topicName};
+     my $store = $session->{store};
+     my $revision = $query->param( 'rev' ) || undef;
++    my $reqmethod = $query->request_method();
++
++    if( $reqmethod !~ /^POST$/i ) {
++        # save can only be called via POST method
++        throw TWiki::OopsException(
++            'attention',
++            def => 'post_method_only',
++            web => $session->{webName},
++            topic => $session->{topicName},
++            params => [ $script ]);
++    }
+ 
+     unless( scalar($query->param()) ) {
+         # insufficient parameters to save
+diff -u TWiki-4.3.0/lib/TWiki/UI/Upload.pm TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/UI/Upload.pm 
+--- TWiki-4.3.0/lib/TWiki/UI/Upload.pm	2009-03-30 02:05:08.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/UI/Upload.pm	2009-04-17 18:31:48.000000000 -0700
+@@ -175,6 +175,16 @@
+     $fileName =~ s/\s*$//o;
+     $filePath =~ s/\s*$//o;
+ 
++    if( $query->request_method() !~ /^POST$/i ) {
++        # upload script can only be called via POST method
++        throw TWiki::OopsException(
++            'attention',
++            def => 'post_method_only',
++            web => $webName,
++            topic => $topic,
++            params => [ 'upload' ]);
++    }
++
+     TWiki::UI::checkWebExists( $session, $webName, $topic, 'attach files to' );
+     TWiki::UI::checkTopicExists( $session, $webName, $topic, 'attach files to' );
+     TWiki::UI::checkMirror( $session, $webName, $topic );
+diff -u TWiki-4.3.0/lib/TWiki/UI.pm TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/UI.pm
+--- TWiki-4.3.0/lib/TWiki/UI.pm	2009-03-30 02:05:08.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/lib/TWiki/UI.pm	2009-04-26 21:02:12.000000000 -0700
+@@ -121,6 +121,7 @@
+                 $query = new CGI(\*F);
+                 close(F);
+                 unlink($passthruFilename);
++                $ENV{'REQUEST_METHOD'} = 'POST';
+                 print STDERR "Passthru: Loaded and unlinked $passthruFilename\n"
+                   if TRACE_PASSTHRU;
+             } else {
+diff -u TWiki-4.3.0/templates/messages.tmpl TWiki-4.3.0-c-hotfix-cve-2009-1339/templates/messages.tmpl 
+--- TWiki-4.3.0/templates/messages.tmpl	2009-03-30 02:05:06.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/templates/messages.tmpl	2009-04-21 22:20:12.000000000 -0700
+@@ -193,10 +193,10 @@
+ 
+ %MAKETEXT{"Your activation code has been sent to [_1].  Either click on the link in your e-mail or enter the code in the box below to activate your membership. (This code is of the form \"YourName.xxxxxxxxxx\")" args="%PARAM1%"}%
+ 
+-<form action="%SCRIPTURLPATH{"register"}%" method=get>
++<form action="%SCRIPTURLPATH{"register"}%" method="post">
+ <input type="hidden" name="action" value="verify" size="20" />
+-<input type="text" name="code" size="20" />
+-<input type="submit" class="twikiSubmit" value=' %MAKETEXT{"Submit"}% ' />
++<input type="text" name="code" value="%URLPARAM{ "code" encode="entity" }%" size="20" />
++<input type="submit" class="twikiSubmit" value=' %MAKETEXT{"Confirm registration"}% ' />
+ </form>
+ 
+ %TMPL:END%
+@@ -299,7 +299,7 @@
+ __%MAKETEXT{"Note:"}%__
+ %MAKETEXT{"Some mail tools have an error that causes them to send the same request twice when you click on a link. It you did this, it is possible that you actually *have* registered successfully."}%
+ 
+-<form action="%SCRIPTURLPATH{"register"}%" method=get>
++<form action="%SCRIPTURLPATH{"register"}%" method="post">
+ <input type="hidden" name="action" value="verify" size="20" />
+ <input type="text" name="code" size="20" />
+ <input type="submit" class="twikiSubmit" value=' %MAKETEXT{"Submit"}% ' />
+@@ -406,11 +406,21 @@
+ (%MAKETEXT{"don't forget to check your Topic Settings"}%)
+ %TMPL:END%
+ 
++%TMPL:DEF{post_method_only}%
++%MAKETEXT{"The =[_1]= script can only be called with POST method." args="%PARAM1%"}%
++%MAKETEXT{"Example:"}%
++
++=&lt;form name="new" action="%<nop>SCRIPTURLPATH{%PARAM1%}%/Sandbox/" method="post"&gt; ... &lt;/form&gt;=
++
++%MAKETEXT{"If you are developing a <nop>TWikiApplication, see [_1] for a description of the correct parameters." args="%SYSTEMWEB%.TWikiScripts#%PARAM1%"}%
++
++%TMPL:END%
++
+ %TMPL:DEF{bad_script_parameters}%
+ %MAKETEXT{"Incorrect parameters to the =[_1]= script" args="%PARAM1%"}%
+ 
+ %MAKETEXT{"If you received a link to this topic in an e-mail or just want to look at the topic, ~[~[[_1]~]~[cancel save~]~] to go to [_2]." args="%WEB%.%TOPIC%, <nop>%TOPIC%"}%
+-
++ 
+ %MAKETEXT{"If you are developing a <nop>TWikiApplication, see [_1] for a description of the correct parameters." args="%SYSTEMWEB%.TWikiScripts#%PARAM1%"}%
+ 
+ %TMPL:END%
+diff -u TWiki-4.3.0/templates/oopsmore.tmpl TWiki-4.3.0-c-hotfix-cve-2009-1339/templates/oopsmore.tmpl 
+--- TWiki-4.3.0/templates/oopsmore.tmpl	2009-03-30 02:05:06.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/templates/oopsmore.tmpl	2009-04-18 17:48:54.000000000 -0700
+@@ -45,7 +45,8 @@
+ 
+ %TMPL:DEF{"setparent"}%#SetParent
+ ---++ %MAKETEXT{"Set new topic parent"}%
+-<form name="main" action="%SCRIPTURLPATH{"save"}%/%WEB%/%TOPIC%?action_save=1">
++<form name="main" action="%SCRIPTURLPATH{"save"}%/%WEB%/%TOPIC%" method="post">
++<input type='hidden' name='action_save' value='1' />
+ <div class="twikiFormSteps">
+ <div class="twikiFormStep">
+ ---++!! %MAKETEXT{"Current parent:"}% %IF{"'NONE%SEARCH{ "^%TOPIC%$" scope="topic" regex="on" nosearch="on" nototal="on" format="$parent" }%'='NONE'" then="(none)" else='%SEARCH{ "^%TOPIC%$" scope="topic" regex="on" nosearch="on" nototal="on" format="[[$web.$parent][$parent]]" }%' }%
+@@ -98,7 +99,7 @@
+      <input type="submit" class="twikiButton" value='%MAKETEXT{"View difference"}%' />
+ </form>
+ ---+++ %MAKETEXT{"Restore topic"}%
+-<form name="main" action="%SCRIPTURLPATH{"manage"}%/%WEB%/%TOPIC%">
++<form name="main" action="%SCRIPTURLPATH{"manage"}%/%WEB%/%TOPIC%" method="post">
+ 	* %MAKETEXT{"Restore topic to revision:"}% <input class="twikiInputField" type="text" name="rev" size="6" value="%PARAM2%" />
+ 	<input type="hidden" name="action" value="restoreRevision" />
+ 	<input type="hidden" name="nowysiwyg" value="1" />
+@@ -123,4 +124,4 @@
+ %TMPL:P{"setparent"}%
+ %TMPL:P{"childtopics"}%
+ %TMPL:P{"backlinks"}%
+-%TMPL:END%
+\ No newline at end of file
++%TMPL:END%
+diff -u TWiki-4.3.0/templates/registerconfirm.tmpl TWiki-4.3.0-c-hotfix-cve-2009-1339/templates/registerconfirm.tmpl 
+--- TWiki-4.3.0/templates/registerconfirm.tmpl	2009-03-30 02:05:06.000000000 -0700
++++ TWiki-4.3.0-c-hotfix-cve-2009-1339/templates/registerconfirm.tmpl	2009-04-21 22:19:26.000000000 -0700
+@@ -8,7 +8,7 @@
+ 
+ %MAKETEXT{"Thank you for registering in the [_1] collaboration platform. Your verification code is [_2]." args="%WIKITOOLNAME%, %VERIFICATIONCODE%"}%
+ 
+-%MAKETEXT{"You now need to verify your e-mail address. You can do so by entering [_1] in the form presented to you when this e-mail was sent, or by visiting [_2]" args="'%VERIFICATIONCODE%', %SCRIPTURL{"register"}%?action=verify;code=%VERIFICATIONCODE%"}%
++%MAKETEXT{"You now need to verify your e-mail address. You can do so by entering [_1] in the form presented to you when this e-mail was sent, or by visiting [_2]" args="'%VERIFICATIONCODE%', %SCRIPTURL{"oops"}%/%USERSWEB%/%HOMETOPIC%?template=oopsattention;def=confirm;code=%VERIFICATIONCODE%;param1=%EMAILADDRESS%"}%
+ 
+ %MAKETEXT{"Note:"}%
+ %MAKETEXT{"If you got this e-mail by mistake: Somebody ([_1]) registered at the [_2] site using your mail address [_3]. Contact [_4] if this is in error." args="%SPACEOUT{%FIRSTLASTNAME%}%, %WIKITOOLNAME%, %EMAILADDRESS%, %WIKIWEBMASTER%"}%

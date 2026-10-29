@@ -1,0 +1,8 @@
+*
+!entrypoint.sh
+!seed.php
+!.build_src
+!.build_src/**
+!.build_src/.**
+.build_src/.git
+.build_src/.git/**

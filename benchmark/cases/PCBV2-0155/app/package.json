@@ -1,0 +1,15 @@
+{
+  "name": "pcb-nuxt-ogi-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "start": "node .output/server/index.mjs"
+  },
+  "dependencies": {
+    "nuxt": "4.4.5",
+    "satori": "^0.26.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "sharp": "^0.34.0"
+  }
+}

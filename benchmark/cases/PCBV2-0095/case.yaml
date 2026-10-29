@@ -1,0 +1,25 @@
+case_id: PCBV2-0095
+public_name: dataease-cve-2026-57172
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: registry.cn-qingdao.aliyuncs.com/dataease/dataease
+  v0: v2.10.1
+  v1: v2.10.23
+service:
+  # Compose publishes ${PORT_DATAEASE_V*_0}:8100. start.sh waits on that host
+  # port and plants the flag dashboard; platform HTTP on :8100 would miss.
+  readiness: none
+  exposed_ports: [8100]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

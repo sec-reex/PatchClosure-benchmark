@@ -1,0 +1,31 @@
+CVE: CVE-2024-27096
+upstream: https://github.com/glpi-project/glpi
+fix: 61a0c2302b4f633f5065358adc36058e1abc37f9 (10.0.13 / GHSA-2x8m-vrcm-2jqv)
+
+diff --git a/src/Search.php b/src/Search.php
+index 5411c6539418..62438537ad6f 100644
+--- a/src/Search.php
++++ b/src/Search.php
+@@ -8025,6 +8025,22 @@ public static function manageParams(
+             }
+         }
+ 
++        $int_params = [
++            'sort'
++        ];
++
++        foreach ($params as $key => &$val) {
++            if (in_array($key, $int_params)) {
++                if (is_array($val)) {
++                    foreach ($val as &$subval) {
++                        $subval = (int)$subval;
++                    }
++                } else {
++                    $val = (int)$val;
++                }
++            }
++        }
++
+         return $params;
+     }
+ 

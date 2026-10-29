@@ -1,0 +1,64 @@
+# PatchClosure-Bench recipe for goshs-cve-2026-54719.
+# Profiles:
+#   v0 = goshs 2.0.9  (CVE-2026-40189: state-changing routes bypass .goshs ACL)
+#   v1 = goshs 2.1.0  (40189 fixed; CVE-2026-54719 ?bulk zip-download ACL bypass) <- target
+#   v2 = goshs 2.1.1  (54719 fixed)
+# Webroot /data/root, /protected/ gated by per-folder .goshs basic-auth (admin:admin).
+x-app: &app
+  build:
+    context: .
+    args:
+      GOSHS_VERSION: ""
+  entrypoint:
+    - /bin/sh
+    - -c
+    - |
+      mkdir -p /data/root/protected
+      cp /goshs-acl-template.json /data/root/protected/.goshs
+      printf '%s' "${PCB_FLAG:?set PCB_FLAG}" > /data/root/protected/canary.txt
+      chmod 644 /data/root/protected/canary.txt
+      exec goshs -d /data/root -p 8000
+  healthcheck:
+    test: ["CMD", "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "http://127.0.0.1:8000/"]
+    interval: 3s
+    timeout: 3s
+    retries: 10
+
+services:
+  v0:
+    <<: *app
+    profiles: ["v0"]
+    build:
+      context: .
+      args:
+        GOSHS_VERSION: "2.0.0-beta.3"
+    ports: ["${PORT_V0_0:-55130}:8000"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+  v1:
+    <<: *app
+    profiles: ["v1"]
+    build:
+      context: .
+      args:
+        GOSHS_VERSION: "2.1.0"
+    ports: ["${PORT_V1_0:-55131}:8000"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+  v2:
+    <<: *app
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        GOSHS_VERSION: "2.1.1"
+    ports: ["${PORT_V2_0:-55132}:8000"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.123.0/24

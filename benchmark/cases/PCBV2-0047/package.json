@@ -1,0 +1,11 @@
+{
+  "name": "pcb-dottie-set-core",
+  "private": true,
+  "type": "commonjs",
+  "description": "Faithful-core prototype-pollution guard using the REAL npm `dottie` Dottie.set per version (CVE-2023-26132 -> CVE-2026-27837). npm aliases hold all three versions side-by-side; the harness selects one by HARNESS_VER.",
+  "dependencies": {
+    "dottie-v0": "npm:dottie@2.0.3",
+    "dottie-v1": "npm:dottie@2.0.4",
+    "dottie-v2": "npm:dottie@2.0.7"
+  }
+}

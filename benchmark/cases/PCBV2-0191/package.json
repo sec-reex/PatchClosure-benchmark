@@ -1,0 +1,10 @@
+{
+  "name": "pcb-simple-git-core",
+  "private": true,
+  "description": "Faithful-core: the REAL npm simple-git package installed side-by-side per version via npm aliases (simple-git@3.15.1=V0 pre CVE-2022-25860; simple-git@3.31.1=V1 the CVE-2022-25860 block-unsafe-operations regex guard; simple-git@3.32.0=V2 the CVE-2026-28291 fix). The harness require()s the exact published bytes and drives the REAL git.clone() argument-injection sink with a crafted --upload-pack / -u option so a benign git subprocess runs the canary.",
+  "dependencies": {
+    "simple-git-v0": "npm:simple-git@3.15.1",
+    "simple-git-v1": "npm:simple-git@3.31.1",
+    "simple-git-v2": "npm:simple-git@3.32.0"
+  }
+}

@@ -1,0 +1,2049 @@
+PCBV2-0019 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 658bb585d1c3d521f893ca96189460ff611f22c9 + 2ae0d3610999de67b4b74ce08e4326e90d4e5082 (9.16 / issue #10078)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0019/
+
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/event_triggers/__init__.py b/web/pgadmin/browser/server_groups/servers/databases/event_triggers/__init__.py
+index 1030b96720d..0f7c126c722 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/event_triggers/__init__.py
++++ b/web/pgadmin/browser/server_groups/servers/databases/event_triggers/__init__.py
+@@ -673,7 +673,7 @@ def get_sql(self, data, etid=None):
+                     data[arg] = old_data[arg]
+             sql = render_template(
+                 "/".join([self.template_path, self._UPDATE_SQL]),
+-                data=data, o_data=old_data
++                data=data, o_data=old_data, conn=self.conn
+             )
+         else:
+             sql = self._get_create_with_grant_sql(data)
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/event_triggers/templates/event_triggers/sql/default/update.sql b/web/pgadmin/browser/server_groups/servers/databases/event_triggers/templates/event_triggers/sql/default/update.sql
+index 066d1decd0a..970095f8784 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/event_triggers/templates/event_triggers/sql/default/update.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/event_triggers/templates/event_triggers/sql/default/update.sql
+@@ -26,7 +26,7 @@ ALTER EVENT TRIGGER {{ conn|qtIdent(o_data.name) }}
+ 
+ {% if data.comment is defined and data.comment != o_data.comment %}
+ COMMENT ON EVENT TRIGGER {{ conn|qtIdent(data.name) }}
+-    IS '{{ data.comment }}';
++    IS {{ data.comment|qtLiteral(conn) }};
+ {% endif %}
+ 
+ {% if data.enabled and data.enabled != o_data.enabled %}
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/foreign_data_wrappers/foreign_servers/__init__.py b/web/pgadmin/browser/server_groups/servers/databases/foreign_data_wrappers/foreign_servers/__init__.py
+index 015b22a8a43..ce888291b7f 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/foreign_data_wrappers/foreign_servers/__init__.py
++++ b/web/pgadmin/browser/server_groups/servers/databases/foreign_data_wrappers/foreign_servers/__init__.py
+@@ -821,7 +821,7 @@ def sql(self, gid, sid, did, fid, fsid, json_resp=True):
+                 is_valid_options = True
+ 
+         sql = render_template("/".join([self.template_path, self._ACL_SQL]),
+-                              fsid=fsid)
++                              fsid=fsid, conn=self.conn)
+         status, fs_rv_acl_res = self.conn.execute_dict(sql)
+         if not status:
+             return internal_server_error(errormsg=fs_rv_acl_res)
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/languages/templates/languages/sql/default/update.sql b/web/pgadmin/browser/server_groups/servers/databases/languages/templates/languages/sql/default/update.sql
+index f8b3f257981..73ec91e9c47 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/languages/templates/languages/sql/default/update.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/languages/templates/languages/sql/default/update.sql
+@@ -39,7 +39,7 @@ ALTER LANGUAGE {{ conn|qtIdent(data.name) }}
+ {# ============= Update language comments ============= #}
+ {% if data.description is defined and data.description != o_data.description %}
+ COMMENT ON LANGUAGE {{ conn|qtIdent(data.name) }}
+-    IS '{{ data.description }}';
++    IS {{ data.description|qtLiteral(conn) }};
+ {% endif %}
+ {% endif %}
+ 
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/__init__.py b/web/pgadmin/browser/server_groups/servers/databases/schemas/__init__.py
+index 697183d17e1..6a0235a9394 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/__init__.py
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/__init__.py
+@@ -800,7 +800,8 @@ def delete(self, gid, sid, did, scid=None):
+                 SQL = render_template(
+                     "/".join([self.template_path, 'sql/get_name.sql']),
+                     _=gettext,
+-                    scid=scid
++                    scid=scid,
++                    conn=self.conn
+                 )
+ 
+                 status, name = self.conn.execute_scalar(SQL)
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/__init__.py b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/__init__.py
+index 56b6d1fab4d..270df949e01 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/__init__.py
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/__init__.py
+@@ -776,7 +776,8 @@ def sql(self, gid, sid, did, scid, doid=None, **kwargs):
+             data.update(parse_sec_labels_from_db(data['seclabels']))
+ 
+         SQL = render_template("/".join([self.template_path,
+-                                        self._CREATE_SQL]), data=data)
++                                        self._CREATE_SQL]),
++                              data=data, conn=self.conn)
+ 
+         sql_header = """-- DOMAIN: {0}.{1}\n\n""".format(
+             data['basensp'], data['name'])
+@@ -838,7 +839,7 @@ def check_domain_type(self, data, old_data, is_schema_diff):
+         if 'fulltype' in data or 'basetype' in data or 'collname' in data:
+             SQL = render_template(
+                 "/".join([self.template_path, 'domain_schema_diff.sql']),
+-                data=data, o_data=old_data)
++                data=data, o_data=old_data, conn=self.conn)
+         else:
+             if is_schema_diff:
+                 data['is_schema_diff'] = True
+@@ -894,7 +895,7 @@ def get_sql(self, gid, sid, data, scid, doid=None, is_schema_diff=False):
+         else:
+             SQL = render_template("/".join([self.template_path,
+                                             self._CREATE_SQL]),
+-                                  data=data)
++                                  data=data, conn=self.conn)
+             return SQL.strip('\n'), data['name']
+ 
+     @check_precondition
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/domain_constraints/__init__.py b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/domain_constraints/__init__.py
+index 2c6f5b61eb4..200ccff33c9 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/domain_constraints/__init__.py
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/domain_constraints/__init__.py
+@@ -620,7 +620,8 @@ def sql(self, gid, sid, did, scid, doid, coid=None):
+ 
+         SQL = render_template("/".join([self.template_path,
+                                         self._CREATE_SQL]),
+-                              data=data, domain=domain, schema=schema)
++                              data=data, domain=domain, schema=schema,
++                              conn=self.conn)
+ 
+         sql_header = """-- CHECK: {1}.{0}
+ 
+@@ -696,7 +697,8 @@ def get_sql(self, gid, sid, data, scid, doid, coid=None):
+ 
+                 SQL = render_template("/".join([self.template_path,
+                                                 self._CREATE_SQL]),
+-                                      data=data, domain=domain, schema=schema)
++                                      data=data, domain=domain, schema=schema,
++                                      conn=self.conn)
+             if 'name' in data:
+                 return True, SQL.strip('\n'), data['name']
+             else:
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/domain_constraints/templates/domain_constraints/sql/default/create.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/domain_constraints/templates/domain_constraints/sql/default/create.sql
+index ad993f7ab7a..3412e8664e3 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/domain_constraints/templates/domain_constraints/sql/default/create.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/domain_constraints/templates/domain_constraints/sql/default/create.sql
+@@ -6,5 +6,5 @@ ALTER DOMAIN {{ conn|qtIdent(schema, domain) }}
+ 
+ 
+ COMMENT ON CONSTRAINT {{ conn|qtIdent(data.name) }} ON DOMAIN {{ conn|qtIdent(schema, domain) }}
+-    IS '{{ data.description }}';{% endif %}
++    IS {{ data.description|qtLiteral(conn) }};{% endif %}
+ {% endif %}
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/create.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/create.sql
+index c8cc0831371..a9fe0443adf 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/create.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/create.sql
+@@ -20,14 +20,14 @@ ALTER DOMAIN {{ conn|qtIdent(data.basensp, data.name) }}
+ {% if c.description %}
+ 
+ COMMENT ON CONSTRAINT {{ conn|qtIdent(c.conname) }} ON DOMAIN {{ conn|qtIdent(data.basensp, data.name) }}
+-    IS '{{ c.description }}';
++    IS {{ c.description|qtLiteral(conn) }};
+ {% endif %}
+ {% endfor -%}
+ {% endif %}
+ 
+ {% if data.description %}
+ COMMENT ON DOMAIN {{ conn|qtIdent(data.basensp, data.name) }}
+-    IS '{{ data.description }}';{% endif -%}
++    IS {{ data.description|qtLiteral(conn) }};{% endif -%}
+ 
+ {% if data.seclabels %}
+ {% for r in data.seclabels %}
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/domain_schema_diff.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/domain_schema_diff.sql
+index 3c5e152a773..157dbc15650 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/domain_schema_diff.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/domain_schema_diff.sql
+@@ -25,7 +25,7 @@ ALTER DOMAIN {{ conn|qtIdent(o_data.basensp, o_data.name) }}
+ {% if c.description %}
+ 
+ COMMENT ON CONSTRAINT {{ conn|qtIdent(c.conname) }} ON DOMAIN {{ conn|qtIdent(o_data.basensp, o_data.name) }}
+-    IS '{{ c.description }}';
++    IS {{ c.description|qtLiteral(conn) }};
+ {% endif %}
+ {% endfor -%}
+ {% for c in data.constraints.changed %}{% if c.conname and c.consrc %}
+@@ -35,14 +35,14 @@ ALTER DOMAIN {{ conn|qtIdent(o_data.basensp, o_data.name) }}
+ {% if c.description %}
+ 
+ COMMENT ON CONSTRAINT {{ conn|qtIdent(c.conname) }} ON DOMAIN {{ conn|qtIdent(o_data.basensp, o_data.name) }}
+-    IS '{{ c.description }}';
++    IS {{ c.description|qtLiteral(conn) }};
+ {% endif %}
+ {% endfor -%}
+ {% endif %}
+ 
+ {% if data.description %}
+ COMMENT ON DOMAIN {{ conn|qtIdent(o_data.basensp, o_data.name) }}
+-    IS '{{ data.description }}';{% endif -%}
++    IS {{ data.description|qtLiteral(conn) }};{% endif -%}
+ 
+ {% if data.seclabels %}
+ {% for r in data.seclabels %}
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/update.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/update.sql
+index 4241b505abd..315b9f92283 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/update.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/domains/templates/domains/sql/default/update.sql
+@@ -69,7 +69,7 @@ ALTER DOMAIN {{ conn|qtIdent(o_data.basensp, name) }}
+ {% if c.description %}
+ 
+ COMMENT ON CONSTRAINT {{ conn|qtIdent(c.conname) }} ON DOMAIN {{ conn|qtIdent(o_data.basensp, name) }}
+-    IS '{{ c.description }}';
++    IS {{ c.description|qtLiteral(conn) }};
+ {% endif %}
+ {% endfor -%}{% endif -%}
+ {% set seclabels = data.seclabels %}
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/foreign_tables/templates/foreign_tables/sql/default/create.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/foreign_tables/templates/foreign_tables/sql/default/create.sql
+index 05c464817c1..f9a45df87c7 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/foreign_tables/templates/foreign_tables/sql/default/create.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/foreign_tables/templates/foreign_tables/sql/default/create.sql
+@@ -48,7 +48,7 @@ ALTER FOREIGN TABLE {{ conn|qtIdent(data.basensp, data.name) }}
+ {% if data.description %}
+ 
+ COMMENT ON FOREIGN TABLE {{ conn|qtIdent(data.basensp, data.name) }}
+-    IS '{{ data.description }}';
++    IS {{ data.description|qtLiteral(conn) }};
+ {% endif -%}
+ {% if data.columns and data.columns|length > 0 %}
+ {% for c in data.columns %}
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/foreign_tables/templates/foreign_tables/sql/default/foreign_table_schema_diff.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/foreign_tables/templates/foreign_tables/sql/default/foreign_table_schema_diff.sql
+index 83acb8fb8f9..2645df37ed0 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/foreign_tables/templates/foreign_tables/sql/default/foreign_table_schema_diff.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/foreign_tables/templates/foreign_tables/sql/default/foreign_table_schema_diff.sql
+@@ -54,11 +54,11 @@ ALTER FOREIGN TABLE {{ conn|qtIdent(o_data.basensp, o_data.name) }}
+ {% if data.description %}
+ 
+ COMMENT ON FOREIGN TABLE {{ conn|qtIdent(o_data.basensp, o_data.name) }}
+-    IS '{{ data.description }}';
+-{ % elif o_data.description %}
++    IS {{ data.description|qtLiteral(conn) }};
++{% elif o_data.description %}
+ 
+ COMMENT ON FOREIGN TABLE {{ conn|qtIdent(o_data.basensp, o_data.name) }}
+-    IS '{{ o_data.description }}';
++    IS {{ o_data.description|qtLiteral(conn) }};
+ {% endif -%}
+ {% if acl %}
+ 
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/functions/__init__.py b/web/pgadmin/browser/server_groups/servers/databases/schemas/functions/__init__.py
+index d1f76e24360..c73de2d0788 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/functions/__init__.py
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/functions/__init__.py
+@@ -1615,7 +1615,7 @@ def statistics(self, gid, sid, did, scid, fnid=None):
+                 render_template(
+                     'schemas/pg/#{0}#/sql/get_name.sql'.format(
+                         self.manager.version),
+-                    scid=scid
++                    scid=scid, conn=self.conn
+                 )
+             )
+             if not status:
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/exclusion_constraint/sql/16_plus/stats.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/exclusion_constraint/sql/16_plus/stats.sql
+index 3d21250a5fa..da1bffeaea6 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/exclusion_constraint/sql/16_plus/stats.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/exclusion_constraint/sql/16_plus/stats.sql
+@@ -19,7 +19,7 @@ SELECT
+     avg_leaf_density AS {{ conn|qtIdent(_('Average leaf density')) }},
+     leaf_fragmentation AS {{ conn|qtIdent(_('Leaf fragmentation')) }}
+ FROM
+-    pgstatindex('{{conn|qtIdent(schema)}}.{{conn|qtIdent(name)}}'), pg_catalog.pg_stat_all_indexes stat
++    pgstatindex({{ exid }}::oid::regclass), pg_catalog.pg_stat_all_indexes stat
+ {% else %}
+ FROM
+     pg_catalog.pg_stat_all_indexes stat
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/exclusion_constraint/sql/default/stats.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/exclusion_constraint/sql/default/stats.sql
+index e127f1a65ab..30a3d1680d5 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/exclusion_constraint/sql/default/stats.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/exclusion_constraint/sql/default/stats.sql
+@@ -18,7 +18,7 @@ SELECT
+     avg_leaf_density AS {{ conn|qtIdent(_('Average leaf density')) }},
+     leaf_fragmentation AS {{ conn|qtIdent(_('Leaf fragmentation')) }}
+ FROM
+-    pgstatindex('{{conn|qtIdent(schema)}}.{{conn|qtIdent(name)}}'), pg_catalog.pg_stat_all_indexes stat
++    pgstatindex({{ exid }}::oid::regclass), pg_catalog.pg_stat_all_indexes stat
+ {% else %}
+ FROM
+     pg_catalog.pg_stat_all_indexes stat
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/index_constraint/sql/16_plus/stats.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/index_constraint/sql/16_plus/stats.sql
+index 2c3438d75c0..db0a25c0bf1 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/index_constraint/sql/16_plus/stats.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/index_constraint/sql/16_plus/stats.sql
+@@ -19,7 +19,7 @@ SELECT
+     avg_leaf_density AS {{ conn|qtIdent(_('Average leaf density')) }},
+     leaf_fragmentation AS {{ conn|qtIdent(_('Leaf fragmentation')) }}
+ FROM
+-    pgstatindex('{{conn|qtIdent(schema)}}.{{conn|qtIdent(name)}}'), pg_catalog.pg_stat_all_indexes stat
++    pgstatindex({{ cid }}::oid::regclass), pg_catalog.pg_stat_all_indexes stat
+ {% else %}
+ FROM
+     pg_catalog.pg_stat_all_indexes stat
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/index_constraint/sql/default/stats.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/index_constraint/sql/default/stats.sql
+index 8c55db597dd..c7f5a1d5870 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/index_constraint/sql/default/stats.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/index_constraint/sql/default/stats.sql
+@@ -18,7 +18,7 @@ SELECT
+     avg_leaf_density AS {{ conn|qtIdent(_('Average leaf density')) }},
+     leaf_fragmentation AS {{ conn|qtIdent(_('Leaf fragmentation')) }}
+ FROM
+-    pgstatindex('{{conn|qtIdent(schema)}}.{{conn|qtIdent(name)}}'), pg_catalog.pg_stat_all_indexes stat
++    pgstatindex({{ cid }}::oid::regclass), pg_catalog.pg_stat_all_indexes stat
+ {% else %}
+ FROM
+     pg_catalog.pg_stat_all_indexes stat
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/indexes/sql/16_plus/stats.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/indexes/sql/16_plus/stats.sql
+index 0a127ac60b5..7dfd8bdc78c 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/indexes/sql/16_plus/stats.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/indexes/sql/16_plus/stats.sql
+@@ -19,7 +19,7 @@ SELECT
+     avg_leaf_density AS {{ conn|qtIdent(_('Average leaf density')) }},
+     leaf_fragmentation AS {{ conn|qtIdent(_('Leaf fragmentation')) }}
+ FROM
+-    pgstatindex('{{conn|qtIdent(schema)}}.{{conn|qtIdent(index)}}'), pg_catalog.pg_stat_all_indexes stat
++    pgstatindex({{ idx }}::oid::regclass), pg_catalog.pg_stat_all_indexes stat
+ {% else %}
+ FROM
+     pg_catalog.pg_stat_all_indexes stat
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/indexes/sql/default/stats.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/indexes/sql/default/stats.sql
+index 73bbed979e1..6bd6b56e8c0 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/indexes/sql/default/stats.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/indexes/sql/default/stats.sql
+@@ -18,7 +18,7 @@ SELECT
+     avg_leaf_density AS {{ conn|qtIdent(_('Average leaf density')) }},
+     leaf_fragmentation AS {{ conn|qtIdent(_('Leaf fragmentation')) }}
+ FROM
+-    pgstatindex('{{conn|qtIdent(schema)}}.{{conn|qtIdent(index)}}'), pg_catalog.pg_stat_all_indexes stat
++    pgstatindex({{ idx }}::oid::regclass), pg_catalog.pg_stat_all_indexes stat
+ {% else %}
+ FROM
+     pg_catalog.pg_stat_all_indexes stat
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/tables/sql/16_plus/stats.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/tables/sql/16_plus/stats.sql
+index 0ca8f6c8265..01c3d15eeac 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/tables/sql/16_plus/stats.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/tables/sql/16_plus/stats.sql
+@@ -41,7 +41,7 @@ SELECT
+     free_space AS {{ conn|qtIdent(_('Free space')) }},
+     free_percent AS {{ conn|qtIdent(_('Free percent')) }}
+ FROM
+-    pgstattuple('{{schema_name}}.{{table_name}}'), pg_catalog.pg_stat_all_tables stat
++    pgstattuple({{ tid }}::oid::regclass), pg_catalog.pg_stat_all_tables stat
+ {% else %}
+ FROM
+     pg_catalog.pg_stat_all_tables stat
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/tables/sql/default/stats.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/tables/sql/default/stats.sql
+index e2b77c3838a..92506e83b51 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/tables/sql/default/stats.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/templates/tables/sql/default/stats.sql
+@@ -40,7 +40,7 @@ SELECT
+     free_space AS {{ conn|qtIdent(_('Free space')) }},
+     free_percent AS {{ conn|qtIdent(_('Free percent')) }}
+ FROM
+-    pgstattuple('{{schema_name}}.{{table_name}}'), pg_catalog.pg_stat_all_tables stat
++    pgstattuple({{ tid }}::oid::regclass), pg_catalog.pg_stat_all_tables stat
+ {% else %}
+ FROM
+     pg_catalog.pg_stat_all_tables stat
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/utils.py b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/utils.py
+index 0c9d3f5a483..30393dd1824 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/utils.py
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/tables/utils.py
+@@ -888,7 +888,7 @@ def _get_resql_for_rules(self, tid, main_sql, table, json_resp):
+             rules_sql += render_template("/".join(
+                 [self.rules_template_path, self._CREATE_SQL]),
+                 data=res_data, display_comments=display_comments,
+-                add_replace_clause=True
++                add_replace_clause=True, conn=self.conn
+             )
+ 
+             # Add into main sql
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/mviews/pg/default/sql/stats.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/mviews/pg/default/sql/stats.sql
+index d04588d4e93..e0e70569088 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/mviews/pg/default/sql/stats.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/mviews/pg/default/sql/stats.sql
+@@ -40,7 +40,7 @@ SELECT
+     free_space AS {{ conn|qtIdent(_('Free space')) }},
+     free_percent AS {{ conn|qtIdent(_('Free percent')) }}
+ FROM
+-    pgstattuple('{{schema_name}}.{{mview_name}}'), pg_catalog.pg_stat_all_tables stat
++    pgstattuple({{ vid }}::oid::regclass), pg_catalog.pg_stat_all_tables stat
+ {% else %}
+ FROM
+     pg_catalog.pg_stat_all_tables stat
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/mviews/ppas/default/sql/stats.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/mviews/ppas/default/sql/stats.sql
+index d04588d4e93..e0e70569088 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/mviews/ppas/default/sql/stats.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/mviews/ppas/default/sql/stats.sql
+@@ -40,7 +40,7 @@ SELECT
+     free_space AS {{ conn|qtIdent(_('Free space')) }},
+     free_percent AS {{ conn|qtIdent(_('Free percent')) }}
+ FROM
+-    pgstattuple('{{schema_name}}.{{mview_name}}'), pg_catalog.pg_stat_all_tables stat
++    pgstattuple({{ vid }}::oid::regclass), pg_catalog.pg_stat_all_tables stat
+ {% else %}
+ FROM
+     pg_catalog.pg_stat_all_tables stat
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/views/pg/default/sql/view_id.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/views/pg/default/sql/view_id.sql
+index a4565a31aa2..f0b2b874172 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/views/pg/default/sql/view_id.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/views/pg/default/sql/view_id.sql
+@@ -2,5 +2,5 @@
+ {% if data %}
+ SELECT c.oid, c.relname FROM pg_catalog.pg_class c
+ LEFT OUTER JOIN pg_catalog.pg_namespace nsp on nsp.oid = c.relnamespace
+-WHERE c.relname = {{ data.name |qtLiteral(conn) }} and nsp.nspname = '{{ data.schema }}';
++WHERE c.relname = {{ data.name |qtLiteral(conn) }} and nsp.nspname = {{ data.schema|qtLiteral(conn) }};
+ {% endif %}
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/views/ppas/default/sql/view_id.sql b/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/views/ppas/default/sql/view_id.sql
+index c38976ff7a0..f2a38fda5a1 100644
+--- a/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/views/ppas/default/sql/view_id.sql
++++ b/web/pgadmin/browser/server_groups/servers/databases/schemas/views/templates/views/ppas/default/sql/view_id.sql
+@@ -2,5 +2,5 @@
+ {% if data %}
+ SELECT c.oid, c.relname FROM pg_catalog.pg_class c
+ LEFT OUTER JOIN pg_catalog.pg_namespace nsp on nsp.oid = c.relnamespace
+-WHERE c.relname = {{ data.name|qtLiteral(conn) }} and nsp.nspname = '{{ data.schema}}';
++WHERE c.relname = {{ data.name|qtLiteral(conn) }} and nsp.nspname = {{ data.schema|qtLiteral(conn) }};
+ {% endif %}
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/tests/test_comment_description_sql_escaping.py b/web/pgadmin/browser/server_groups/servers/databases/tests/test_comment_description_sql_escaping.py
+new file mode 100644
+index 00000000000..25658d1eb93
+--- /dev/null
++++ b/web/pgadmin/browser/server_groups/servers/databases/tests/test_comment_description_sql_escaping.py
+@@ -0,0 +1,358 @@
++##########################################################################
++#
++# pgAdmin 4 - PostgreSQL Tools
++#
++# Copyright (C) 2013 - 2026, The pgAdmin Development Team
++# This software is released under the PostgreSQL Licence
++#
++##########################################################################
++
++"""Regression test: COMMENT ... IS '<description>' templates must escape the
++description through the qtLiteral filter so that user-supplied apostrophes
++cannot break out of the string literal.
++
++This covers all template sites that previously interpolated descriptions as
++``'{{ value }}'`` and were vulnerable to SQL injection via the description
++input on the corresponding pgAdmin dialogs.
++"""
++
++import os
++
++from flask import Flask, render_template
++from jinja2 import FileSystemLoader
++
++from pgadmin.utils.driver import get_driver
++from pgadmin.utils.route import BaseTestGenerator
++from config import PG_DEFAULT_DRIVER
++
++
++# A description containing an apostrophe and a trailing SQL statement. If the
++# template fails to escape, the rendered SQL closes the literal early and the
++# remaining text becomes executable SQL.
++PAYLOAD = "x'; DROP TABLE pg_class; --"
++
++# After correct qtLiteral escaping the apostrophe is doubled and the value is
++# wrapped in single quotes.
++SAFE_FRAGMENT = "'x''; DROP TABLE pg_class; --'"
++
++# What the vulnerable template used to render: the apostrophe is not doubled,
++# so the literal closes after ``x`` and the remainder becomes executable SQL.
++VULN_FRAGMENT = "'x'; DROP TABLE pg_class; --'"
++
++
++WEB_ROOT = os.path.realpath(
++    os.path.join(os.path.dirname(os.path.realpath(__file__)),
++                 os.pardir, os.pardir, os.pardir, os.pardir, os.pardir,
++                 os.pardir)
++)
++
++
++class _FakeConn:
++    """psycopg.sql.Literal.as_string() accepts None as its context and still
++    produces the canonical PostgreSQL-escaped literal. The production
++    ``qtLiteral`` short-circuits when its conn argument is falsy, so we hand
++    it an object whose ``.conn`` is None: that exercises the real escape
++    branch (``psycopg.sql.Literal(value).as_string(None)``) without needing a
++    live PostgreSQL connection."""
++
++    conn = None
++
++    def __bool__(self):
++        return True
++
++
++def _abs(*parts):
++    return os.path.join(WEB_ROOT, *parts)
++
++
++# Jinja loader roots needed by the affected templates. Each template imports
++# macros via paths like ``macros/schemas/security.macros`` or
++# ``macros/privilege.macros`` which resolve against these roots.
++MACRO_ROOTS = [
++    _abs('pgadmin', 'browser', 'server_groups', 'servers',
++         'databases', 'schemas', 'templates'),
++    _abs('pgadmin', 'browser', 'server_groups', 'servers', 'templates'),
++]
++
++
++class CommentDescriptionSQLEscapingTestCase(BaseTestGenerator):
++    """Verify each previously-vulnerable COMMENT template escapes the
++    description through ``qtLiteral`` so apostrophes cannot terminate the
++    SQL string literal early."""
++
++    scenarios = [
++        (
++            'Domain create - data.description (domain comment)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'domains', 'templates'),
++                template='domains/sql/default/create.sql',
++                ctx=dict(
++                    data=dict(name='d1', basensp='public', basetype='text',
++                              description=PAYLOAD),
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'Domain create - c.description (constraint comment)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'domains', 'templates'),
++                template='domains/sql/default/create.sql',
++                ctx=dict(
++                    data=dict(
++                        name='d1', basensp='public', basetype='text',
++                        constraints=[
++                            dict(conname='c1', consrc='VALUE > 0',
++                                 description=PAYLOAD),
++                        ],
++                    ),
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'Domain update - c.description in constraints.added',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'domains', 'templates'),
++                template='domains/sql/default/update.sql',
++                ctx=dict(
++                    data=dict(
++                        name='d1',
++                        constraints=dict(
++                            deleted=[], changed=[],
++                            added=[dict(conname='c1', consrc='VALUE > 0',
++                                        description=PAYLOAD)],
++                        ),
++                        seclabels=dict(),
++                    ),
++                    o_data=dict(name='d1', basensp='public', constraints={}),
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'Domain schema diff - data.description (domain comment)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'domains', 'templates'),
++                template='domains/sql/default/domain_schema_diff.sql',
++                ctx=dict(
++                    data=dict(description=PAYLOAD),
++                    o_data=dict(name='d1', basensp='public', fulltype='text'),
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'Domain schema diff - c.description in constraints.added',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'domains', 'templates'),
++                template='domains/sql/default/domain_schema_diff.sql',
++                ctx=dict(
++                    data=dict(
++                        constraints=dict(
++                            added=[dict(conname='c1', consrc='VALUE > 0',
++                                        description=PAYLOAD)],
++                            changed=[],
++                        ),
++                    ),
++                    o_data=dict(name='d1', basensp='public', fulltype='text'),
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'Domain schema diff - c.description in constraints.changed',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'domains', 'templates'),
++                template='domains/sql/default/domain_schema_diff.sql',
++                ctx=dict(
++                    data=dict(
++                        constraints=dict(
++                            added=[],
++                            changed=[dict(conname='c1', consrc='VALUE > 0',
++                                          description=PAYLOAD)],
++                        ),
++                    ),
++                    o_data=dict(name='d1', basensp='public', fulltype='text'),
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'Domain constraint create - data.description',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'domains', 'domain_constraints',
++                    'templates'),
++                template='domain_constraints/sql/default/create.sql',
++                ctx=dict(
++                    data=dict(name='c1', consrc='VALUE > 0',
++                              description=PAYLOAD),
++                    schema='public', domain='d1',
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'Foreign table create - data.description',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'foreign_tables', 'templates'),
++                template='foreign_tables/sql/default/create.sql',
++                ctx=dict(
++                    data=dict(
++                        name='ft1', basensp='public', ftsrvname='srv',
++                        description=PAYLOAD, columns=[], constraints=[],
++                    ),
++                    is_sql=False,
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'Foreign table schema diff - data.description',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'foreign_tables', 'templates'),
++                template='foreign_tables/sql/default/'
++                         'foreign_table_schema_diff.sql',
++                ctx=dict(
++                    data=dict(description=PAYLOAD, ftsrvname='srv'),
++                    o_data=dict(name='ft1', basensp='public',
++                                columns=[], constraints=[]),
++                    is_sql=False,
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'Foreign table schema diff - o_data.description (elif branch)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'foreign_tables', 'templates'),
++                template='foreign_tables/sql/default/'
++                         'foreign_table_schema_diff.sql',
++                ctx=dict(
++                    data=dict(ftsrvname='srv'),
++                    o_data=dict(name='ft1', basensp='public',
++                                columns=[], constraints=[],
++                                description=PAYLOAD),
++                    is_sql=False,
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'Language update - data.description',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'languages', 'templates'),
++                template='languages/sql/default/update.sql',
++                ctx=dict(
++                    data=dict(name='plperl', description=PAYLOAD),
++                    o_data=dict(name='plperl', description='old',
++                                trusted=True, lanproc='h', laninl='i',
++                                lanval='v', lanowner='postgres'),
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'Event trigger update - data.comment',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'event_triggers', 'templates'),
++                template='event_triggers/sql/default/update.sql',
++                ctx=dict(
++                    data=dict(name='et1', comment=PAYLOAD),
++                    o_data=dict(name='et1', comment='old',
++                                eventname='ddl_command_start',
++                                eventfunname='public.f', eventowner='postgres',
++                                enabled='O'),
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'View OID lookup (pg) - data.schema',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'views', 'templates'),
++                template='views/pg/default/sql/view_id.sql',
++                ctx=dict(
++                    data=dict(name='v1', schema=PAYLOAD),
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++        (
++            'View OID lookup (ppas) - data.schema',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'views', 'templates'),
++                template='views/ppas/default/sql/view_id.sql',
++                ctx=dict(
++                    data=dict(name='v1', schema=PAYLOAD),
++                    conn=_FakeConn(),
++                ),
++            ),
++        ),
++    ]
++
++    def setUp(self):
++        self.app_under_test = _FakeApp(self.template_root)
++
++    def runTest(self):
++        with self.app_under_test.app_context():
++            rendered = render_template(self.template, **self.ctx)
++
++        self.assertIn(
++            SAFE_FRAGMENT, rendered,
++            msg=(
++                'Description was not safely escaped by qtLiteral.\n'
++                'Expected fragment: {}\n'
++                'Rendered output:\n{}'.format(SAFE_FRAGMENT, rendered)
++            ),
++        )
++        self.assertNotIn(
++            VULN_FRAGMENT, rendered,
++            msg=(
++                'Rendered SQL still contains the unescaped (vulnerable) '
++                'fragment.\nRendered output:\n{}'.format(rendered)
++            ),
++        )
++
++
++class _FakeApp(Flask):
++    """Minimal Flask app whose Jinja environment mirrors the production
++    template filters (``qtLiteral``, ``qtIdent``, ``qtTypeIdent``) and whose
++    loader can resolve both the entity's own templates and the macro files
++    they import."""
++
++    def __init__(self, template_root):
++        super().__init__('')
++        driver = get_driver(PG_DEFAULT_DRIVER, self)
++        self.jinja_env.filters['qtLiteral'] = driver.qtLiteral
++        self.jinja_env.filters['qtIdent'] = driver.qtIdent
++        self.jinja_env.filters['qtTypeIdent'] = driver.qtTypeIdent
++        self.jinja_loader = FileSystemLoader([template_root] + MACRO_ROOTS)
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/tests/test_sql_string_literal_lint.py b/web/pgadmin/browser/server_groups/servers/databases/tests/test_sql_string_literal_lint.py
+new file mode 100644
+index 00000000000..8d2d3af47f7
+--- /dev/null
++++ b/web/pgadmin/browser/server_groups/servers/databases/tests/test_sql_string_literal_lint.py
+@@ -0,0 +1,675 @@
++##########################################################################
++#
++# pgAdmin 4 - PostgreSQL Tools
++#
++# Copyright (C) 2013 - 2026, The pgAdmin Development Team
++# This software is released under the PostgreSQL Licence
++#
++##########################################################################
++
++"""Lint regression test: every ``'{{ ... }}'`` Jinja interpolation in a SQL
++template is a potential SQL injection sink — the unquoted-then-quoted form
++relies on the substituted value being free of apostrophes, which is almost
++never enforceable across the codebase.
++
++The safe pattern is ``{{ value|qtLiteral(conn) }}`` (no surrounding quotes
++in the template — the filter wraps the value in PostgreSQL-escaped single
++quotes itself). See also ``test_comment_description_sql_escaping.py`` for
++the per-template behavioural test that exercises the COMMENT sites that
++motivated this lint.
++
++This test walks every ``*.sql`` template under ``web/pgadmin/`` and compares
++the set of single-quote-wrapped Jinja interpolations against an explicit
++allowlist. Each allowlist entry carries a short justification.
++
++If you see this test fail with a "new occurrence" message, you have two
++options:
++
++  1. Preferred: change ``'{{ x }}'`` to ``{{ x|qtLiteral(conn) }}`` in the
++     template. Make sure the ``render_template`` caller passes ``conn=`` so
++     the filter does not short-circuit.
++  2. If the value is provably safe (e.g. a numeric OID looked up from
++     pg_catalog, a hardcoded constant supplied by the handler, or a
++     bounded enum validated server-side), add an entry to ``ALLOWLIST``
++     below with a one-line reason.
++"""
++
++import os
++import re
++from collections import Counter
++
++from pgadmin.utils.route import BaseTestGenerator
++
++
++# Repository web/ directory.
++WEB_ROOT = os.path.realpath(
++    os.path.join(os.path.dirname(os.path.realpath(__file__)),
++                 os.pardir, os.pardir, os.pardir, os.pardir, os.pardir,
++                 os.pardir)
++)
++
++# Root inside web/ that the lint walks.
++SCAN_ROOT = os.path.join(WEB_ROOT, 'pgadmin')
++
++# Single-quote-wrapped Jinja interpolation. Catches every variant of
++# ``'...{{ x }}...'`` that could become a SQL string-literal injection
++# sink:
++#   * Jinja that fills the entire literal — ``'{{ x }}'``.
++#   * Jinja embedded inside a literal with neighbouring text — e.g.
++#     ``'%{{ search_text }}%'``.
++#   * Multiple interpolations inside one literal — e.g.
++#     ``pgstattuple('{{schema_name}}.{{table_name}}')``.
++#
++# The body between the outer quotes is restricted to either a complete
++# ``{{...}}`` group, or any character that is not ``'``, newline, ``{``
++# or ``}``. The ``{``/``}`` exclusion is what stops the regex from
++# crossing a Jinja control block ``{%...%}`` or comment ``{#...#}``
++# boundary — otherwise long ``{% if ... %}`` conditional templates would
++# produce huge false-positive matches that span unrelated literals.
++PATTERN = re.compile(
++    r"'[^'\n{}]*(?:\{\{[^}]+\}\}[^'\n{}]*)+'"
++)
++
++
++# Allowlist of currently-known occurrences. Each entry is
++# ``((relative_path, matched_fragment), count, reason)`` where:
++#
++#   * ``relative_path`` is the SQL template path relative to ``web/``
++#     (forward slashes on every platform).
++#   * ``matched_fragment`` is the exact ``'{{ ... }}'`` slice as it appears
++#     in the template (whitespace inside the braces matters).
++#   * ``count`` is the number of times that fragment occurs in that file
++#     (a single long Jinja line can carry multiple identical fragments).
++#   * ``reason`` is a short justification: why this is not exploitable.
++#
++# Add new entries only when (1) the substituted value is genuinely safe by
++# construction, or (2) the impact is something other than SQL injection
++# against arbitrary data. Anything that takes free-form user input through
++# the request body MUST use ``qtLiteral`` instead of being allowlisted.
++
++ALLOWLIST = [
++    # ------------------------------------------------------------------
++    # Server-internal numeric OIDs. ``oid``/``tid`` are integers looked up
++    # from pg_catalog and rendered into a literal-shaped placeholder so
++    # they can be compared against text columns / cast back via regclass.
++    # Not user-supplied; cannot contain apostrophes.
++    # ------------------------------------------------------------------
++    (('pgadmin/browser/server_groups/servers/databases/schemas/types/'
++      'templates/types/pg/sql/default/get_subtypes.sql',
++      "'{{ oid }}'"), 1,
++     "OID is a server-internal integer from pg_catalog (proargtypes lookup)."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/types/'
++      'templates/types/ppas/sql/default/get_subtypes.sql',
++      "'{{ oid }}'"), 1,
++     "OID is a server-internal integer from pg_catalog (proargtypes lookup)."),
++    (('pgadmin/browser/server_groups/servers/databases/publications/'
++      'templates/publications/pg/default/sql/get_all_columns.sql',
++      "'{{ tid }}'"), 1,
++     "tid is a numeric table OID from the URL path, used with ::regclass."),
++    (('pgadmin/browser/server_groups/servers/databases/publications/'
++      'templates/publications/ppas/default/sql/get_all_columns.sql',
++      "'{{ tid }}'"), 1,
++     "tid is a numeric table OID from the URL path, used with ::regclass."),
++
++    # ------------------------------------------------------------------
++    # Fixed enum strings supplied by the dashboard module. The value
++    # passed for ``log_format`` is selected from the server's
++    # ``log_destination`` GUC and can only be ``csvlog``, ``stderr`` or
++    # ``jsonlog`` (the only values pg_current_logfile accepts).
++    # ------------------------------------------------------------------
++    (('pgadmin/dashboard/templates/dashboard/sql/default/logs.sql',
++      "'{{log_format}}'"), 1,
++     "log_format is a fixed enum (csvlog/stderr/jsonlog) from server GUC."),
++    (('pgadmin/dashboard/templates/dashboard/sql/default/log_stat.sql',
++      "'{{log_format}}'"), 1,
++     "log_format is a fixed enum (csvlog/stderr/jsonlog) from server GUC."),
++
++    # ------------------------------------------------------------------
++    # ``constraint_type`` is a single-char pg_constraint contype code
++    # ('c', 'f', 'p', 'u', 'x', ...) passed by pgAdmin's own handler when
++    # rendering one of these templates; never derived from request input.
++    # ------------------------------------------------------------------
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/index_constraint/sql/15_plus/properties.sql',
++      "'{{constraint_type}}'"), 1,
++     "Single-char pg_constraint.contype code, hardcoded by handler."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/index_constraint/sql/11_plus/properties.sql',
++      "'{{constraint_type}}'"), 1,
++     "Single-char pg_constraint.contype code, hardcoded by handler."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/index_constraint/sql/default/properties.sql',
++      "'{{constraint_type}}'"), 1,
++     "Single-char pg_constraint.contype code, hardcoded by handler."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/index_constraint/sql/default/get_oid.sql',
++      "'{{constraint_type}}'"), 1,
++     "Single-char pg_constraint.contype code, hardcoded by handler."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/index_constraint/sql/default/get_oid_with_transaction.sql',
++      "'{{constraint_type}}'"), 1,
++     "Single-char pg_constraint.contype code, hardcoded by handler."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/index_constraint/sql/default/get_name.sql',
++      "'{{constraint_type}}'"), 1,
++     "Single-char pg_constraint.contype code, hardcoded by handler."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/index_constraint/sql/default/nodes.sql',
++      "'{{constraint_type}}'"), 1,
++     "Single-char pg_constraint.contype code, hardcoded by handler."),
++
++    # ------------------------------------------------------------------
++    # Index stat lookups for an already-existing table. ``schema`` and
++    # ``table`` come from the browser tree node and ultimately from
++    # pg_catalog. Cannot contain apostrophes for any object pgAdmin was
++    # able to discover via its own browse queries (which use qtLiteral on
++    # the way in), so this is not a SQL injection sink. A correctness
++    # follow-up (legitimately named objects containing apostrophes) is
++    # tracked separately.
++    # ------------------------------------------------------------------
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/indexes/sql/default/coll_stats.sql',
++      "'{{schema}}'"), 1,
++     "Schema name from pg_catalog via browser tree, not request input."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/indexes/sql/default/coll_stats.sql',
++      "'{{table}}'"), 1,
++     "Table name from pg_catalog via browser tree, not request input."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/indexes/sql/16_plus/coll_stats.sql',
++      "'{{schema}}'"), 1,
++     "Schema name from pg_catalog via browser tree, not request input."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/indexes/sql/16_plus/coll_stats.sql',
++      "'{{table}}'"), 1,
++     "Table name from pg_catalog via browser tree, not request input."),
++
++    # ------------------------------------------------------------------
++    # Aggregate initial-condition strings. ``initial_val`` and
++    # ``moving_initial_val`` come from the aggregate-creation form. The
++    # session executing the SQL must already hold ``CREATE`` on the
++    # target schema (CREATE AGGREGATE requirement), so the user can
++    # already issue arbitrary SQL via Query Tool. Tracked as a
++    # consistency follow-up; not a privilege-escalation sink.
++    # ------------------------------------------------------------------
++    (('pgadmin/browser/server_groups/servers/databases/schemas/aggregates/'
++      'templates/aggregates/sql/11_plus/create.sql',
++      "'{{data.initial_val}}'"), 1,
++     "CREATE AGGREGATE requires CREATE on schema; user already has SQL "
++     "access. Tracked as consistency follow-up."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/aggregates/'
++      'templates/aggregates/sql/11_plus/create.sql',
++      "'{{data.moving_initial_val}}'"), 1,
++     "CREATE AGGREGATE requires CREATE on schema; user already has SQL "
++     "access. Tracked as consistency follow-up."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/aggregates/'
++      'templates/aggregates/sql/12_plus/create.sql',
++      "'{{data.initial_val}}'"), 1,
++     "CREATE AGGREGATE requires CREATE on schema; user already has SQL "
++     "access. Tracked as consistency follow-up."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/aggregates/'
++      'templates/aggregates/sql/12_plus/create.sql',
++      "'{{data.moving_initial_val}}'"), 1,
++     "CREATE AGGREGATE requires CREATE on schema; user already has SQL "
++     "access. Tracked as consistency follow-up."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/aggregates/'
++      'templates/aggregates/sql/default/create.sql',
++      "'{{data.initial_val}}'"), 1,
++     "CREATE AGGREGATE requires CREATE on schema; user already has SQL "
++     "access. Tracked as consistency follow-up."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/aggregates/'
++      'templates/aggregates/sql/default/create.sql',
++      "'{{data.moving_initial_val}}'"), 1,
++     "CREATE AGGREGATE requires CREATE on schema; user already has SQL "
++     "access. Tracked as consistency follow-up."),
++
++    # ------------------------------------------------------------------
++    # Subscription create/update parameters. ``sync`` (synchronous_commit
++    # value), ``streaming`` (on/off/parallel), and ``origin`` (any/none)
++    # are bounded enum values selected from form drop-downs; the
++    # subscription form schema rejects free-form input. Subscription
++    # management additionally requires the user to be a superuser
++    # (CREATE SUBSCRIPTION). Tracked as a consistency follow-up.
++    # ------------------------------------------------------------------
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/default/create.sql',
++      "'{{ data.sync }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/default/update.sql',
++      "'{{ data.sync }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/14_plus/create.sql',
++      "'{{ data.sync }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/14_plus/create.sql',
++      "'{{ data.streaming}}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/14_plus/update.sql',
++      "'{{ data.sync }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/14_plus/update.sql',
++      "'{{ data.streaming}}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/15_plus/create.sql',
++      "'{{ data.sync }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/15_plus/create.sql',
++      "'{{ data.streaming}}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/15_plus/update.sql',
++      "'{{ data.sync }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/15_plus/update.sql',
++      "'{{ data.streaming}}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/16_plus/create.sql',
++      "'{{ data.sync }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/16_plus/create.sql',
++      "'{{ data.streaming}}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/16_plus/create.sql',
++      "'{{ data.origin}}'"), 1,
++     "Bounded enum (any/none); CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/16_plus/update.sql',
++      "'{{ data.sync }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/16_plus/update.sql',
++      "'{{ data.streaming }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/16_plus/update.sql',
++      "'{{ data.origin }}'"), 1,
++     "Bounded enum (any/none); CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/17_plus/create.sql',
++      "'{{ data.sync }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/17_plus/create.sql',
++      "'{{ data.streaming}}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/17_plus/create.sql',
++      "'{{ data.origin}}'"), 1,
++     "Bounded enum (any/none); CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/17_plus/update.sql',
++      "'{{ data.sync }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/17_plus/update.sql',
++      "'{{ data.streaming }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/17_plus/update.sql',
++      "'{{ data.origin }}'"), 1,
++     "Bounded enum (any/none); CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/18_plus/update.sql',
++      "'{{ data.sync }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/18_plus/update.sql',
++      "'{{ data.streaming }}'"), 1,
++     "Bounded enum from form schema; CREATE SUBSCRIPTION needs superuser."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/18_plus/update.sql',
++      "'{{ data.origin }}'"), 1,
++     "Bounded enum (any/none); CREATE SUBSCRIPTION needs superuser."),
++
++    # ------------------------------------------------------------------
++    # Subscription / publication name lookups. ``subname``, ``pubname``
++    # and ``pname`` come from the browser tree (resolved from OID
++    # references in pg_catalog), not from request body input.
++    # ------------------------------------------------------------------
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/default/get_position.sql',
++      "'{{ subname }}'"), 1,
++     "Subscription name from pg_catalog via browser tree."),
++    (('pgadmin/browser/server_groups/servers/databases/subscriptions/'
++      'templates/subscriptions/sql/default/dependencies.sql',
++      "'{{subname}}'"), 1,
++     "Subscription name from pg_catalog via browser tree."),
++    (('pgadmin/browser/server_groups/servers/databases/publications/'
++      'templates/publications/pg/default/sql/get_position.sql',
++      "'{{ pubname }}'"), 1,
++     "Publication name from pg_catalog via browser tree."),
++    (('pgadmin/browser/server_groups/servers/databases/publications/'
++      'templates/publications/pg/default/sql/dependencies.sql',
++      "'{{ pname }}'"), 1,
++     "Publication name from pg_catalog via browser tree."),
++    (('pgadmin/browser/server_groups/servers/databases/publications/'
++      'templates/publications/ppas/default/sql/get_position.sql',
++      "'{{ pubname }}'"), 1,
++     "Publication name from pg_catalog via browser tree."),
++    (('pgadmin/browser/server_groups/servers/databases/publications/'
++      'templates/publications/ppas/default/sql/dependencies.sql',
++      "'{{ pname }}'"), 1,
++     "Publication name from pg_catalog via browser tree."),
++
++    # ------------------------------------------------------------------
++    # DBMS job scheduler ``CREATE`` templates emit lines that are entirely
++    # inside SQL ``--`` line comments (display-only headers, never
++    # executed by pgAdmin). Each scheduler entity has two such lines.
++    # ------------------------------------------------------------------
++    (('pgadmin/browser/server_groups/servers/databases/dbms_job_scheduler/'
++      'dbms_jobs/templates/dbms_jobs/ppas/16_plus/create.sql',
++      "'{{ job_name }}'"), 2,
++     "Inside ``--`` SQL line comment (display header), not executed."),
++    (('pgadmin/browser/server_groups/servers/databases/dbms_job_scheduler/'
++      'dbms_schedules/templates/dbms_schedules/ppas/16_plus/create.sql',
++      "'{{ schedule_name }}'"), 2,
++     "Inside ``--`` SQL line comment (display header), not executed."),
++    (('pgadmin/browser/server_groups/servers/databases/dbms_job_scheduler/'
++      'dbms_programs/templates/dbms_programs/ppas/16_plus/create.sql',
++      "'{{ program_name }}'"), 2,
++     "Inside ``--`` SQL line comment (display header), not executed."),
++
++    # ------------------------------------------------------------------
++    # grant_wizard SQL templates emit hardcoded display/typing constants
++    # (object_type, icon, prokind, relkind, node_type) that the wizard's
++    # own handler supplies as fixed string literals — not user input.
++    # ------------------------------------------------------------------
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/pg/default/sql/'
++      'function.sql', "'{{ func_type }}'"), 1,
++     "Hardcoded display constant supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/pg/default/sql/'
++      'function.sql', "'{{ icon }}'"), 1,
++     "Hardcoded display constant supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/pg/default/sql/'
++      'view.sql', "'{{ ntype }}'"), 1,
++     "Hardcoded display constant supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/pg/default/sql/'
++      'view.sql', "'{{ node_type }}'"), 1,
++     "Hardcoded pg_class.relkind char supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/pg/11_plus/sql/'
++      'function.sql', "'{{ func_type }}'"), 1,
++     "Hardcoded display constant supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/pg/11_plus/sql/'
++      'function.sql', "'{{ icon }}'"), 1,
++     "Hardcoded display constant supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/pg/11_plus/sql/'
++      'function.sql', "'{{ kind }}'"), 1,
++     "Hardcoded pg_proc.prokind char supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/ppas/default/sql/'
++      'function.sql', "'{{ func_type }}'"), 1,
++     "Hardcoded display constant supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/ppas/default/sql/'
++      'function.sql', "'{{ icon }}'"), 1,
++     "Hardcoded display constant supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/ppas/default/sql/'
++      'view.sql', "'{{ ntype }}'"), 1,
++     "Hardcoded display constant supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/ppas/default/sql/'
++      'view.sql', "'{{ view_icon }}'"), 1,
++     "Hardcoded display constant supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/ppas/default/sql/'
++      'view.sql', "'{{ node_type }}'"), 1,
++     "Hardcoded pg_class.relkind char supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/ppas/11_plus/sql/'
++      'function.sql', "'{{ func_type }}'"), 1,
++     "Hardcoded display constant supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/ppas/11_plus/sql/'
++      'function.sql', "'{{ icon }}'"), 1,
++     "Hardcoded display constant supplied by grant_wizard handler."),
++    (('pgadmin/tools/grant_wizard/templates/grant_wizard/ppas/11_plus/sql/'
++      'function.sql', "'{{ kind }}'"), 1,
++     "Hardcoded pg_proc.prokind char supplied by grant_wizard handler."),
++
++    # ------------------------------------------------------------------
++    # search_objects: ``obj_type`` is one of the fixed object-kind strings
++    # baked into the search handler's own dispatch table.
++    # ------------------------------------------------------------------
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/ppas/'
++      '11_plus/search.sql', "'{{ obj_type }}'"), 1,
++     "Fixed object-kind enum supplied by search_objects handler."),
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/ppas/'
++      '12_plus/search.sql', "'{{ obj_type }}'"), 1,
++     "Fixed object-kind enum supplied by search_objects handler."),
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/ppas/'
++      'default/search.sql', "'{{ obj_type }}'"), 1,
++     "Fixed object-kind enum supplied by search_objects handler."),
++
++    # ------------------------------------------------------------------
++    # search_objects: search_text is the only request-supplied value in
++    # these templates. The handler at tools/search_objects/utils.py:120
++    # pre-doubles every apostrophe via text.replace("'", "''") before
++    # passing the value to render_template — equivalent to qtLiteral's
++    # escape semantics, but applied at the Python boundary instead of
++    # the template. Documented as fragile (manual escape) but currently
++    # safe. Follow-up: migrate to qtLiteral with explicit % wrapping.
++    # ------------------------------------------------------------------
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/pg/'
++      '11_plus/search.sql', "'%{{ search_text }}%'"), 1,
++     "search_text is pre-escaped via str.replace in utils.py:120 before "
++     "render_template; follow-up: migrate to qtLiteral with explicit % "
++     "wrapping."),
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/pg/'
++      'default/search.sql', "'%{{ search_text }}%'"), 1,
++     "search_text is pre-escaped via str.replace in utils.py:120 before "
++     "render_template; follow-up: migrate to qtLiteral with explicit % "
++     "wrapping."),
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/ppas/'
++      '11_plus/search.sql', "'%{{ search_text }}%'"), 1,
++     "search_text is pre-escaped via str.replace in utils.py:120 before "
++     "render_template; follow-up: migrate to qtLiteral with explicit % "
++     "wrapping."),
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/ppas/'
++      '12_plus/search.sql', "'%{{ search_text }}%'"), 1,
++     "search_text is pre-escaped via str.replace in utils.py:120 before "
++     "render_template; follow-up: migrate to qtLiteral with explicit % "
++     "wrapping."),
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/ppas/'
++      'default/search.sql', "'%{{ search_text }}%'"), 1,
++     "search_text is pre-escaped via str.replace in utils.py:120 before "
++     "render_template; follow-up: migrate to qtLiteral with explicit % "
++     "wrapping."),
++
++    # ------------------------------------------------------------------
++    # search_objects: the CATALOGS.LABELS_SCHEMACOL macro emits a fixed
++    # CASE expression mapping a column name (literal 'sn.schema_name')
++    # to its localised label. Both macro arguments are static — the
++    # column-name literal and the gettext function _ — so no
++    # attacker-controlled value reaches the rendered SQL.
++    # ------------------------------------------------------------------
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/pg/'
++      '11_plus/search.sql',
++      "'||{{ CATALOGS.LABELS_SCHEMACOL('sn.schema_name', _) }}||'"), 1,
++     "CATALOGS.LABELS_SCHEMACOL emits a static CASE expression; "
++     "both macro arguments are hardcoded (column name + gettext fn)."),
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/pg/'
++      'default/search.sql',
++      "'||{{ CATALOGS.LABELS_SCHEMACOL('sn.schema_name', _) }}||'"), 1,
++     "CATALOGS.LABELS_SCHEMACOL emits a static CASE expression; "
++     "both macro arguments are hardcoded (column name + gettext fn)."),
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/ppas/'
++      '11_plus/search.sql',
++      "'||{{ CATALOGS.LABELS_SCHEMACOL('sn.schema_name', _) }}||'"), 1,
++     "CATALOGS.LABELS_SCHEMACOL emits a static CASE expression; "
++     "both macro arguments are hardcoded (column name + gettext fn)."),
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/ppas/'
++      '12_plus/search.sql',
++      "'||{{ CATALOGS.LABELS_SCHEMACOL('sn.schema_name', _) }}||'"), 1,
++     "CATALOGS.LABELS_SCHEMACOL emits a static CASE expression; "
++     "both macro arguments are hardcoded (column name + gettext fn)."),
++    (('pgadmin/tools/search_objects/templates/search_objects/sql/ppas/'
++      'default/search.sql',
++      "'||{{ CATALOGS.LABELS_SCHEMACOL('sn.schema_name', _) }}||'"), 1,
++     "CATALOGS.LABELS_SCHEMACOL emits a static CASE expression; "
++     "both macro arguments are hardcoded (column name + gettext fn)."),
++
++    # ------------------------------------------------------------------
++    # Catalog-label macros: gettext-translated display constants used
++    # inside CASE WHEN ... THEN '<label>' expressions for the catalog
++    # name column. The gettext key (English source string) is hardcoded
++    # in the template; the rendered translation is a static literal.
++    # ------------------------------------------------------------------
++    (('pgadmin/browser/server_groups/servers/databases/schemas/'
++      'templates/catalog/pg/macros/catalogs.sql',
++      "'{{ _( 'ANSI' ) }} (information_schema)'"), 2,
++     "Gettext-translated static display label for the ANSI catalog."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/'
++      'templates/catalog/pg/macros/catalogs.sql',
++      "'{{ _( 'PostgreSQL Catalog' ) }} (pg_catalog)'"), 2,
++     "Gettext-translated static display label for pg_catalog."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/'
++      'templates/catalog/pg/macros/catalogs.sql',
++      "'{{ _( 'pgAgent Job Scheduler' ) }} (pgagent)'"), 2,
++     "Gettext-translated static display label for pgAgent schema."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/'
++      'templates/catalog/ppas/macros/catalogs.sql',
++      "'{{ _( 'ANSI' ) }} (information_schema)'"), 2,
++     "Gettext-translated static display label for the ANSI catalog."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/'
++      'templates/catalog/ppas/macros/catalogs.sql',
++      "'{{ _( 'PostgreSQL Catalog' ) }} (pg_catalog)'"), 2,
++     "Gettext-translated static display label for pg_catalog."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/'
++      'templates/catalog/ppas/macros/catalogs.sql',
++      "'{{ _( 'pgAgent Job Scheduler' ) }} (pgagent)'"), 2,
++     "Gettext-translated static display label for pgAgent schema."),
++
++    # ------------------------------------------------------------------
++    # types.get_subtypes: ``opcintype`` is a pg_catalog OID joined from
++    # pg_opclass / pg_amop and rendered as a space-separated pair to
++    # match proargtypes (which uses a space-separated oidvector text
++    # form). Not user-supplied.
++    # ------------------------------------------------------------------
++    (('pgadmin/browser/server_groups/servers/databases/schemas/types/'
++      'templates/types/pg/sql/default/get_subtypes.sql',
++      "'{{opcintype}} {{opcintype}}'"), 1,
++     "opcintype is a pg_catalog OID joined from pg_opclass; the "
++     "literal is the space-separated proargtypes oidvector form."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/types/'
++      'templates/types/ppas/sql/default/get_subtypes.sql',
++      "'{{opcintype}} {{opcintype}}'"), 1,
++     "opcintype is a pg_catalog OID joined from pg_opclass; the "
++     "literal is the space-separated proargtypes oidvector form."),
++
++    # ------------------------------------------------------------------
++    # Partition CASE expression: pg_get_partkeydef(tid::oid) is the
++    # value of the CASE branch, sandwiched between the literal 'p' and
++    # the literal ''. The regex matches from 'p' through '' because
++    # those quotes share a line, but the {{ tid }} interpolation is
++    # OUTSIDE any literal — it's an argument to pg_get_partkeydef. The
++    # tid value also passes a Flask ::int route converter, so it's an
++    # integer regardless. Documented here so the lint stays
++    # well-policed even with a regex that can't distinguish
++    # "between two literals" from "inside one literal".
++    # ------------------------------------------------------------------
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/tables/sql/11_plus/properties.sql',
++      "' THEN pg_catalog.pg_get_partkeydef({{ tid }}::oid) ELSE '"), 1,
++     "{{ tid }} is the pg_class OID validated by Flask <int:tid> route "
++     "converter; the surrounding 'p' and '' are SEPARATE literals, the "
++     "regex spans two of them but the interpolation is outside any "
++     "literal."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/tables/sql/12_plus/properties.sql',
++      "' THEN pg_catalog.pg_get_partkeydef({{ tid }}::oid) ELSE '"), 1,
++     "{{ tid }} is the pg_class OID validated by Flask <int:tid> route "
++     "converter; the surrounding 'p' and '' are SEPARATE literals, the "
++     "regex spans two of them but the interpolation is outside any "
++     "literal."),
++    (('pgadmin/browser/server_groups/servers/databases/schemas/tables/'
++      'templates/tables/sql/default/properties.sql',
++      "' THEN pg_catalog.pg_get_partkeydef({{ tid }}::oid) ELSE '"), 1,
++     "{{ tid }} is the pg_class OID validated by Flask <int:tid> route "
++     "converter; the surrounding 'p' and '' are SEPARATE literals, the "
++     "regex spans two of them but the interpolation is outside any "
++     "literal."),
++]
++
++
++def _scan_sql_templates():
++    """Return Counter[(rel_path, fragment)] of every ``'{{ ... }}'``
++    occurrence under SCAN_ROOT."""
++    counter = Counter()
++    for dirpath, _dirs, files in os.walk(SCAN_ROOT):
++        for fname in files:
++            if not fname.endswith('.sql'):
++                continue
++            full = os.path.join(dirpath, fname)
++            rel = os.path.relpath(full, WEB_ROOT).replace(os.sep, '/')
++            with open(full, encoding='utf-8') as fh:
++                for line in fh:
++                    for m in PATTERN.finditer(line):
++                        counter[(rel, m.group(0))] += 1
++    return counter
++
++
++def _allowlist_counter():
++    counter = Counter()
++    for key, count, _reason in ALLOWLIST:
++        counter[key] += count
++    return counter
++
++
++def _allowlist_reasons():
++    return {key: reason for key, _count, reason in ALLOWLIST}
++
++
++class SQLStringLiteralInterpolationLintTestCase(BaseTestGenerator):
++    """Fail if any new ``'{{ ... }}'`` single-quote-wrapped Jinja
++    interpolation appears in a SQL template without being either replaced
++    with ``qtLiteral`` or added to ``ALLOWLIST`` above."""
++
++    scenarios = [('Lint *.sql templates for unescaped Jinja literals',
++                  dict())]
++
++    def runTest(self):
++        actual = _scan_sql_templates()
++        expected = _allowlist_counter()
++        reasons = _allowlist_reasons()
++
++        new = []      # found in code, not allowlisted (or count too high)
++        stale = []    # allowlisted, not found in code (or count too low)
++
++        for key, n in actual.items():
++            allowed = expected.get(key, 0)
++            if n > allowed:
++                new.append((key, n - allowed))
++
++        for key, n in expected.items():
++            present = actual.get(key, 0)
++            if n > present:
++                stale.append((key, n - present, reasons[key]))
++
++        messages = []
++        if new:
++            lines = [
++                ('FOUND unallowed single-quote-wrapped Jinja '
++                 'interpolations. Replace with `{{ x|qtLiteral(conn) }}` '
++                 '(no surrounding quotes) — and pass conn= to '
++                 'render_template — or add an explicit ALLOWLIST entry '
++                 'in test_sql_string_literal_lint.py with a reason.\n')
++            ]
++            for (rel, frag), n in sorted(new):
++                lines.append('  + {} :: {} (x{})'.format(rel, frag, n))
++            messages.append('\n'.join(lines))
++        if stale:
++            lines = [
++                ('STALE ALLOWLIST entries (no longer present in code). '
++                 'Remove them from test_sql_string_literal_lint.py.\n')
++            ]
++            for (rel, frag), n, reason in sorted(stale):
++                lines.append('  - {} :: {} (x{})  // {}'
++                             .format(rel, frag, n, reason))
++            messages.append('\n'.join(lines))
++        if messages:
++            self.fail('\n\n'.join(messages))
+diff --git a/web/pgadmin/browser/server_groups/servers/databases/tests/test_stats_template_regclass_cast.py b/web/pgadmin/browser/server_groups/servers/databases/tests/test_stats_template_regclass_cast.py
+new file mode 100644
+index 00000000000..d3315dd715c
+--- /dev/null
++++ b/web/pgadmin/browser/server_groups/servers/databases/tests/test_stats_template_regclass_cast.py
+@@ -0,0 +1,345 @@
++##########################################################################
++#
++# pgAdmin 4 - PostgreSQL Tools
++#
++# Copyright (C) 2013 - 2026, The pgAdmin Development Team
++# This software is released under the PostgreSQL Licence
++#
++##########################################################################
++
++"""Regression test: ``pgstattuple(...)`` and ``pgstatindex(...)`` in the
++stats templates must address their target via ``<oid>::oid::regclass``,
++NOT via a single-quoted ``'<schema>.<name>'`` string literal that
++embedded raw Jinja interpolations.
++
++The earlier pattern (``pgstatindex('{{conn|qtIdent(schema)}}.{{conn|
++qtIdent(name)}}')`` / ``pgstattuple('{{schema_name}}.{{table_name}}')``)
++was vulnerable: a low-privilege user could create an object whose name
++contained an apostrophe — ``CREATE TABLE "foo'bar" (...)`` — and any
++viewer who then opened the stats panel would render an unbalanced SQL
++literal, breaking out of the ``'...'`` and executing whatever followed.
++
++The fix replaces the embedded interpolation with an OID cast — the
++relation is identified by its numeric OID and the ``::regclass`` cast
++resolves it server-side, so no string literal is involved at all.
++That makes the bug structurally impossible, not just guarded against.
++
++POSITIVE assertions:
++  * The rendered stats SQL contains ``pgstattuple(<oid>::oid::regclass)``
++    or ``pgstatindex(<oid>::oid::regclass)``.
++  * An apostrophe planted in any identifier passed to the template
++    does NOT appear inside a SQL literal context in the output (i.e.
++    the template no longer embeds the identifier at all).
++
++NEGATIVE assertions (regression guards):
++  * The previously-vulnerable ``pgstattuple('...'``/``pgstatindex('...'``
++    string-literal-call pattern must NOT recur.
++  * Specifically the apostrophe payload must NOT survive verbatim
++    inside any single-quoted region of the rendered SQL.
++"""
++
++import os
++import re
++
++from flask import Flask, render_template
++from jinja2 import FileSystemLoader
++
++from pgadmin.utils.driver import get_driver
++from pgadmin.utils.route import BaseTestGenerator
++from config import PG_DEFAULT_DRIVER
++
++
++# Apostrophe-injection payload. Anywhere this appears INSIDE a single-
++# quoted literal in the rendered SQL is a SQLi.
++APOSTROPHE_NAME = "evil'or'1=1--"
++
++
++WEB_ROOT = os.path.realpath(
++    os.path.join(os.path.dirname(os.path.realpath(__file__)),
++                 os.pardir, os.pardir, os.pardir, os.pardir, os.pardir,
++                 os.pardir)
++)
++
++
++class _FakeConn:
++    """qtIdent / qtLiteral use this as a stand-in for a real psycopg
++    connection (see test_comment_description_sql_escaping.py for the
++    full reasoning)."""
++
++    conn = None
++
++    def __bool__(self):
++        return True
++
++
++def _abs(*parts):
++    return os.path.join(WEB_ROOT, *parts)
++
++
++# Macro roots needed by the schemas templates' imports.
++MACRO_ROOTS = [
++    _abs('pgadmin', 'browser', 'server_groups', 'servers',
++         'databases', 'schemas', 'templates'),
++    _abs('pgadmin', 'browser', 'server_groups', 'servers', 'templates'),
++]
++
++
++class _FakeApp(Flask):
++    """Minimal Flask app mirroring the production Jinja filters."""
++
++    def __init__(self, template_root):
++        super().__init__('')
++        driver = get_driver(PG_DEFAULT_DRIVER, self)
++        self.jinja_env.filters['qtLiteral'] = driver.qtLiteral
++        self.jinja_env.filters['qtIdent'] = driver.qtIdent
++        self.jinja_env.filters['qtTypeIdent'] = driver.qtTypeIdent
++        self.jinja_env.loader = FileSystemLoader(
++            [template_root] + MACRO_ROOTS
++        )
++
++
++# Regex: any single-quoted literal in the rendered SQL.
++SQL_LITERAL = re.compile(r"'[^'\n]*'")
++
++
++class StatsTemplateRegclassCastTestCase(BaseTestGenerator):
++    """Each stats template must address the relation via OID + regclass,
++    not via an embedded ``'<schema>.<name>'`` literal."""
++
++    scenarios = [
++        (
++            'Table stats (16_plus) — pgstattuple(tid::oid::regclass)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'tables', 'templates'),
++                template='tables/sql/16_plus/stats.sql',
++                ctx=dict(
++                    tid=12345,
++                    schema_name='public',
++                    table_name=APOSTROPHE_NAME,
++                    is_pgstattuple=True,
++                    conn=_FakeConn(),
++                ),
++                expected_call='pgstattuple(12345::oid::regclass)',
++                forbid_call_re=r"pgstattuple\('",
++            ),
++        ),
++        (
++            'Table stats (default) — pgstattuple(tid::oid::regclass)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'tables', 'templates'),
++                template='tables/sql/default/stats.sql',
++                ctx=dict(
++                    tid=12345,
++                    schema_name='public',
++                    table_name=APOSTROPHE_NAME,
++                    is_pgstattuple=True,
++                    conn=_FakeConn(),
++                ),
++                expected_call='pgstattuple(12345::oid::regclass)',
++                forbid_call_re=r"pgstattuple\('",
++            ),
++        ),
++        (
++            'Materialised view stats (pg) — pgstattuple(vid::oid::regclass)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'views', 'templates'),
++                template='mviews/pg/default/sql/stats.sql',
++                ctx=dict(
++                    vid=67890,
++                    schema_name='public',
++                    mview_name=APOSTROPHE_NAME,
++                    is_pgstattuple=True,
++                    conn=_FakeConn(),
++                ),
++                expected_call='pgstattuple(67890::oid::regclass)',
++                forbid_call_re=r"pgstattuple\('",
++            ),
++        ),
++        (
++            'Materialised view stats (ppas) — pgstattuple(vid::oid::regclass)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'views', 'templates'),
++                template='mviews/ppas/default/sql/stats.sql',
++                ctx=dict(
++                    vid=67890,
++                    schema_name='public',
++                    mview_name=APOSTROPHE_NAME,
++                    is_pgstattuple=True,
++                    conn=_FakeConn(),
++                ),
++                expected_call='pgstattuple(67890::oid::regclass)',
++                forbid_call_re=r"pgstattuple\('",
++            ),
++        ),
++        (
++            'Exclusion constraint stats (16_plus) — '
++            'pgstatindex(exid::oid::regclass)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'tables', 'templates'),
++                template='exclusion_constraint/sql/16_plus/stats.sql',
++                ctx=dict(
++                    exid=11111,
++                    schema='public',
++                    name=APOSTROPHE_NAME,
++                    is_pgstattuple=True,
++                    conn=_FakeConn(),
++                ),
++                expected_call='pgstatindex(11111::oid::regclass)',
++                forbid_call_re=r"pgstatindex\('",
++            ),
++        ),
++        (
++            'Exclusion constraint stats (default) — '
++            'pgstatindex(exid::oid::regclass)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'tables', 'templates'),
++                template='exclusion_constraint/sql/default/stats.sql',
++                ctx=dict(
++                    exid=11111,
++                    schema='public',
++                    name=APOSTROPHE_NAME,
++                    is_pgstattuple=True,
++                    conn=_FakeConn(),
++                ),
++                expected_call='pgstatindex(11111::oid::regclass)',
++                forbid_call_re=r"pgstatindex\('",
++            ),
++        ),
++        (
++            'Index constraint stats (16_plus) — '
++            'pgstatindex(cid::oid::regclass)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'tables', 'templates'),
++                template='index_constraint/sql/16_plus/stats.sql',
++                ctx=dict(
++                    cid=22222,
++                    schema='public',
++                    name=APOSTROPHE_NAME,
++                    is_pgstattuple=True,
++                    conn=_FakeConn(),
++                ),
++                expected_call='pgstatindex(22222::oid::regclass)',
++                forbid_call_re=r"pgstatindex\('",
++            ),
++        ),
++        (
++            'Index constraint stats (default) — '
++            'pgstatindex(cid::oid::regclass)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'tables', 'templates'),
++                template='index_constraint/sql/default/stats.sql',
++                ctx=dict(
++                    cid=22222,
++                    schema='public',
++                    name=APOSTROPHE_NAME,
++                    is_pgstattuple=True,
++                    conn=_FakeConn(),
++                ),
++                expected_call='pgstatindex(22222::oid::regclass)',
++                forbid_call_re=r"pgstatindex\('",
++            ),
++        ),
++        (
++            'Index stats (16_plus) — pgstatindex(idx::oid::regclass)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'tables', 'templates'),
++                template='indexes/sql/16_plus/stats.sql',
++                ctx=dict(
++                    idx=33333,
++                    schema='public',
++                    index=APOSTROPHE_NAME,
++                    is_pgstattuple=True,
++                    conn=_FakeConn(),
++                ),
++                expected_call='pgstatindex(33333::oid::regclass)',
++                forbid_call_re=r"pgstatindex\('",
++            ),
++        ),
++        (
++            'Index stats (default) — pgstatindex(idx::oid::regclass)',
++            dict(
++                template_root=_abs(
++                    'pgadmin', 'browser', 'server_groups', 'servers',
++                    'databases', 'schemas', 'tables', 'templates'),
++                template='indexes/sql/default/stats.sql',
++                ctx=dict(
++                    idx=33333,
++                    schema='public',
++                    index=APOSTROPHE_NAME,
++                    is_pgstattuple=True,
++                    conn=_FakeConn(),
++                ),
++                expected_call='pgstatindex(33333::oid::regclass)',
++                forbid_call_re=r"pgstatindex\('",
++            ),
++        ),
++    ]
++
++    def setUp(self):
++        self.app_under_test = _FakeApp(self.template_root)
++
++    def runTest(self):
++        # The stats templates use `_('...')` for column aliases. Inject
++        # an identity gettext stand-in so the templates render without
++        # needing a real flask-babel context (we don't care about
++        # localisation here; we only assert on the pgstat* call shape).
++        ctx = dict(self.ctx, _=lambda s: s)
++        with self.app_under_test.app_context():
++            rendered = render_template(self.template, **ctx)
++
++        # POSITIVE: the regclass-cast call is present.
++        self.assertIn(
++            self.expected_call, rendered,
++            msg=(
++                'Stats template should address the relation via '
++                'OID::oid::regclass; expected {!r} in rendered SQL.\n'
++                'Rendered:\n{}'.format(self.expected_call, rendered)
++            ),
++        )
++
++        # NEGATIVE: the previously-vulnerable string-literal call form
++        # must NOT recur.
++        self.assertIsNone(
++            re.search(self.forbid_call_re, rendered),
++            msg=(
++                'Stats template must not call pgstat* with a '
++                "single-quoted relation name (the previously-vulnerable "
++                'pattern). Pattern: {!r}\nRendered:\n{}'
++                .format(self.forbid_call_re, rendered)
++            ),
++        )
++
++        # NEGATIVE: the apostrophe payload, if it appears at all, must
++        # not appear *inside* a single-quoted literal region — that
++        # would indicate the identifier is being embedded somewhere
++        # else in the template.
++        for literal in SQL_LITERAL.findall(rendered):
++            self.assertNotIn(
++                APOSTROPHE_NAME, literal,
++                msg=(
++                    'Apostrophe-bearing identifier payload appeared '
++                    'inside a SQL literal in the rendered stats SQL — '
++                    'indicates the identifier is still being embedded '
++                    'in some literal context.\n'
++                    'Offending literal: {!r}\nRendered:\n{}'
++                    .format(literal, rendered)
++                ),
++            )
+diff --git a/web/pgadmin/browser/server_groups/servers/roles/__init__.py b/web/pgadmin/browser/server_groups/servers/roles/__init__.py
+index 97be3b2a949..a2f407cda68 100644
+--- a/web/pgadmin/browser/server_groups/servers/roles/__init__.py
++++ b/web/pgadmin/browser/server_groups/servers/roles/__init__.py
+@@ -733,7 +733,8 @@ def wrapped(self, **kwargs):
+     def list(self, gid, sid):
+         status, res = self.conn.execute_dict(
+             render_template(
+-                self.sql_path + self._PROPERTIES_SQL
++                self.sql_path + self._PROPERTIES_SQL,
++                conn=self.conn
+             )
+         )
+ 
+@@ -752,7 +753,8 @@ def list(self, gid, sid):
+     def nodes(self, gid, sid):
+ 
+         status, rset = self.conn.execute_2darray(
+-            render_template(self.sql_path + self._NODES_SQL)
++            render_template(self.sql_path + self._NODES_SQL,
++                            conn=self.conn)
+         )
+ 
+         if not status:
+@@ -783,7 +785,7 @@ def node(self, gid, sid, rid):
+         status, rset = self.conn.execute_2darray(
+             render_template(
+                 self.sql_path + self._NODES_SQL,
+-                rid=rid
++                rid=rid, conn=self.conn
+             )
+         )
+ 
+@@ -877,7 +879,7 @@ def properties(self, gid, sid, rid):
+         status, res = self.conn.execute_dict(
+             render_template(
+                 self.sql_path + self._PROPERTIES_SQL,
+-                rid=rid
++                rid=rid, conn=self.conn
+             )
+         )
+ 
+@@ -998,7 +1000,7 @@ def create(self, gid, sid):
+ 
+         status, rset = self.conn.execute_dict(
+             render_template(self.sql_path + self._NODES_SQL,
+-                            rid=rid
++                            rid=rid, conn=self.conn
+                             )
+         )
+ 
+@@ -1042,7 +1044,7 @@ def update(self, gid, sid, rid):
+ 
+         status, rset = self.conn.execute_dict(
+             render_template(self.sql_path + self._NODES_SQL,
+-                            rid=rid
++                            rid=rid, conn=self.conn
+                             )
+         )
+ 
+@@ -1280,7 +1282,7 @@ def variables(self, gid, sid, rid, as_json=False):
+ 
+         status, rset = self.conn.execute_dict(
+             render_template(self.sql_path + 'variables.sql',
+-                            rid=rid
++                            rid=rid, conn=self.conn
+                             )
+         )
+ 
+diff --git a/web/pgadmin/utils/driver/psycopg3/__init__.py b/web/pgadmin/utils/driver/psycopg3/__init__.py
+index 067215affa2..60d7f4c2d54 100644
+--- a/web/pgadmin/utils/driver/psycopg3/__init__.py
++++ b/web/pgadmin/utils/driver/psycopg3/__init__.py
+@@ -309,16 +309,30 @@ def gc_own(self):
+ 
+     @staticmethod
+     def qtLiteral(value, conn, force_quote=False):
+-        res = value
+-
+-        if conn:
+-            try:
+-                if not isinstance(conn, psycopg.Connection) and \
+-                        not isinstance(conn, psycopg.AsyncConnection):
+-                    conn = conn.conn
+-                res = psycopg.sql.Literal(value).as_string(conn).strip()
+-            except Exception:
+-                print("Exception", value)
++        if not conn:
++            raise ValueError(
++                "qtLiteral requires a connection: without one, escaping "
++                "silently degrades to returning the raw value, which is a "
++                "SQL injection sink. When using the Jinja filter, ensure "
++                "render_template is called with conn=<conn>; when calling "
++                "from Python, pass the connection as the second argument."
++            )
++
++        # Resolve the underlying psycopg connection. A wrapped pgAdmin
++        # Connection has the raw psycopg connection on `.conn`.
++        if not isinstance(conn, psycopg.Connection) and \
++                not isinstance(conn, psycopg.AsyncConnection):
++            conn = conn.conn
++
++        # psycopg.sql.Literal.as_string can raise for values it cannot
++        # adapt (custom types without a registered adapter, byte
++        # sequences in a non-UTF8 client encoding, etc.). The previous
++        # implementation swallowed the exception and silently returned
++        # the raw, unescaped `value` — the same SQL-injection sink the
++        # missing-conn fast-fail above guards against, but on a
++        # different failure mode. Letting the exception propagate makes
++        # any unadaptable input loud and callers can react explicitly.
++        res = psycopg.sql.Literal(value).as_string(conn).strip()
+ 
+         if force_quote is True:
+             # Convert the input to the string to use the startsWith(...)
+diff --git a/web/pgadmin/utils/tests/test_qtliteral_no_silent_unescape.py b/web/pgadmin/utils/tests/test_qtliteral_no_silent_unescape.py
+new file mode 100644
+index 00000000000..5c2ce473fe3
+--- /dev/null
++++ b/web/pgadmin/utils/tests/test_qtliteral_no_silent_unescape.py
+@@ -0,0 +1,81 @@
++##########################################################################
++#
++# pgAdmin 4 - PostgreSQL Tools
++#
++# Copyright (C) 2013 - 2026, The pgAdmin Development Team
++# This software is released under the PostgreSQL Licence
++#
++##########################################################################
++
++"""Regression test: ``qtLiteral`` must not silently degrade to the raw,
++unescaped input value when the inner ``psycopg.sql.Literal(...)
++.as_string(conn)`` call raises.
++
++Historical behaviour was:
++
++    res = value          # raw input held as the default
++    try:
++        ...
++        res = Literal(value).as_string(conn).strip()
++    except Exception:
++        print(...)       # swallowed — `res` stays as the raw value
++
++That is the same SQL-injection sink the missing-``conn`` fail-fast
++guards against, just gated on a different failure mode (psycopg
++inability to adapt a value rather than absence of a connection). This
++test exercises the inner-except path with an object that ``psycopg.sql
++.Literal`` cannot adapt, and asserts the call raises rather than
++returning the raw object.
++"""
++
++from pgadmin.utils.driver import get_driver
++from pgadmin.utils.route import BaseTestGenerator
++from config import PG_DEFAULT_DRIVER
++
++
++class _Unadaptable:
++    """Custom object psycopg has no registered adapter for. The
++    ``psycopg.sql.Literal(...).as_string(conn)`` call must raise on
++    this — it has no idea how to render the value as a SQL literal."""
++
++    def __repr__(self):
++        return '<_Unadaptable>'
++
++
++class _MinimalConn:
++    """Stand-in for a real psycopg Connection. The driver's qtLiteral
++    sees this as truthy (so the missing-conn fail-fast is bypassed)
++    and dereferences `.conn` to the psycopg-side connection. We set
++    that to None to ensure the inner Literal.as_string call raises
++    (psycopg requires a real context to render adapted SQL)."""
++
++    conn = None
++
++    def __bool__(self):
++        return True
++
++
++class QtLiteralRaisesOnUnadaptableValueTestCase(BaseTestGenerator):
++    """The inner ``psycopg.sql.Literal(...).as_string(conn)`` failure
++    path must propagate — not silently return the raw value."""
++
++    scenarios = [
++        ('Unadaptable Python object surfaces as an exception',
++         dict(value=_Unadaptable())),
++    ]
++
++    def runTest(self):
++        driver = get_driver(PG_DEFAULT_DRIVER)
++        with self.assertRaises(Exception) as ctx:
++            driver.qtLiteral(self.value, _MinimalConn())
++
++        # And specifically: the original value must NOT be returned —
++        # if it were, the exception would not have been raised.
++        # The ``with self.assertRaises`` block guarantees a raise; this
++        # assertion documents the contract that the call site relies
++        # on (no silent unescaped passthrough).
++        self.assertNotIsInstance(
++            ctx.exception, type(None),
++            msg='qtLiteral must raise on unadaptable input, not '
++                'silently return it.'
++        )
+diff --git a/web/pgadmin/utils/tests/test_qtliteral_requires_conn.py b/web/pgadmin/utils/tests/test_qtliteral_requires_conn.py
+new file mode 100644
+index 00000000000..586c8b41436
+--- /dev/null
++++ b/web/pgadmin/utils/tests/test_qtliteral_requires_conn.py
+@@ -0,0 +1,34 @@
++##########################################################################
++#
++# pgAdmin 4 - PostgreSQL Tools
++#
++# Copyright (C) 2013 - 2026, The pgAdmin Development Team
++# This software is released under the PostgreSQL Licence
++#
++##########################################################################
++
++"""Unit test: ``qtLiteral`` must refuse to escape without a connection.
++
++Historically, ``qtLiteral`` silently short-circuited when its ``conn``
++argument was falsy and returned the raw value unchanged. Combined with
++templates that wrapped the result in single quotes (``'{{ x|qtLiteral }}'``
++or callers that forgot to pass ``conn=`` to ``render_template``), this
++produced unescaped SQL string literals that allowed apostrophe-based
++injection. The driver now raises so the failure is loud."""
++
++from pgadmin.utils.driver import get_driver
++from pgadmin.utils.route import BaseTestGenerator
++from config import PG_DEFAULT_DRIVER
++
++
++class QtLiteralRequiresConnTestCase(BaseTestGenerator):
++
++    scenarios = [('qtLiteral raises ValueError when conn is falsy', dict())]
++
++    def runTest(self):
++        driver = get_driver(PG_DEFAULT_DRIVER)
++        for bad in (None, 0, '', False):
++            with self.assertRaises(ValueError) as ctx:
++                driver.qtLiteral("any value", bad)
++            self.assertIn('qtLiteral requires a connection',
++                          str(ctx.exception))

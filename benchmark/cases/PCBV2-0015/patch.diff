@@ -1,0 +1,34 @@
+PCBV2-0015 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 8682b1e4e328432ba692bed52326e84439cec9e4 + b6f3e4d5a8d7504d553267f80384373af3a3dec5 (8.2.10 sourceMappingURL ReDoS)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0015/
+
+diff --git a/lib/previous-map.js b/lib/previous-map.js
+index 1a5bd1cf3..ff474a2bf 100644
+--- a/lib/previous-map.js
++++ b/lib/previous-map.js
+@@ -54,7 +54,7 @@ class PreviousMap {
+   }
+ 
+   loadAnnotation(css) {
+-    let annotations = css.match(/\/\*\s*# sourceMappingURL=.*\s*\*\//gm)
++    let annotations = css.match(/\/\*\s*# sourceMappingURL=.*\*\//gm)
+ 
+     if (annotations && annotations.length > 0) {
+       // Locate the last sourceMappingURL to avoid picking up
+
+diff --git a/lib/previous-map.js b/lib/previous-map.js
+index ff474a2bf..d9308ff26 100644
+--- a/lib/previous-map.js
++++ b/lib/previous-map.js
+@@ -48,9 +48,7 @@ class PreviousMap {
+   }
+ 
+   getAnnotationURL(sourceMapString) {
+-    return sourceMapString
+-      .match(/\/\*\s*# sourceMappingURL=(.*)\s*\*\//)[1]
+-      .trim()
++    return sourceMapString.match(/\/\*\s*# sourceMappingURL=(.*)\*\//)[1].trim()
+   }
+ 
+   loadAnnotation(css) {

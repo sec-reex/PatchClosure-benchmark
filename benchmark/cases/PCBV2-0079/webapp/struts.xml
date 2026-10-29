@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE struts PUBLIC
+    "-//Apache Software Foundation//DTD Struts Configuration 2.5//EN"
+    "https://struts.apache.org/dtds/struts-2.5.dtd">
+<!-- Minimal app: a single action wired to the REAL struts "struts-default" package/defaultStack.
+     The action just binds the request parameter `prop` onto a String property and plants the benign
+     ${PCB_FLAG} canary as an OGNL context variable (#pcbflag), then forwards to /eval.jsp which
+     renders a REAL <s:textfield> UI tag with a developer-forced-OGNL id/name attribute (%{prop}).
+     Whether that attribute value is OGNL-evaluated a SECOND time is decided entirely by the
+     version's own unmodified UIBean/Component code. No struts code is modified; only the struts JAR
+     version differs per profile. -->
+<struts>
+    <constant name="struts.devMode" value="false"/>
+    <package name="pcb" namespace="/" extends="struts-default">
+        <action name="eval" class="pcb.EvalAction">
+            <result name="success">/eval.jsp</result>
+        </action>
+    </package>
+</struts>

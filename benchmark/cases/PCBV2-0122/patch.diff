@@ -1,0 +1,167 @@
+PCBV2-0122 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: Fix: f212c4f4a126556bab008f79758e21a839ef2c0f
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0122/
+
+diff --git a/httpserver/filebased.go b/httpserver/filebased.go
+index b3a4e52..4999e44 100644
+--- a/httpserver/filebased.go
++++ b/httpserver/filebased.go
+@@ -48,3 +48,34 @@ func (fs *FileServer) findSpecialFile(folder string) (configFile, error) {
+ 
+ 	return config, nil
+ }
++
++// findEffectiveACL walks up the directory tree from dir toward the webroot,
++// returning the nearest configFile found. This allows a .goshs placed in a
++// parent directory to apply recursively to all subdirectories without
++// leaking upward past the webroot.
++func (fs *FileServer) findEffectiveACL(dir string) (configFile, error) {
++	webroot := filepath.Clean(fs.Webroot)
++	current := filepath.Clean(dir)
++
++	for {
++		config, err := fs.findSpecialFile(current)
++		if err != nil {
++			return configFile{}, err
++		}
++		if config.Auth != "" || len(config.Block) > 0 {
++			return config, nil
++		}
++		// Stop once we have checked the webroot itself
++		if current == webroot {
++			break
++		}
++		parent := filepath.Dir(current)
++		if parent == current {
++			// Reached filesystem root – guard against infinite loop
++			break
++		}
++		current = parent
++	}
++
++	return configFile{}, nil
++}
+diff --git a/httpserver/handler.go b/httpserver/handler.go
+index 74dc729..0b5a539 100644
+--- a/httpserver/handler.go
++++ b/httpserver/handler.go
+@@ -83,8 +83,8 @@ func (fs *FileServer) doDir(file *os.File, w http.ResponseWriter, req *http.Requ
+ 		}
+ 	}
+ 
+-	// Check if the dir has a .goshs ACL file
+-	config, err := fs.findSpecialFile(file.Name())
++	// Check for effective .goshs ACL (walks up to webroot so parent configs apply recursively)
++	config, err := fs.findEffectiveACL(file.Name())
+ 	if err != nil {
+ 		logger.Errorf("error reading file based access config: %+v", err)
+ 	}
+@@ -92,9 +92,9 @@ func (fs *FileServer) doDir(file *os.File, w http.ResponseWriter, req *http.Requ
+ }
+ 
+ func (fs *FileServer) doFile(file *os.File, w http.ResponseWriter, req *http.Request) {
+-	// If it is a file we need to check for .goshs one directory up
++	// Walk up from the file's directory to find the effective .goshs ACL
+ 	parent := filepath.Dir(file.Name())
+-	config, err := fs.findSpecialFile(parent)
++	config, err := fs.findEffectiveACL(parent)
+ 	if err != nil {
+ 		logger.Errorf("error reading file based access config: %+v", err)
+ 	}
+@@ -685,6 +685,22 @@ func (fs *FileServer) deleteFile(w http.ResponseWriter, req *http.Request) {
+ 		return
+ 	}
+ 
++	// Block deletion of the .goshs ACL file itself
++	if filepath.Base(deletePath) == ".goshs" {
++		fs.handleError(w, req, fmt.Errorf("cannot delete ACL file"), http.StatusForbidden)
++		return
++	}
++
++	// Enforce .goshs ACL (recursive: walks up to webroot)
++	aclDir := filepath.Dir(deletePath)
++	acl, aclErr := fs.findEffectiveACL(aclDir)
++	if aclErr != nil {
++		logger.Errorf("error reading file based access config: %+v", aclErr)
++	}
++	if ok := fs.applyCustomAuth(w, req, acl); !ok {
++		return
++	}
++
+ 	err = os.RemoveAll(deletePath)
+ 	if err != nil {
+ 		logger.Warnf("error removing %+v", deletePath)
+@@ -913,6 +929,16 @@ func (fs *FileServer) handleMkdir(w http.ResponseWriter, r *http.Request) {
+ 			return
+ 		}
+ 
++		// Enforce .goshs ACL (recursive: walks up to webroot)
++		parentDir := filepath.Dir(finalPath)
++		acl, aclErr := fs.findEffectiveACL(parentDir)
++		if aclErr != nil {
++			logger.Errorf("error reading file based access config: %+v", aclErr)
++		}
++		if ok := fs.applyCustomAuth(w, r, acl); !ok {
++			return
++		}
++
+ 		// Create directory
+ 		err = os.MkdirAll(finalPath, 0755)
+ 		if err != nil {
+diff --git a/httpserver/updown.go b/httpserver/updown.go
+index 0e74cdc..02b5602 100644
+--- a/httpserver/updown.go
++++ b/httpserver/updown.go
+@@ -27,6 +27,22 @@ func (fs *FileServer) put(w http.ResponseWriter, req *http.Request) {
+ 		return
+ 	}
+ 
++	// Block overwriting the .goshs ACL file
++	if filepath.Base(savepath) == ".goshs" {
++		fs.handleError(w, req, fmt.Errorf("cannot overwrite ACL file"), http.StatusForbidden)
++		return
++	}
++
++	// Enforce .goshs ACL (recursive: walks up to webroot)
++	targetDir := filepath.Dir(savepath)
++	acl, aclErr := fs.findEffectiveACL(targetDir)
++	if aclErr != nil {
++		logger.Errorf("error reading file based access config: %+v", aclErr)
++	}
++	if ok := fs.applyCustomAuth(w, req, acl); !ok {
++		return
++	}
++
+ 	body, err := io.ReadAll(req.Body)
+ 	if err != nil {
+ 		logger.Errorf("unable to read PUT request body: %+v", err)
+@@ -73,6 +89,15 @@ func (fs *FileServer) upload(w http.ResponseWriter, req *http.Request) {
+ 		return
+ 	}
+ 
++	// Enforce .goshs ACL (recursive: walks up to webroot)
++	acl, aclErr := fs.findEffectiveACL(targetDir)
++	if aclErr != nil {
++		logger.Errorf("error reading file based access config: %+v", aclErr)
++	}
++	if ok := fs.applyCustomAuth(w, req, acl); !ok {
++		return
++	}
++
+ 	reader, err := req.MultipartReader()
+ 	if err != nil {
+ 		logger.Errorf("reading multipart request: %+v", err)
+@@ -96,6 +121,12 @@ func (fs *FileServer) upload(w http.ResponseWriter, req *http.Request) {
+ 		filenameSlice := strings.Split(part.FileName(), "/")
+ 		filenameClean := filenameSlice[len(filenameSlice)-1]
+ 
++		// Block overwriting the .goshs ACL file
++		if filenameClean == ".goshs" {
++			logger.Warnf("blocked attempt to upload file named .goshs")
++			continue
++		}
++
+ 		// Prepare destination file paths
+ 		finalPath := filepath.Join(targetDir, filenameClean)
+ 		tempPath := finalPath + "~"

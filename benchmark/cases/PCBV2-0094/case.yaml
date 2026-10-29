@@ -1,0 +1,25 @@
+case_id: PCBV2-0094
+public_name: daptin-cve-2026-44349
+run_mode: real-app-http
+oracle_family: sibling_endpoint
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: daptin/daptin
+  v0: "v0.9.82"
+  v1: "v0.11.4"
+service:
+  # Compose publishes ${PORT_V*_0}:8080. Platform HTTP on :8080 would miss;
+  # start.sh / reset.sh wait on the published host port and seed pcb_canary.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

@@ -1,0 +1,33 @@
+CVE: CVE-2015-3884 official mitigation (uploads script-block .htaccess)
+upstream: https://sourceforge.net/projects/qdpm/files/qdPM_9.1.zip
+note: official qdPM 8.0–9.1 zips already ship these identical files — there is no 8.x→9.1 htaccess delta. This case's v0 strips them; v1 is stock 9.1.
+
+diff --git a/uploads/.htaccess b/uploads/.htaccess
+--- a/uploads/.htaccess
++++ b/uploads/.htaccess
+@@
++# $Id$
++#
++# This is used to restrict access to this folder to anything other
++# than images
++
++# Prevents any script files from being accessed from the images folder
++<FilesMatch "\.(php([0-9]|s)?|s?p?html|cgi|pl|exe)$">
++   Order Deny,Allow
++   Deny from all
++</FilesMatch>
+
+diff --git a/uploads/users/.htaccess b/uploads/users/.htaccess
+--- a/uploads/users/.htaccess
++++ b/uploads/users/.htaccess
+@@
++# $Id$
++#
++# This is used to restrict access to this folder to anything other
++# than images
++
++# Prevents any script files from being accessed from the images folder
++<FilesMatch "\.(php([0-9]|s)?|s?p?html|cgi|pl|exe)$">
++   Order Deny,Allow
++   Deny from all
++</FilesMatch>

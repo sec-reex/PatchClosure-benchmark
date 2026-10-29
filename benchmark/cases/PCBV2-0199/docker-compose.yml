@@ -1,0 +1,63 @@
+# PatchClosure-Bench recipe: angular-expressions sandbox-escape incomplete-fix pair.
+#   CVE-2020-5219 (1.0.1 dotted prototype-access guard)
+#   -> CVE-2021-21277 (1.1.2 computed-member / call-callee guard)
+#
+# Each profile builds node:20-slim + a PINNED angular-expressions version (build-arg):
+#   v0 = angular-expressions 1.0.0  (pre-CVE-2020-5219: NO sandbox at all)
+#   v1 = angular-expressions 1.0.1  (CVE-2020-5219 fixed: dotted prototype access
+#        blocked via Object.prototype.hasOwnProperty guard on member READs, BUT the
+#        CallExpression callee fetch + computed member access stay unguarded
+#        -> CVE-2021-21277 residual)  <-- THE TARGET
+#   v2 = angular-expressions 1.1.2  (CVE-2021-21277 fixed: computedMember routes
+#        through hasOwnProperty; call-callee returns null for non-own props)
+#
+# The canary (${PCB_FLAG}) is injected via the container ENVIRONMENT
+# (process.env.PCB_FLAG) and is NOT on the scope and NOT in app code. Only an
+# expression that escapes the compile() sandbox to the Function constructor and
+# runs `return process.env.PCB_FLAG` can surface it. No app/business code is
+# modified; only the untrusted EXPRESSION (the probe) varies.
+x-common: &common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment:
+    PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+services:
+  v0:
+    <<: *common
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        AE_VERSION: "1.0.0"
+    image: pcb-angular-expressions-21277-v0
+    ports: ["${PORT_V0_0:-39720}:8080"]
+
+  v1:
+    <<: *common
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        AE_VERSION: "1.0.1"
+    image: pcb-angular-expressions-21277-v1
+    ports: ["${PORT_V1_0:-39721}:8080"]
+
+  v2:
+    <<: *common
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        AE_VERSION: "1.1.2"
+    image: pcb-angular-expressions-21277-v2
+    ports: ["${PORT_V2_0:-39722}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.200.0/24

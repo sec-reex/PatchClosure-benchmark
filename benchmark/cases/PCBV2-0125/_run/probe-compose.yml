@@ -1,0 +1,10 @@
+services:
+  loki:
+    image: "grafana/loki:${LOKI_VER}"
+    command: ["-config.file=/etc/loki/pcb-config.yaml"]
+    ports:
+      - "${LOKI_PORT}:3100"
+    volumes:
+      - ../loki-config-auth.yaml:/etc/loki/pcb-config.yaml:ro
+      - ./pcb_flag.yaml:/loki/pcb_flag.yaml:ro
+      - ./rules-src:/loki/rules-src

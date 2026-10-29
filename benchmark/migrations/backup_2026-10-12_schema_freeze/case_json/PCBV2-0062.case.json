@@ -1,0 +1,134 @@
+{
+  "eval_id": "PCBV2-0062",
+  "case_id": "dset-cve-2024-21529",
+  "run_mode": "real-app-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "lift_kind": "real-library-wrap",
+    "evidence": "Real published npm dset 2.0.1/3.1.2/3.1.4 installed side-by-side via npm aliases; minimal HTTP harness GET /probe drives the real dset() bytes; observed original pollution flag@v0 blocked@v1, residual flag@v1 blocked@v2 (orig+residual blocked@v2), passed:true."
+  },
+  "product": "dset",
+  "app_purpose": "Tiny JavaScript deep-set utility library (npm `dset`, by lukeed); `dset(obj, keys, val)` splits/walks a dotted or array key path, creating intermediate objects/arrays, and assigns the leaf value (a nested set-by-path).",
+  "language": "JavaScript",
+  "root_cause": "prototype-pollution",
+  "root_cause_note": "CWE-1321 prototype pollution in dset()'s key-loop. The path walk dereferences each segment with `t = t[k]` (creating a namespace when absent), so a crafted segment `__proto__` (or `constructor`/`prototype`) makes the walk step OUT of the fresh target and ONTO a shared built-in prototype (Object.prototype), and the leaf write then ADDS/modifies a property on it. The pollution is GLOBAL (it mutates the real shared Object.prototype), so the harness restores (deletes) the injected property after each probe. The incomplete fix is a string-only key guard bypassed by a NON-string (array) key of the dangerous name = CWE-843 type confusion (CVE-2024-21529).",
+  "mechanism_family": "prototype-pollution",
+  "class_kind": "state-write",
+  "cve_pair": {
+    "original_cve": "CVE-2022-25645",
+    "bypass_cve": "CVE-2024-21529",
+    "original_published": "2022-05-01",
+    "bypass_published": "2024-09-10"
+  },
+  "source_verified_caveat": "SOURCE-LEVEL NUANCE (verified against the real git repo lukeed/dset and the real npm tarballs, not just aggregator metadata): the string-comparison guard in the CORE dset() (src/index.js) `if (k === '__proto__' || k === 'constructor' || k === 'prototype') break;` was first introduced in dset 3.0.0 (commit 0a11c8a 'fix: break loop on unsafe keys', 2021-01-27), NOT by CVE-2022-25645's 3.1.2 release. CVE-2022-25645's 3.1.2 fix (commit 2d156c7) added a SIBLING guard to the separate `dset/merge` helper's `for (k in b)` copy loop (src/merge.js). dset@3.1.1/3.1.2/3.1.3 all carry the byte-identical string-only dset() guard; dset@3.1.4 (CVE-2024-21529 fix, commit 16d6154) adds `k = ''+keys[i++]` string coercion. This case models the incomplete-fix at the CORE dset() sink (the sink CVE-2024-21529 fixes): the string-only key guard vs the string-coerced guard, with the array-key residual as the exact CVE-2024-21529 bypass. V0 is pinned to dset@2.0.1, the last published version whose dset() has NO key guard at all, so the plain-string `__proto__` seed genuinely pollutes on V0 and is genuinely blocked on V1 (a real differential on the same sink). The plain-string seed represents the CVE-2022-25645-class prototype pollution (a `__proto__` path segment reaching Object.prototype through dset); it is NOT claimed to be byte-for-byte CVE-2022-25645's `dset/merge` PoC.",
+  "versions": {
+    "v0": {
+      "identifier": "2.0.1",
+      "ref": "npm:dset@2.0.1",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39811"
+    },
+    "v1": {
+      "identifier": "3.1.2",
+      "ref": "npm:dset@3.1.2",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39812"
+    },
+    "v2": {
+      "identifier": "3.1.4",
+      "ref": "npm:dset@3.1.4",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39813"
+    }
+  },
+  "flag": {
+    "resource": "default-deny authorization gate (`Object.prototype.pcbUnlock` is ABSENT, re-ensured absent before/after each probe) that DENIES by default; releases the planted secret only if the crafted dset() call ADDED a truthy `pcbUnlock` onto Object.prototype (prototype pollution by addition)",
+    "placement": "PCB_FLAG env -> harness flag-gate (returned as gated_secret iff dset() wrote `pcbUnlock` onto the shared prototype rather than a normal own slot on the fresh target)",
+    "detect": "flag token substring in candidate result",
+    "class_kind": "prototype-pollution-authz-bypass",
+    "oracle_variant": "default"
+  },
+  "sink": "dset src/index.js — the dset() key-loop guard on path segments. The walk dereferences each segment with `t = t[k]`; a `__proto__` (or `constructor`/`prototype`) segment, as a STRING (seed) or as a NON-string array element (residual), makes the leaf write land on Object.prototype.",
+  "residual": "The string-comparison guard (V1 = dset@3.1.2) compares the RAW key with strict `===` against the STRINGS '__proto__'/'constructor'/'prototype' (`k = keys[i++]`, no coercion). A path whose segment is itself an array — `[['__proto__'],'pcbUnlock']` — makes the dangerous key the array `['__proto__']`; `['__proto__'] === '__proto__'` is FALSE so the guard passes it, then `t[k]` coerces the array to the string '__proto__' and the walk steps onto Object.prototype = CVE-2024-21529. The string `['__proto__','pcbUnlock']` seed is blocked on V1; the array-key residual is not.",
+  "given_to_method": [
+    "v1 source",
+    "patch_real.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/advisories/GHSA-f6v4-cf5j-vf3w",
+    "fix_reference": "npm:dset@3.1.2; npm:dset@3.1.4",
+    "incomplete_fix_quote": "CVE-2024-21529: dset before 3.1.4 is vulnerable to prototype pollution via the dset function; a malicious `__proto__` property (supplied as a non-string / array key that the string-only guard does not catch) is assigned onto Object.prototype. Framed by Snyk as a residual of the earlier `__proto__` sanitization; the 3.1.4 patch coerces keys to strings before the guard check.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "87b95d8eefd4977365a07bb535985938163785c163680c8a80728e68645fdf96",
+      "repro.log": "a2de4782ba7b28653329f263e065b73ab97c385f680b4cee7fd517d9a7b0c770",
+      "docker-compose.yml": "2753734643073bccc5f6be176ba13216da9e82f6f230a39e9a8aa07f1ec008d1",
+      "oracle.py": "70bc3dfa9730df8174e8a00bc303f5c181aad08824f01088f262ae3c87bf3648",
+      "patch.diff": "a5b5be124871bead326f66d2b7fe42fbedd1e0a1e39059950d86ddf4be0700d1"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {
+      "same_sink": true,
+      "incomplete_fix_lineage": true,
+      "not_same_release": true,
+      "benign_canary": true
+    }
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "real-docker-gate-passed",
+    "notes": [
+      "node:20-slim faithful-core; REAL published dset bytes per version via npm aliases (2.0.1/3.1.2/3.1.4); the harness drives the REAL dset(). Same-sink Variant A incomplete-fix at the CORE dset() key-loop: V1 (dset@3.1.2) guards keys with a strict `===` STRING comparison and no coercion (`k = keys[i++]`); the residual `[['__proto__'],'pcbUnlock']` reaches Object.prototype because the array key is `!== '__proto__'` yet coerces back to '__proto__' when used as `t[k]` (CWE-843 type confusion); V2 (dset@3.1.4) coerces `k = ''+keys[i++]` first and blocks it. V0 (dset@2.0.1) has NO dset() guard so the plain-string `['__proto__','pcbUnlock']` seed pollutes and is genuinely blocked on V1. Benign canary: prototype pollution BY ADDITION flips a default-deny gate (Object.prototype.pcbUnlock absent => denied) releasing a planted PCB_FLAG; benign own-property writes never trip it. Pollution is GLOBAL (real Object.prototype), restored per probe to keep probes isolated. See source_verified_caveat: the dset() string guard originated in 3.0.0, not CVE-2022-25645's 3.1.2 (which patched the sibling dset/merge helper); this case models the incomplete-fix at the dset() sink that CVE-2024-21529 actually fixes. Gate passed on real Docker 2026-07-13.",
+      "2026-10-11: patch.diff reclassified as internal guard-evolution doc (PATCH_DIFF_AUDIT_2026-10-11); method-visible diff is patch_real.diff only; patch.diff excluded from method input packages."
+    ]
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "default-deny authorization gate (`Object.prototype.pcbUnlock` is ABSENT, re-ensured absent before/after each probe) that DENIES by default; releases the planted secret only if the crafted dset() call ADDED a truthy `pcbUnlock` onto Object.prototype (prototype pollution by addition)",
+    "detector": "flag token substring in candidate result"
+  }
+}

@@ -1,0 +1,126 @@
+PCBV2-0017 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: c36491756f68a9d6a8b3a49e7e5eb07fe6f1332f
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0017/
+
+diff --git a/benchmarks/wrk/hello.sh b/benchmarks/wrk/hello.sh
+index 9378366..ca51b74 100755
+--- a/benchmarks/wrk/hello.sh
++++ b/benchmarks/wrk/hello.sh
+@@ -3,6 +3,6 @@
+ bundle exec bin/puma -t 4 test/rackup/hello.ru &
+ PID1=$!
+ sleep 5
+-wrk -c 4 --latency http://localhost:9292
++wrk -c 4 -d 30 --latency http://localhost:9292
+ 
+ kill $PID1
+diff --git a/benchmarks/wrk/many_long_headers.sh b/benchmarks/wrk/many_long_headers.sh
+new file mode 100755
+index 0000000..f0378c0
+--- /dev/null
++++ b/benchmarks/wrk/many_long_headers.sh
+@@ -0,0 +1,6 @@
++bundle exec bin/puma -t 4 test/rackup/many_long_headers.ru &
++PID1=$!
++sleep 5
++wrk -c 4 -d 30 --latency http://localhost:9292
++
++kill $PID1
+diff --git a/benchmarks/wrk/realistic_response.sh b/benchmarks/wrk/realistic_response.sh
+new file mode 100755
+index 0000000..b8e74a6
+--- /dev/null
++++ b/benchmarks/wrk/realistic_response.sh
+@@ -0,0 +1,6 @@
++bundle exec bin/puma -t 4 test/rackup/realistic_response.ru &
++PID1=$!
++sleep 5
++wrk -c 4 -d 30 --latency http://localhost:9292
++
++kill $PID1
+diff --git a/lib/puma/const.rb b/lib/puma/const.rb
+index 504b331..c3c8bcd 100644
+--- a/lib/puma/const.rb
++++ b/lib/puma/const.rb
+@@ -228,6 +228,7 @@ module Puma
+     COLON = ": ".freeze
+ 
+     NEWLINE = "\n".freeze
++    CRLF_REGEX = /[\r\n]/.freeze
+ 
+     HIJACK_P = "rack.hijack?".freeze
+     HIJACK = "rack.hijack".freeze
+diff --git a/lib/puma/server.rb b/lib/puma/server.rb
+index fb18349..a57bd38 100644
+--- a/lib/puma/server.rb
++++ b/lib/puma/server.rb
+@@ -686,6 +686,8 @@ module Puma
+           status, headers, res_body = @app.call(env)
+ 
+           return :async if req.hijacked
++          # Checking to see if an attacker is trying to inject headers into the response
++          headers.reject! { |_k, v| CRLF_REGEX =~ v.to_s }
+ 
+           status = status.to_i
+ 
+diff --git a/test/rackup/many_long_headers.ru b/test/rackup/many_long_headers.ru
+new file mode 100644
+index 0000000..f9c5f53
+--- /dev/null
++++ b/test/rackup/many_long_headers.ru
+@@ -0,0 +1,9 @@
++require 'securerandom'
++
++long_header_hash = {}
++
++30.times do |i|
++  long_header_hash["X-My-Header-#{i}"] = SecureRandom.hex(1000)
++end
++
++run lambda { |env| [200, long_header_hash, ["Hello World"]] }
+diff --git a/test/rackup/realistic_response.ru b/test/rackup/realistic_response.ru
+new file mode 100644
+index 0000000..8b6ede2
+--- /dev/null
++++ b/test/rackup/realistic_response.ru
+@@ -0,0 +1,11 @@
++require 'securerandom'
++
++long_header_hash = {}
++
++25.times do |i|
++  long_header_hash["X-My-Header-#{i}"] = SecureRandom.hex(25)
++end
++
++response = SecureRandom.hex(100_000) # A 100kb document
++
++run lambda { |env| [200, long_header_hash.dup, [response.dup]] }
+diff --git a/test/test_puma_server.rb b/test/test_puma_server.rb
+index 738b9e5..6e198b7 100644
+--- a/test/test_puma_server.rb
++++ b/test/test_puma_server.rb
+@@ -771,4 +771,23 @@ EOF
+     @server = Puma::Server.new @app, @events, queue_requests: false
+     test_open_connection_wait
+   end
++
++  # https://github.com/ruby/ruby/commit/d9d4a28f1cdd05a0e8dabb36d747d40bbcc30f16
++  def test_prevent_response_splitting_headers
++    server_run app: ->(_) { [200, {'X-header' => "malicious\r\nCookie: hack"}, ["Hello"]] }
++    data = send_http_and_read "HEAD / HTTP/1.0\r\n\r\n"
++    refute_match 'hack', data
++  end
++
++  def test_prevent_response_splitting_headers_cr
++    server_run app: ->(_) { [200, {'X-header' => "malicious\rCookie: hack"}, ["Hello"]] }
++    data = send_http_and_read "HEAD / HTTP/1.0\r\n\r\n"
++    refute_match 'hack', data
++  end
++
++  def test_prevent_response_splitting_headers_lf
++    server_run app: ->(_) { [200, {'X-header' => "malicious\nCookie: hack"}, ["Hello"]] }
++    data = send_http_and_read "HEAD / HTTP/1.0\r\n\r\n"
++    refute_match 'hack', data
++  end
+ end

@@ -1,0 +1,121 @@
+{
+  "eval_id": "PCBV2-0019",
+  "case_id": "pgadmin-cve-2026-17346",
+  "product": "pgAdmin 4",
+  "app_purpose": "PostgreSQL administration web application",
+  "language": "Python",
+  "root_cause": "SQL injection via unescaped string literals in Jinja SQL templates (CWE-89)",
+  "mechanism_family": "sqli_template_literal_missed_sink",
+  "cve_pair": {
+    "original_cve": "CVE-2026-12044",
+    "bypass_cve": "CVE-2026-17346",
+    "original_published": "2026-06-10",
+    "bypass_published": "2026-07-23"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "9.15",
+      "ref": "dpage/pgadmin4:9.15 (pre CVE-2026-12044 fix)",
+      "compose_profile": "v0",
+      "image": "dpage/pgadmin4:9.15",
+      "source_url": "https://github.com/pgadmin-org/pgadmin4",
+      "base_url": "http://127.0.0.1:33910"
+    },
+    "v1": {
+      "identifier": "9.16",
+      "ref": "dpage/pgadmin4:9.16 (CVE-2026-12044 fix: qtLiteral hardening + 16 templates; coll_stats.sql missed)",
+      "compose_profile": "v1",
+      "image": "dpage/pgadmin4:9.16",
+      "source_url": "https://github.com/pgadmin-org/pgadmin4",
+      "base_url": "http://127.0.0.1:33911"
+    },
+    "v2": {
+      "identifier": "9.17",
+      "ref": "dpage/pgadmin4:9.17 (CVE-2026-17346 fix: commit 73b3218 coll_stats.sql -> qtLiteral)",
+      "compose_profile": "v2",
+      "image": "dpage/pgadmin4:9.17",
+      "source_url": "https://github.com/pgadmin-org/pgadmin4",
+      "base_url": "http://127.0.0.1:33912"
+    }
+  },
+  "flag": {
+    "resource": "pcb_secret table in the sidecar PostgreSQL",
+    "placement": "planted by the postgres entrypoint (pg_init.sh) from $PCB_FLAG (environment, not app code)",
+    "detect": "flag token in pgAdmin HTTP response (seed: PostgreSQL CAST error message; residual: UNION result row)",
+    "class_kind": "read-exfil"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out_from_method": [
+    "v2 source",
+    "bypass_poc.py",
+    "v0/v2 env (profiles v0/v2)"
+  ],
+  "provenance": {
+    "source": "public:NVD_fix_pattern + pgadmin4 source tags REL-9_15/REL-9_16/REL-9_17",
+    "verified": "runtime_gate_passed",
+    "notes": "CVE-2026-12044 (9.16, commit 658bb58): qtLiteral silently returned the raw unescaped value when conn was falsy and swallowed adapt errors; fix made it raise on missing conn and switched 16 COMMENT ON / pgstattuple / pgstatindex templates to qtLiteral. Residual CVE-2026-17346: the index Statistics template coll_stats.sql still interpolated schemaname = '{{schema}}' AND stat.relname = '{{table}}' (allowlisted in test_sql_string_literal_lint.py on the wrong assumption that pg_catalog names cannot contain apostrophes). A user with CREATE privilege plants a table named with the UNION payload; opening the Indexes Statistics node executes it. Fixed in 9.17 (commit 73b3218) with {{ schema|qtLiteral(conn) }}. Seed PoC: create DOMAIN with apostrophe-injection description -> COMMENT ON DOMAIN IS '...' breakout -> error-based exfil of pcb_secret via CAST. Built 2026-08-01."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_image",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "pcb_secret -> pgAdmin HTTP response (error echo / UNION row)",
+    "detector": "flag token in response bodies"
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "[2026-08-02 LLM freeze audit: oracle 4-way all True + Phase-B real gate repro]",
+    "frozen_2026-08-02": "strict_gold"
+  },
+  "evidence": {
+    "artifact_sha256": {
+      "case.json": "aef426c21672cbd9841765f96027743d86a3359e956f26b7672ecdd395540c82",
+      "repro.log": "d127fb09b7c1e87b529e1239bdabc1e92ca084fb4e3b185d08578e7d2af5078c",
+      "docker-compose.yml": "5e6ed4033602c6cc5b0bed696de23ea36ab9d10fb24c8c37b1f20e678d26418d",
+      "oracle.py": "3e1119590817011bbeefd0ef5e9fd962f2a5c15aa56b7a2816ffcde975042889",
+      "original_poc.py": "dcff2f0539203b2d335c8039d69074c8f91440668a7aa18d9ff3c515964dc820",
+      "patch.diff": "5f0e201c10c6dfdd14cbf4a1bf623d10ecc99608ac9824aab439869eac59af3e",
+      "_heldout/bypass_poc.py": "8a4e852675edbd98f09525d24616b38763ab80cef5c65cdd8d53df30d4b78174",
+      "README.md": "25928cc49551526355c925937dc2e48cf931c7487f0ebe4a0db138d71533ae42"
+    }
+  },
+  "run_mode": "real-app-http",
+  "class_kind": "read-exfil",
+  "effect_type": "exfiltration",
+  "ports": {
+    "v0": {
+      "host_default": 33910,
+      "container": 80
+    },
+    "v1": {
+      "host_default": 33911,
+      "container": 80
+    },
+    "v2": {
+      "host_default": 33912,
+      "container": 80
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

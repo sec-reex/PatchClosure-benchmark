@@ -1,0 +1,40 @@
+# PatchClosure-Bench recipe for jackson-databind-cve-2017-15095 -- REAL jackson-databind per version behind a
+# REAL Java HTTP REST service, deserialization triggered by an EXTERNAL HTTP request whose JSON body is
+# polymorphically deserialized.
+# CVE-2017-7525 [default-typing polymorphic deserialization -> RCE; the -7525 fix in 2.8.9 adds the
+#  BeanDeserializerFactory.checkIllegalTypes / DEFAULT_NO_DESER_CLASS_NAMES class-name blacklist (databind#1599)]
+#  -> CVE-2017-15095 [that enumerated blacklist is INCOMPLETE: gadget class names not on the 2.8.9 list still
+#  deserialize; 2.8.10 extends it via databind#1680+#1737], CWE-502. Genuine incomplete fix.
+#
+# Each profile builds the shared Dockerfile pinning the REAL jackson-databind at JACKSON_VER, boots the HTTP
+# service, and maps its port 8080 to a unique host port. The oracle drives POST /deser over real external HTTP
+# with a benign default-typing JSON body ["<FQCN>", {}]; ${PCB_FLAG} is planted per-run via env.
+services:
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {JACKSON_VER: "2.8.8"}}
+    image: "pcb/jackson-deser-http:2.8.8"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-18760}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {JACKSON_VER: "2.8.9"}}
+    image: "pcb/jackson-deser-http:2.8.9"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-18761}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {JACKSON_VER: "2.8.10"}}
+    image: "pcb/jackson-deser-http:2.8.10"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-18762}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.129.0/24

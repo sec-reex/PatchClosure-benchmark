@@ -1,0 +1,49 @@
+# Real pyLoad product (not a function harness).
+# CVE-2026-32808 (seed, SevenZip.verify DELETE) -> CVE-2026-35592 (residual, UnTar WRITE).
+# Each profile installs the whole repo at the pinned commit and runs `pyload` :8000.
+#
+#   V0 e81028fe4022b4a6af17e33ebf6df5303ec830bc  parent of the 32808 fix
+#   V1 5f4f0fa5fed3520e57f2cb5a1053e3654c082eea  32808 fixed, 35592 residual open
+#   V2 0fc250c94270a43605e4197dcea5b44998190977  35592 closed (optional)
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args: { SHA: "e81028fe4022b4a6af17e33ebf6df5303ec830bc" }
+    image: pcb-pyload-35592-v0
+    ports: ["${PORT_V0_0:-39590}:8000"]
+    environment: { PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}" }
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args: { SHA: "5f4f0fa5fed3520e57f2cb5a1053e3654c082eea" }
+    image: pcb-pyload-35592-v1
+    ports: ["${PORT_V1_0:-39591}:8000"]
+    environment: { PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}" }
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args: { SHA: "0fc250c94270a43605e4197dcea5b44998190977" }
+    image: pcb-pyload-35592-v2
+    ports: ["${PORT_V2_0:-39592}:8000"]
+    environment: { PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}" }
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 24

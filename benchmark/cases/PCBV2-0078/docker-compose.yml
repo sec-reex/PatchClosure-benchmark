@@ -1,0 +1,39 @@
+# PatchClosure-Bench recipe for apache-shiro-cve-2020-13933.
+# One minimal Spring Boot app + real Apache Shiro (shiro-spring/web/core) pinned per
+# profile via build-arg SHIRO_VER. The per-run ${PCB_FLAG} is injected via the
+# environment and returned only by the protected GET /admin/flag controller.
+#
+# Profiles:
+#   v0 = shiro 1.5.2  (pre CVE-2020-11989; original crafted path bypasses -> FLAG)
+#   v1 = shiro 1.5.3  (CVE-2020-11989 fix = TARGET/incomplete; original blocked,
+#                      residual semicolon path still bypasses -> FLAG)
+#   v2 = shiro 1.6.0  (CVE-2020-13933 fix; InvalidRequestFilter blocks the residual)
+services:
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SHIRO_VER: "1.5.2"}}
+    image: "pcb/shiro-authbypass:1.5.2"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-18930}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SHIRO_VER: "1.5.3"}}
+    image: "pcb/shiro-authbypass:1.5.3"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-18931}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SHIRO_VER: "1.6.0"}}
+    image: "pcb/shiro-authbypass:1.6.0"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-18932}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.79.0/24

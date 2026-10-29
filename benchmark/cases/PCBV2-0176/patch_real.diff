@@ -1,0 +1,16 @@
+CVE: CVE-2020-7766
+upstream: npm json-ptr (published package; flitbit/json-ptr git 404)
+fix: json-ptr@1.3.0..json-ptr@2.0.0 (dist/util.js prototype-key guard)
+
+--- a/package/dist/util.js	1985-10-26 16:15:00
++++ b/package/dist/util.js	1985-10-26 16:15:00
+@@ -175,6 +175,9 @@
+     let p;
+     while (++cursor < len) {
+         step = path[cursor];
++        if (step === '__proto__' || step === 'constructor' || step === 'prototype') {
++            throw new Error('Attempted prototype pollution disallowed.');
++        }
+         if (Array.isArray(it)) {
+             if (step === '-' && cursor === end) {
+                 it.push(val);

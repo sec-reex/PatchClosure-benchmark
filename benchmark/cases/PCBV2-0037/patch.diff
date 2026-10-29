@@ -1,0 +1,411 @@
+PCBV2-0037 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: d9a1fde8ec5a5a9c9e5a69bf91d703950859d744 (3.10.0 / GHSA-cchq-frgv-rjh5)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0037/
+
+diff --git a/.github/workflows/node-test.yml b/.github/workflows/node-test.yml
+index a8023043..633576f5 100644
+--- a/.github/workflows/node-test.yml
++++ b/.github/workflows/node-test.yml
+@@ -9,26 +9,13 @@ jobs:
+     runs-on: ubuntu-latest
+     strategy:
+       matrix:
+-        node-version: [8, 10, 12, 14, 16, 18, 19]
++        node-version: [18, 20, 22]
+     steps:
+-      - uses: actions/checkout@v3
++      - uses: actions/checkout@v4
+       - name: Use Node.js ${{ matrix.node-version }}
+-        uses: actions/setup-node@v3
++        uses: actions/setup-node@v4
+         with:
+           node-version: ${{ matrix.node-version }}
+       - name: Install dependencies
+         run: npm ci
+       - run: npm test
+-  
+-  # It seems that npm for node v6 does not have the ci command.
+-  testv6:
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v3
+-      - name: Use Node.js 6
+-        uses: actions/setup-node@v3
+-        with:
+-          node-version: 6
+-      - name: Install dependencies
+-        run: npm install
+-      - run: npm test
+diff --git a/lib/bridge.js b/lib/bridge.js
+index 8690b514..47b8b5c1 100644
+--- a/lib/bridge.js
++++ b/lib/bridge.js
+@@ -158,6 +158,7 @@ function thisIdMapping(factory, other) {
+ const thisThrowOnKeyAccessHandler = thisObjectFreeze({
+ 	__proto__: null,
+ 	get(target, key, receiver) {
++		if (key === 'isProxy') return true;
+ 		if (typeof key === 'symbol') {
+ 			key = thisReflectApply(thisSymbolToString, key, []);
+ 		}
+@@ -165,11 +166,11 @@ const thisThrowOnKeyAccessHandler = thisObjectFreeze({
+ 	}
+ });
+ 
+-const emptyForzenObject = thisObjectFreeze({
++const emptyFrozenObject = thisObjectFreeze({
+ 	__proto__: null
+ });
+ 
+-const thisThrowOnKeyAccess = new ThisProxy(emptyForzenObject, thisThrowOnKeyAccessHandler);
++const thisThrowOnKeyAccess = new ThisProxy(emptyFrozenObject, thisThrowOnKeyAccessHandler);
+ 
+ function SafeBase() {}
+ 
+@@ -413,12 +414,16 @@ function createBridge(otherInit, registerProxy) {
+ 		}
+ 
+ 		get(target, key, receiver) {
++			if (key === 'isProxy') return true;
+ 			// Note: target@this(unsafe) key@prim receiver@this(unsafe) throws@this(unsafe)
+ 			const object = this.getObject(); // @other(unsafe)
+ 			switch (key) {
+ 				case 'constructor': {
+ 					const desc = otherSafeGetOwnPropertyDescriptor(object, key);
+-					if (desc) return thisDefaultGet(this, object, key, desc);
++					if (desc) {
++						if (desc.value && desc.value.name === 'Function') return {};
++						return thisDefaultGet(this, object, key, desc);
++					}
+ 					const proto = thisReflectGetPrototypeOf(target);
+ 					return proto === null ? undefined : proto.constructor;
+ 				}
+@@ -782,6 +787,7 @@ function createBridge(otherInit, registerProxy) {
+ 		}
+ 
+ 		get(target, key, receiver) {
++			if (key === 'isProxy') return true;
+ 			// Note: target@this(unsafe) key@prim receiver@this(unsafe) throws@this(unsafe)
+ 			const object = this.getObject(); // @other(unsafe)
+ 			const mock = this.mock;
+@@ -812,7 +818,7 @@ function createBridge(otherInit, registerProxy) {
+ 			thisReflectApply(thisWeakMapSet, mappingOtherToThis, [other, proxy]);
+ 			return proxy;
+ 		}
+-		const proxy2 = new ThisProxy(proxy, emptyForzenObject);
++		const proxy2 = new ThisProxy(proxy, emptyFrozenObject);
+ 		try {
+ 			otherReflectApply(otherWeakMapSet, mappingThisToOther, [proxy2, other]);
+ 			registerProxy(proxy2, handler);
+diff --git a/lib/setup-sandbox.js b/lib/setup-sandbox.js
+index fbfacc4b..5e3fb83f 100644
+--- a/lib/setup-sandbox.js
++++ b/lib/setup-sandbox.js
+@@ -10,7 +10,6 @@ const {
+ 	Proxy: LocalProxy,
+ 	WeakMap: LocalWeakMap,
+ 	Function: localFunction,
+-	Promise: localPromise,
+ 	eval: localEval
+ } = global;
+ 
+@@ -20,7 +19,7 @@ const {
+ 
+ const {
+ 	getPrototypeOf: localReflectGetPrototypeOf,
+-	apply: localReflectApply,
++	apply,
+ 	construct: localReflectConstruct,
+ 	deleteProperty: localReflectDeleteProperty,
+ 	has: localReflectHas,
+@@ -29,6 +28,27 @@ const {
+ 	getOwnPropertyDescriptor: localReflectGetOwnPropertyDescriptor
+ } = localReflect;
+ 
++const speciesSymbol = Symbol.species;
++const globalPromise = global.Promise;
++class localPromise extends globalPromise {}
++
++const resetPromiseSpecies = (p) => {
++	if (p instanceof globalPromise && ![globalPromise, localPromise].includes(p.constructor[speciesSymbol])) {
++		Object.defineProperty(p.constructor, speciesSymbol, { value: localPromise });
++	}
++};
++
++const globalPromiseThen = globalPromise.prototype.then;
++globalPromise.prototype.then = function then(onFulfilled, onRejected) {
++	resetPromiseSpecies(this);
++	return globalPromiseThen.call(this, onFulfilled, onRejected);
++};
++
++const localReflectApply = (target, thisArg, args) => {
++	resetPromiseSpecies(thisArg);
++	return apply(target, thisArg, args);
++};
++
+ const {
+ 	isArray: localArrayIsArray
+ } = localArray;
+@@ -69,7 +89,9 @@ Object.defineProperties(global, {
+ 	globalThis: {value: global, writable: true, configurable: true},
+ 	GLOBAL: {value: global, writable: true, configurable: true},
+ 	root: {value: global, writable: true, configurable: true},
+-	Error: {value: LocalError}
++	Error: {value: LocalError},
++	Promise: {value: localPromise},
++	Proxy: {value: undefined}
+ });
+ 
+ if (!localReflectDefineProperty(global, 'VMError', {
+@@ -462,6 +484,7 @@ const makeSafeArgs = Object.freeze({
+ const proxyHandlerHandler = Object.freeze({
+ 	__proto__: null,
+ 	get(target, name, receiver) {
++		if (name === 'isProxy') return true;
+ 		const value = target.handler[name];
+ 		if (typeof value !== 'function') return value;
+ 		return new LocalProxy(value, makeSafeArgs);
+@@ -529,8 +552,16 @@ if (localPromise) {
+ 
+ 	}
+ 
++	Object.freeze(localPromise);
++	Object.freeze(PromisePrototype);
+ }
+ 
++localObject.defineProperty(localObject, 'setPrototypeOf', {
++	value: () => {
++		throw new VMError('Operation not allowed on contextified object.');
++	}
++});
++
+ function readonly(other, mock) {
+ 	// Note: other@other(unsafe) mock@other(unsafe) returns@this(unsafe) throws@this(unsafe)
+ 	if (!mock) return fromWithFactory(readonlyFactory, other);
+diff --git a/package.json b/package.json
+index dc004c11..abf76e6e 100644
+--- a/package.json
++++ b/package.json
+@@ -28,7 +28,7 @@
+     "mocha": "^6.2.2"
+   },
+   "engines": {
+-    "node": ">=6.0"
++    "node": ">=18.0"
+   },
+   "scripts": {
+     "test": "mocha test",
+diff --git a/test/vm.js b/test/vm.js
+index 4f464043..30517512 100644
+--- a/test/vm.js
++++ b/test/vm.js
+@@ -42,7 +42,6 @@ function makeHelpers() {
+ 		function addProp(o, name, path) {
+ 			const prop = Object.getOwnPropertyDescriptor(o, name);
+ 			if (typeof name === 'symbol') name = '!' + name.toString();
+-			Object.setPrototypeOf(prop, null);
+ 			addObj(prop.get, `${path}>${name}`);
+ 			addObj(prop.set, `${path}<${name}`);
+ 			addObj(prop.value, `${path}.${name}`);
+@@ -622,7 +621,7 @@ describe('VM', () => {
+ 			if (o && o.constructor !== Function) throw new Error('Shouldnt be there.');
+ 		`), '#3');
+ 
+-		assert.doesNotThrow(() => vm2.run(`
++		assert.throws(() => vm2.run(`
+ 			let method = () => {};
+ 			let proxy = new Proxy(method, {
+ 				apply: (target, context, args) => {
+@@ -631,16 +630,16 @@ describe('VM', () => {
+ 				}
+ 			});
+ 			proxy
+-		`)('asdf'), '#4');
++		`)('asdf'), /Proxy is not a constructor/, '#4');
+ 
+-		assert.doesNotThrow(() => vm2.run(`
++		assert.throws(() => vm2.run(`
+ 			let proxy2 = new Proxy(function() {}, {
+ 				apply: (target, context, args) => {
+ 					if (args.constructor.constructor !== Function) throw new Error('Shouldnt be there.');
+ 				}
+ 			});
+ 			proxy2
+-		`)('asdf'), '#5');
++		`)('asdf'), /Proxy is not a constructor/, '#5');
+ 
+ 		assert.strictEqual(vm2.run(`
+ 			global.DEBUG = true;
+@@ -674,7 +673,7 @@ describe('VM', () => {
+ 			} catch ({constructor: c}) {
+ 				c.constructor('return process')();
+ 			}
+-		`), /Maximum call stack size exceeded/, '#9');
++		`), /Proxy is not a constructor/, '#9');
+ 	});
+ 
+ 	it('internal state attack', () => {
+@@ -729,21 +728,15 @@ describe('VM', () => {
+ 			}
+ 		});
+ 
+-		try {
+-			vm2.run(`
+-				func(() => {
+-					throw new Proxy({}, {
+-						getPrototypeOf: () => {
+-							throw x => x.constructor.constructor("return process;")();
+-						}
+-					})
+-				});
+-			`);
+-		} catch (ex) {
+-			assert.throws(()=>{
+-				ex(()=>{});
+-			}, /process is not defined/);
+-		}
++		assert.throws(() => vm2.run(`
++			func(() => {
++				throw new Proxy({}, {
++					getPrototypeOf: () => {
++						throw x => x.constructor.constructor("return process;")();
++					}
++				})
++			});
++		`), /Proxy is not a constructor/);
+ 	});
+ 
+ 	it('__defineGetter__ / __defineSetter__ attack', () => {
+@@ -815,40 +808,11 @@ describe('VM', () => {
+ 					return () => x => x.constructor("return process")();
+ 				}
+ 			})))(()=>{}).mainModule.require("child_process").execSync("id").toString()
+-		`), /process is not defined/, '#2');
++		`), /Proxy is not a constructor/, '#2');
+ 
+ 		vm2 = new VM();
+ 
+ 		assert.throws(() => vm2.run(`
+-			var process;
+-			try {
+-				Object.defineProperty(Buffer.from(""), "y", {
+-					writable: true,
+-					value: new Proxy({}, {
+-						getPrototypeOf(target) {
+-							delete this.getPrototypeOf;
+-
+-							Object.defineProperty(Object.prototype, "get", {
+-								get() {
+-									delete Object.prototype.get;
+-									Function.prototype.__proto__ = null;
+-									throw f=>f.constructor("return process")();
+-								}
+-							});
+-
+-							return Object.getPrototypeOf(target);
+-						}
+-					})
+-				});
+-			} catch(e) {
+-				process = e(() => {});
+-			}
+-			process.mainModule.require("child_process").execSync("whoami").toString()
+-		`), /Cannot read propert.*mainModule/, '#3');
+-
+-		vm2 = new VM();
+-
+-		assert.doesNotThrow(() => vm2.run(`
+ 			Object.defineProperty(Buffer.from(""), "", {
+ 				value: new Proxy({}, {
+ 					getPrototypeOf(target) {
+@@ -861,7 +825,7 @@ describe('VM', () => {
+ 					}
+ 				})
+ 			});
+-		`), '#4');
++		`), /Proxy is not a constructor/, '#4');
+ 
+ 		vm2 = new VM();
+ 
+@@ -988,7 +952,7 @@ describe('VM', () => {
+ 					}
+ 				}
+ 			}))}).mainModule.require("child_process").execSync("id").toString()
+-		`), /process is not defined/, '#1');
++		`), /Proxy is not a constructor/, '#1');
+ 	});
+ 
+ 	it('throw while accessing propertyDescriptor properties', () => {
+@@ -1045,17 +1009,13 @@ describe('VM', () => {
+ 
+ 		assert.throws(() => vm2.run(`
+ 			(function(){
+-				try{
+-					Buffer.from(new Proxy({}, {
+-						getOwnPropertyDescriptor(){
+-							throw f=>f.constructor("return process")();
+-						}
+-					}));
+-				}catch(e){
+-					return e(()=>{}).mainModule.require("child_process").execSync("whoami").toString();
+-				}
++				Buffer.from(new Proxy({}, {
++					getOwnPropertyDescriptor(){
++						throw f=>f.constructor("return process")();
++					}
++				}));
+ 			})()
+-		`), /process is not defined/);
++		`), /Proxy is not a constructor/);
+ 	});
+ 
+ 	if (NODE_VERSION >= 10) {
+@@ -1160,6 +1120,47 @@ describe('VM', () => {
+ 		`), /process is not defined/);
+ 	});
+ 
++	it('allow regular async functions', async () => {
++		const vm2 = new VM();
++		const promise = vm2.run(`(async () => 42)()`);
++		assert.strictEqual(await promise, 42);
++	});
++
++	it('allow regular promises', async () => {
++		const vm2 = new VM();
++		const promise = vm2.run(`new Promise((resolve) => resolve(42))`);
++		assert.strictEqual(await promise, 42);
++	});
++
++	it('[Symbol.species] attack', async () => {
++		const vm2 = new VM();
++		const promise = vm2.run(`
++		async function fn() {
++			throw new Error('random error');
++		}
++		const promise = fn();
++		promise.constructor = {
++			[Symbol.species]: class WrappedPromise {
++				constructor(executor) {
++					executor(() => 43, () => 44);
++				}
++			}
++		};
++		promise.then();
++		`);
++		assert.rejects(() => promise, /random error/);
++	});
++
++	it('constructor arbitrary code attack', async () => {
++		const vm2 = new VM();
++		assert.throws(()=>vm2.run(`
++		const g = ({}).__lookupGetter__;
++		const a = Buffer.apply;
++		const p = a.apply(g, [Buffer, ['__proto__']]);
++		p.call(a).constructor('return process')();
++		`), /constructor is not a function/);
++	});
++
+ 	after(() => {
+ 		vm = null;
+ 	});

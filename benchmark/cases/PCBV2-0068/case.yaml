@@ -1,0 +1,26 @@
+case_id: PCBV2-0068
+public_name: apache-dolphinscheduler-cve-2024-23320
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  # Runtime is published Maven Central jars (dolphinscheduler-master + task-api).
+  # Do not clone dolphinscheduler.git (tags are unused; Dockerfile curls repo1.maven.org).
+  type: maven
+  repo: org.apache.dolphinscheduler:dolphinscheduler-master
+  v0: "3.1.8"
+  v1: "3.1.9"
+service:
+  # Host port is ${PORT_V*_0}, not :8080. start.sh waits for /healthz after up.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

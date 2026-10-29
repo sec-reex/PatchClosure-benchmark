@@ -1,0 +1,11 @@
+{
+  "name": "pcb-lodash-merge-core",
+  "private": true,
+  "type": "commonjs",
+  "description": "Faithful-core prototype-pollution guard using the REAL npm `lodash` _.merge (baseMergeDeep/safeGet) per version (CVE-2018-3721 -> CVE-2018-16487). npm aliases hold all three versions side-by-side; the harness selects one by HARNESS_VER.",
+  "dependencies": {
+    "lodash-v0": "npm:lodash@4.17.4",
+    "lodash-v1": "npm:lodash@4.17.5",
+    "lodash-v2": "npm:lodash@4.17.11"
+  }
+}

@@ -1,0 +1,25 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>spring-uri-openredirect</artifactId>
+  <version>1</version>
+  <packaging>jar</packaging>
+  <properties>
+    <!-- Overridden at build time with -Dspring.version=${SPRING_VER} (5.3.31 / 5.3.32 / 5.3.33). -->
+    <spring.version>5.3.32</spring.version>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <dependencies>
+    <!-- The ONLY app dependency: the genuine spring-web that owns UriComponentsBuilder. Its
+         transitive deps (spring-core, spring-jcl, etc.) are pulled by Maven. -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-web</artifactId>
+      <version>${spring.version}</version>
+    </dependency>
+  </dependencies>
+</project>

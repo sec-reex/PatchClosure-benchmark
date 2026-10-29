@@ -1,0 +1,17 @@
+PCBV2-0012 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: shell-quote@1.7.2..1.7.3  index.js exports.quote
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0012/
+
+diff --git a/index.js b/index.js
+--- a/index.js
++++ b/index.js
+@@ -10,7 +10,7 @@
+             return '"' + s.replace(/(["\\$`!])/g, '\\$1') + '"';
+         }
+         else {
+-            return String(s).replace(/([A-z]:)?([#!"$&'()*,:;<=>?@\[\\\]^`{|}])/g, '$1\\$2');
++            return String(s).replace(/([A-Za-z]:)?([#!"$&'()*,:;<=>?@\[\\\]^`{|}])/g, '$1\\$2');
+         }
+     }).join(' ');
+ };

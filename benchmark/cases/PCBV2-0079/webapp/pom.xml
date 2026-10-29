@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PatchClosure-Bench faithful-core WEBAPP for apache-struts-cve-2021-31805
+     (CVE-2020-17530 [S2-061] -> CVE-2021-31805 [S2-062], Apache Struts 2 forced double OGNL
+     evaluation of UI-tag attributes, CWE-917 EL-injection). Genuine incomplete fix.
+
+     Pulls the EXACT published org.apache.struts:struts2-core:${struts.version} (+ its real,
+     unmodified transitive OGNL / freemarker / commons-lang / xwork classes, including on 2.5.30
+     the S2-062 NotExcludedAcceptedPatternsChecker) from Maven Central and assembles a minimal WAR
+     that renders a REAL <s:textfield> UI tag whose id/name attribute is developer-forced-OGNL
+     (%{prop}) over a request-supplied action property. NO struts code is modified. servlet-api is
+     provided-scoped (Tomcat 9 supplies javax.servlet + Jasper/JSP). log4j-api+core are pinned to
+     an aligned pair so struts logging inits identically across all three struts builds; logging is
+     not part of the OGNL evaluation path under test. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>struts-double-eval</artifactId>
+  <version>1.0</version>
+  <packaging>war</packaging>
+  <properties>
+    <struts.version>2.5.26</struts.version>
+    <maven.compiler.source>8</maven.compiler.source>
+    <maven.compiler.target>8</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <failOnMissingWebXml>false</failOnMissingWebXml>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.struts</groupId>
+      <artifactId>struts2-core</artifactId>
+      <version>${struts.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>javax.servlet</groupId>
+      <artifactId>javax.servlet-api</artifactId>
+      <version>3.1.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>javax.servlet.jsp</groupId>
+      <artifactId>javax.servlet.jsp-api</artifactId>
+      <version>2.3.3</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-api</artifactId>
+      <version>2.17.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-core</artifactId>
+      <version>2.17.1</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <finalName>ROOT</finalName>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-war-plugin</artifactId>
+          <version>3.3.2</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.11.0</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

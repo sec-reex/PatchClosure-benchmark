@@ -1,0 +1,122 @@
+# PatchClosure-Bench recipe for xwiki-cve-2026-23734.
+# Official `xwiki` (library/xwiki Tomcat) + MariaDB. NO custom harness, NO
+# ClassLoaderUtils extract. The SUT is the real XWiki process; the oracle hits
+# the unauthenticated ssx/jsx `resource` classloader sink over HTTP.
+#
+#   v0 = xwiki:16.10.6   -> CVE-2025-55748 OPEN. Plain `../` reads the flag.
+#   v1 = xwiki:16.10.16  -> plain `../` blocked; leading-slash `/../` still
+#        reads = CVE-2026-23734 TARGET (< 16.10.17).
+#   v2 = xwiki:16.10.17  -> XCOMMONS-3547 strips leading slashes first; both blocked.
+#
+# Canary ${PCB_FLAG} is planted by the entrypoint wrapper at
+# ROOT/WEB-INF/pcb_flag.txt (above classloader root ROOT/WEB-INF/classes/), then
+# exec docker-entrypoint.sh xwiki. No app/business code is modified.
+# No pinned subnet / container_name (IPAM collisions are not part of the vuln).
+x-xwiki-boot: &xwikiboot
+  entrypoint:
+    - /bin/sh
+    - -c
+    - |
+      printf '%s' "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}" \
+        > /usr/local/tomcat/webapps/ROOT/WEB-INF/pcb_flag.txt
+      chmod 644 /usr/local/tomcat/webapps/ROOT/WEB-INF/pcb_flag.txt
+      exec docker-entrypoint.sh xwiki
+  environment:
+    DB_USER: xwiki
+    DB_PASSWORD: xwiki
+    DB_DATABASE: xwiki
+    PCB_FLAG: "${PCB_FLAG}"
+
+x-db: &db
+  image: "mariadb:11.4"
+  command:
+    - "--character-set-server=utf8mb4"
+    - "--collation-server=utf8mb4_bin"
+    - "--explicit-defaults-for-timestamp=1"
+  environment:
+    MYSQL_ROOT_PASSWORD: xwiki
+    MYSQL_USER: xwiki
+    MYSQL_PASSWORD: xwiki
+    MYSQL_DATABASE: xwiki
+  healthcheck:
+    test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+    interval: 10s
+    timeout: 5s
+    start_period: 120s
+    retries: 60
+
+services:
+  db-v0:
+    <<: *db
+    profiles: ["v0"]
+  v0:
+    <<: *xwikiboot
+    profiles: ["v0"]
+    image: "xwiki:16.10.6"
+    restart: unless-stopped
+    depends_on:
+      db-v0: { condition: service_healthy }
+    environment:
+      DB_USER: xwiki
+      DB_PASSWORD: xwiki
+      DB_DATABASE: xwiki
+      DB_HOST: db-v0
+      PCB_FLAG: "${PCB_FLAG}"
+    ports: ["${PORT_V0_0:-38610}:8080"]
+    # PatchClosure: XWiki first boot (schema + extension init) exceeds the oracle's frozen 300s
+    # self-wait; switching to external deploy (override) + this long healthcheck lets `up -d --wait`
+    # block until XWiki actually serves. Image has curl.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:8080/bin/view/Main/ && curl -fsS -m 10 -o /dev/null http://localhost:8080/bin/ssx/Main/WebHome || exit 1"]
+      interval: 15s
+      timeout: 15s
+      retries: 90
+      start_period: 600s
+
+  db-v1:
+    <<: *db
+    profiles: ["v1"]
+  v1:
+    <<: *xwikiboot
+    profiles: ["v1"]
+    image: "xwiki:16.10.16"
+    restart: unless-stopped
+    depends_on:
+      db-v1: { condition: service_healthy }
+    environment:
+      DB_USER: xwiki
+      DB_PASSWORD: xwiki
+      DB_DATABASE: xwiki
+      DB_HOST: db-v1
+      PCB_FLAG: "${PCB_FLAG}"
+    ports: ["${PORT_V1_0:-38611}:8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:8080/bin/view/Main/ && curl -fsS -m 10 -o /dev/null http://localhost:8080/bin/ssx/Main/WebHome || exit 1"]
+      interval: 15s
+      timeout: 15s
+      retries: 90
+      start_period: 600s
+
+  db-v2:
+    <<: *db
+    profiles: ["v2"]
+  v2:
+    <<: *xwikiboot
+    profiles: ["v2"]
+    image: "xwiki:16.10.17"
+    restart: unless-stopped
+    depends_on:
+      db-v2: { condition: service_healthy }
+    environment:
+      DB_USER: xwiki
+      DB_PASSWORD: xwiki
+      DB_DATABASE: xwiki
+      DB_HOST: db-v2
+      PCB_FLAG: "${PCB_FLAG}"
+    ports: ["${PORT_V2_0:-38612}:8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:8080/bin/view/Main/ && curl -fsS -m 10 -o /dev/null http://localhost:8080/bin/ssx/Main/WebHome || exit 1"]
+      interval: 15s
+      timeout: 15s
+      retries: 90
+      start_period: 600s

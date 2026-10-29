@@ -1,0 +1,17 @@
+CVE: CVE-2023-31718 / GHSA-wwfj-h843-3hrq first-fix (single-pass ../ strip on /api/download)
+upstream: https://github.com/frangoteam/FUXA
+fix: as first shipped in v1.2.10  server/api/command/index.js
+
+diff --git a/server/api/command/index.js b/server/api/command/index.js
+--- a/server/api/command/index.js
++++ b/server/api/command/index.js
+@@ -53,8 +53,9 @@ module.exports = {
+                 if (req.query.cmd === CommanTypeEnum.reportDownload) {
+                     try {
+-                        var reportPath = path.join(runtime.settings.reportsDir, req.query.name);
++                        const fileName = req.query.name.replace(new RegExp('../', 'g'), '');
++                        var reportPath = path.join(runtime.settings.reportsDir, fileName);
+                         if (!fs.existsSync(reportPath)) {
+-                            reportPath = path.join(process.cwd(), runtime.settings.reportsDir, req.query.name);
++                            reportPath = path.join(process.cwd(), runtime.settings.reportsDir, fileName);
+                         }

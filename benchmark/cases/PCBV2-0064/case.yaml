@@ -1,0 +1,29 @@
+case_id: PCBV2-0064
+public_name: apache-ofbiz-cve-2023-51467
+run_mode: real-app-http
+oracle_family: state_auth_mutation
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/apache/ofbiz-framework.git
+  # tags release18.12.06..release18.12.11 never published upstream; use release18.12 branch commits
+  # V0 = pre-CVE-2023-49070 (parent of 'Remove xml rpc'); V1 = 'Remove xml rpc (#630)' = CVE-2023-49070 fix (TARGET)
+  # Official Hub images do not pin these SHAs; Dockerfile clones the full framework.
+  # fetch_source records identity only (no second host clone).
+  v0: 7935a14627a86325440516ac6b892a5f9d635e4d
+  v1: c59336f604f503df5b2f7c424fd5e392d5923a27
+service:
+  # Compose publishes ${PORT_V*_0}:8080 (OFBiz HTTP). Host :80 is not bound.
+  # start.sh waits for HTTP 8080; platform must not TCP-probe :80.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

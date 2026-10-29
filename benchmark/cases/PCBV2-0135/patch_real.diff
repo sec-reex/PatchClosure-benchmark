@@ -1,0 +1,493 @@
+# CVE: CVE-2026-47260
+# Upstream: https://github.com/koel/koel.git
+# Fix: 8708f077efd7d8a332b32e954d65bc837f3a413a
+
+diff --git a/app/Ai/Tools/AddRadioStation.php b/app/Ai/Tools/AddRadioStation.php
+index 829a2ea..737cae2 100644
+--- a/app/Ai/Tools/AddRadioStation.php
++++ b/app/Ai/Tools/AddRadioStation.php
+@@ -4,9 +4,14 @@ namespace App\Ai\Tools;
+ 
+ use App\Ai\AiAssistantResult;
+ use App\Ai\AiRequestContext;
++use App\Rules\HasAudioContentType;
++use App\Rules\SafeUrl;
+ use App\Services\RadioService;
+ use App\Values\Radio\RadioStationCreateData;
+ use Illuminate\Contracts\JsonSchema\JsonSchema;
++use Illuminate\Database\Query\Builder;
++use Illuminate\Support\Facades\Validator;
++use Illuminate\Validation\Rule;
+ use Laravel\Ai\Contracts\Tool;
+ use Laravel\Ai\Tools\Request;
+ use Stringable;
+@@ -34,6 +39,22 @@ class AddRadioStation implements Tool
+ 
+     public function handle(Request $request): Stringable|string
+     {
++        $userId = $this->context->user->id;
++
++        $validator = Validator::make(['url' => $request['url']], [
++            'url' => [
++                'required',
++                'url',
++                Rule::unique('radio_stations')->where(static fn (Builder $query) => $query->where('user_id', $userId)),
++                new SafeUrl(),
++                new HasAudioContentType(),
++            ],
++        ]);
++
++        if ($validator->fails()) {
++            return sprintf('Cannot add radio station: %s', $validator->errors()->first('url'));
++        }
++
+         $station = $this->radioService->createRadioStation(
+             RadioStationCreateData::make(url: $request['url'], name: $request['name'], description: ''),
+             $this->context->user,
+diff --git a/app/Exceptions/UnsafeUrlException.php b/app/Exceptions/UnsafeUrlException.php
+new file mode 100644
+index 0000000..dba80c0
+--- /dev/null
++++ b/app/Exceptions/UnsafeUrlException.php
+@@ -0,0 +1,13 @@
++<?php
++
++namespace App\Exceptions;
++
++use RuntimeException;
++
++class UnsafeUrlException extends RuntimeException
++{
++    public static function forUrl(string $url): self
++    {
++        return new self(sprintf('Refusing to fetch URL that does not resolve to a public host: %s', $url));
++    }
++}
+diff --git a/app/Helpers/Network.php b/app/Helpers/Network.php
+index c636528..9bb974c 100644
+--- a/app/Helpers/Network.php
++++ b/app/Helpers/Network.php
+@@ -2,10 +2,35 @@
+ 
+ namespace App\Helpers;
+ 
++use Illuminate\Support\Uri;
+ use Throwable;
+ 
+ class Network
+ {
++    private const array SAFE_URL_SCHEMES = ['http', 'https'];
++
++    /**
++     * Check if a URL is safe to reach: HTTP/HTTPS scheme + a public host.
++     * Does NOT perform any network calls beyond DNS resolution.
++     * For full validation including effective-URL-after-redirect, use the SafeUrl validation rule.
++     */
++    public static function isSafeUrl(string $url): bool
++    {
++        try {
++            $uri = Uri::of($url);
++        } catch (Throwable) {
++            return false;
++        }
++
++        if (!in_array($uri->scheme(), self::SAFE_URL_SCHEMES, true)) {
++            return false;
++        }
++
++        $host = $uri->host();
++
++        return $host !== '' && self::isPublicHost($host);
++    }
++
+     /**
+      * Check if a host resolves only to public (non-private, non-reserved) IP addresses.
+      * Validates both A (IPv4) and AAAA (IPv6) records. All resolved IPs must be public.
+diff --git a/app/Services/Podcast/PodcastService.php b/app/Services/Podcast/PodcastService.php
+index 0ab1772..d1f24b4 100644
+--- a/app/Services/Podcast/PodcastService.php
++++ b/app/Services/Podcast/PodcastService.php
+@@ -5,6 +5,7 @@ namespace App\Services\Podcast;
+ use App\Events\UserUnsubscribedFromPodcast;
+ use App\Exceptions\FailedToParsePodcastFeedException;
+ use App\Exceptions\UserAlreadySubscribedToPodcastException;
++use App\Helpers\Network;
+ use App\Helpers\Uuid;
+ use App\Models\Podcast;
+ use App\Models\PodcastUserPivot;
+@@ -136,6 +137,18 @@ class PodcastService
+                 continue;
+             }
+ 
++            $enclosureUrl = (string) $episodeValue->enclosure->url;
++
++            if (!Network::isSafeUrl($enclosureUrl)) {
++                Log::warning(sprintf(
++                    'Skipping podcast episode "%s" with unsafe enclosure URL: %s',
++                    $episodeValue->title,
++                    $enclosureUrl,
++                ));
++
++                continue;
++            }
++
+             $id = Uuid::generate();
+             $ids[] = $id;
+             $records[] = [
+@@ -143,7 +156,7 @@ class PodcastService
+                 'podcast_id' => $podcast->id,
+                 'title' => $episodeValue->title,
+                 'lyrics' => '',
+-                'path' => $episodeValue->enclosure->url,
++                'path' => $enclosureUrl,
+                 'created_at' => $episodeValue->metadata->pubDate ?: now(),
+                 'updated_at' => $episodeValue->metadata->pubDate ?: now(),
+                 'episode_metadata' => $episodeValue->metadata->toJson(),
+@@ -226,6 +239,11 @@ class PodcastService
+     public function getStreamableUrl(string|Episode $url, ?Client $client = null, string $method = 'OPTIONS'): ?string
+     {
+         $url = $url instanceof Episode ? $url->path : $url;
++
++        if (!Network::isSafeUrl($url)) {
++            return null;
++        }
++
+         $client ??= new Client();
+ 
+         try {
+diff --git a/app/Values/Podcast/EpisodePlayable.php b/app/Values/Podcast/EpisodePlayable.php
+index c70ea8a..47ca370 100644
+--- a/app/Values/Podcast/EpisodePlayable.php
++++ b/app/Values/Podcast/EpisodePlayable.php
+@@ -2,6 +2,8 @@
+ 
+ namespace App\Values\Podcast;
+ 
++use App\Exceptions\UnsafeUrlException;
++use App\Helpers\Network;
+ use App\Models\Song as Episode;
+ use Illuminate\Contracts\Support\Arrayable;
+ use Illuminate\Contracts\Support\Jsonable;
+@@ -39,6 +41,10 @@ final class EpisodePlayable implements Arrayable, Jsonable
+         $file = artifact_path("episodes/{$episode->id}.mp3");
+ 
+         if (!File::exists($file)) {
++            if (!Network::isSafeUrl((string) $episode->path)) {
++                throw UnsafeUrlException::forUrl((string) $episode->path);
++            }
++
+             Http::sink($file)->get($episode->path)->throw();
+         }
+ 
+diff --git a/tests/Feature/KoelPlus/Ai/AddRadioStationToolTest.php b/tests/Feature/KoelPlus/Ai/AddRadioStationToolTest.php
+new file mode 100644
+index 0000000..7a5f860
+--- /dev/null
++++ b/tests/Feature/KoelPlus/Ai/AddRadioStationToolTest.php
+@@ -0,0 +1,101 @@
++<?php
++
++namespace Tests\Feature\KoelPlus\Ai;
++
++use App\Ai\AiAssistantResult;
++use App\Ai\AiRequestContext;
++use App\Ai\Tools\AddRadioStation;
++use App\Models\RadioStation;
++use App\Models\User;
++use Illuminate\Support\Facades\Http;
++use Laravel\Ai\Tools\Request;
++use PHPUnit\Framework\Attributes\DataProvider;
++use PHPUnit\Framework\Attributes\Test;
++use Tests\PlusTestCase;
++
++use function Tests\create_user;
++
++class AddRadioStationToolTest extends PlusTestCase
++{
++    private AiAssistantResult $result;
++    private User $user;
++    private AddRadioStation $tool;
++
++    public function setUp(): void
++    {
++        parent::setUp();
++
++        $this->user = create_user();
++        $this->result = new AiAssistantResult();
++
++        app()->instance(AiAssistantResult::class, $this->result);
++        app()->instance(AiRequestContext::class, new AiRequestContext($this->user));
++        $this->tool = app()->make(AddRadioStation::class);
++    }
++
++    #[Test]
++    public function addsRadioStationWithSafePublicUrl(): void
++    {
++        Http::fake([
++            'https://example.com/stream.mp3' => Http::response('', 200, ['Content-Type' => 'audio/mpeg']),
++        ]);
++
++        $response = $this->tool->handle(new Request([
++            'name' => 'Test Radio',
++            'url' => 'https://example.com/stream.mp3',
++        ]));
++
++        self::assertStringContainsString('Test Radio', (string) $response);
++        self::assertStringContainsString('added successfully', (string) $response);
++
++        $this->assertDatabaseHas(RadioStation::class, [
++            'url' => 'https://example.com/stream.mp3',
++            'name' => 'Test Radio',
++            'user_id' => $this->user->id,
++        ]);
++    }
++
++    /** @return array<string, array{string}> */
++    public static function provideUnsafeUrls(): array
++    {
++        return [
++            'AWS metadata IP' => ['http://169.254.169.254/latest/meta-data/'],
++            'loopback IPv4' => ['http://127.0.0.1/admin'],
++            'private 192.168.x' => ['http://192.168.1.1/secrets'],
++            'private 10.x' => ['http://10.0.0.1/internal'],
++            'file scheme' => ['file:///etc/passwd'],
++            'ftp scheme' => ['ftp://example.com/stream'],
++        ];
++    }
++
++    #[Test, DataProvider('provideUnsafeUrls')]
++    public function refusesUnsafeUrl(string $unsafeUrl): void
++    {
++        Http::fake();
++
++        $response = $this->tool->handle(new Request([
++            'name' => 'SSRF Attempt',
++            'url' => $unsafeUrl,
++        ]));
++
++        self::assertStringContainsString('Cannot add radio station', (string) $response);
++        $this->assertDatabaseMissing(RadioStation::class, ['url' => $unsafeUrl]);
++    }
++
++    #[Test]
++    public function refusesDuplicateUrlForSameUser(): void
++    {
++        Http::fake([
++            'https://example.com/stream.mp3' => Http::response('', 200, ['Content-Type' => 'audio/mpeg']),
++        ]);
++
++        RadioStation::factory()->for($this->user)->createOne(['url' => 'https://example.com/stream.mp3']);
++
++        $response = $this->tool->handle(new Request([
++            'name' => 'Duplicate',
++            'url' => 'https://example.com/stream.mp3',
++        ]));
++
++        self::assertStringContainsString('Cannot add radio station', (string) $response);
++    }
++}
+diff --git a/tests/Integration/Services/Podcast/PodcastServiceTest.php b/tests/Integration/Services/Podcast/PodcastServiceTest.php
+index 7d5c1b0..647f311 100644
+--- a/tests/Integration/Services/Podcast/PodcastServiceTest.php
++++ b/tests/Integration/Services/Podcast/PodcastServiceTest.php
+@@ -14,6 +14,7 @@ use GuzzleHttp\HandlerStack;
+ use GuzzleHttp\Psr7\Response;
+ use Illuminate\Support\Facades\Event;
+ use Illuminate\Support\Facades\Http;
++use PHPUnit\Framework\Attributes\DataProvider;
+ use PHPUnit\Framework\Attributes\Test;
+ use Psr\Http\Client\ClientInterface;
+ use Tests\TestCase;
+@@ -247,6 +248,39 @@ class PodcastServiceTest extends TestCase
+         self::assertModelMissing($podcast);
+     }
+ 
++    #[Test]
++    public function addPodcastSkipsEpisodesWithUnsafeEnclosureUrls(): void
++    {
++        $mock = new MockHandler([
++            new Response(200, [], file_get_contents(test_path('fixtures/podcast-with-unsafe-enclosures.xml'))),
++        ]);
++
++        $this->instance(ClientInterface::class, new Client(['handler' => HandlerStack::create($mock)]));
++        $service = app(PodcastService::class);
++
++        $podcast = $service->addPodcast('https://example.com/feed.xml', create_user());
++
++        self::assertCount(1, $podcast->episodes);
++        self::assertSame('https://example.com/episodes/safe.mp3', $podcast->episodes->first()->path);
++    }
++
++    /** @return array<string, array{string}> */
++    public static function provideUnsafeStreamableUrls(): array
++    {
++        return [
++            'AWS metadata IP' => ['http://169.254.169.254/latest/meta-data/'],
++            'loopback IPv4' => ['http://127.0.0.1:6379/INFO'],
++            'private 10.x' => ['http://10.0.0.1/admin'],
++            'file scheme' => ['file:///etc/passwd'],
++        ];
++    }
++
++    #[Test, DataProvider('provideUnsafeStreamableUrls')]
++    public function getStreamableUrlRejectsUnsafeUrl(string $url): void
++    {
++        self::assertNull($this->service->getStreamableUrl($url));
++    }
++
+     #[Test]
+     public function refreshPodcastUsesLastBuildDateWhenPubDateIsStale(): void
+     {
+diff --git a/tests/Integration/Values/EpisodePlayableTest.php b/tests/Integration/Values/EpisodePlayableTest.php
+index baddde5..c40a329 100644
+--- a/tests/Integration/Values/EpisodePlayableTest.php
++++ b/tests/Integration/Values/EpisodePlayableTest.php
+@@ -2,6 +2,7 @@
+ 
+ namespace Tests\Integration\Values;
+ 
++use App\Exceptions\UnsafeUrlException;
+ use App\Models\Song;
+ use App\Values\Podcast\EpisodePlayable;
+ use Illuminate\Support\Facades\Cache;
+@@ -40,4 +41,24 @@ class EpisodePlayableTest extends TestCase
+         file_put_contents($playable->path, 'bar');
+         self::assertFalse($retrieved->valid());
+     }
++
++    #[Test]
++    public function refusesToFetchUnsafeUrl(): void
++    {
++        Http::fake();
++
++        $episode = Song::factory()
++            ->asEpisode()
++            ->createOne([
++                'path' => 'http://169.254.169.254/latest/meta-data/iam/security-credentials/',
++            ]);
++
++        self::expectException(UnsafeUrlException::class);
++
++        try {
++            EpisodePlayable::getForEpisode($episode);
++        } finally {
++            Http::assertNothingSent();
++        }
++    }
+ }
+diff --git a/tests/Unit/Helpers/NetworkTest.php b/tests/Unit/Helpers/NetworkTest.php
+index b919b7a..9f00099 100644
+--- a/tests/Unit/Helpers/NetworkTest.php
++++ b/tests/Unit/Helpers/NetworkTest.php
+@@ -39,4 +39,36 @@ class NetworkTest extends TestCase
+     {
+         self::assertFalse(Network::isPublicHost('this-host-does-not-exist.invalid'));
+     }
++
++    #[Test]
++    public function isSafeUrlAcceptsPublicHttpUrl(): void
++    {
++        self::assertTrue(Network::isSafeUrl('https://example.com/feed.xml'));
++        self::assertTrue(Network::isSafeUrl('http://example.com/feed.xml'));
++    }
++
++    /** @return array<string, array{string}> */
++    public static function provideUnsafeUrls(): array
++    {
++        return [
++            'AWS metadata IP' => ['http://169.254.169.254/latest/meta-data/'],
++            'loopback IPv4' => ['http://127.0.0.1/admin'],
++            'private 192.168.x' => ['http://192.168.1.1/secrets'],
++            'private 10.x' => ['http://10.0.0.1/internal'],
++            'loopback IPv6' => ['http://[::1]/admin'],
++            'file scheme' => ['file:///etc/passwd'],
++            'ftp scheme' => ['ftp://example.com/feed'],
++            'gopher scheme' => ['gopher://example.com/feed'],
++            'no scheme' => ['example.com/feed'],
++            'no host' => ['http:///path'],
++            'empty string' => [''],
++            'garbage' => ['not a url at all'],
++        ];
++    }
++
++    #[Test, DataProvider('provideUnsafeUrls')]
++    public function isSafeUrlRejectsUnsafeUrl(string $url): void
++    {
++        self::assertFalse(Network::isSafeUrl($url));
++    }
+ }
+diff --git a/tests/fixtures/podcast-with-unsafe-enclosures.xml b/tests/fixtures/podcast-with-unsafe-enclosures.xml
+new file mode 100644
+index 0000000..a9d3699
+--- /dev/null
++++ b/tests/fixtures/podcast-with-unsafe-enclosures.xml
+@@ -0,0 +1,69 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<rss version="2.0">
++    <channel>
++        <title>Mixed Podcast</title>
++        <link>https://example.com</link>
++        <description>Mix of safe and unsafe enclosure URLs</description>
++        <language>en-US</language>
++
++        <item>
++            <title>Episode 1 (safe)</title>
++            <description>A safe public episode</description>
++            <enclosure
++                length="1000"
++                type="audio/mpeg"
++                url="https://example.com/episodes/safe.mp3"
++            />
++            <guid>safe-1</guid>
++            <pubDate>Tue, 8 Jan 2019 01:15:00 GMT</pubDate>
++        </item>
++
++        <item>
++            <title>Episode 2 (AWS metadata SSRF)</title>
++            <description>Attempts to exfiltrate AWS IAM credentials</description>
++            <enclosure
++                length="1000"
++                type="audio/mpeg"
++                url="http://169.254.169.254/latest/meta-data/iam/security-credentials/"
++            />
++            <guid>unsafe-1</guid>
++            <pubDate>Tue, 8 Jan 2019 01:15:00 GMT</pubDate>
++        </item>
++
++        <item>
++            <title>Episode 3 (loopback SSRF)</title>
++            <description>Attempts to read local services</description>
++            <enclosure
++                length="1000"
++                type="audio/mpeg"
++                url="http://127.0.0.1:6379/INFO"
++            />
++            <guid>unsafe-2</guid>
++            <pubDate>Tue, 8 Jan 2019 01:15:00 GMT</pubDate>
++        </item>
++
++        <item>
++            <title>Episode 4 (private network SSRF)</title>
++            <description>Attempts to scan internal network</description>
++            <enclosure
++                length="1000"
++                type="audio/mpeg"
++                url="http://10.0.0.1/admin"
++            />
++            <guid>unsafe-3</guid>
++            <pubDate>Tue, 8 Jan 2019 01:15:00 GMT</pubDate>
++        </item>
++
++        <item>
++            <title>Episode 5 (file scheme)</title>
++            <description>Attempts to read local file</description>
++            <enclosure
++                length="1000"
++                type="audio/mpeg"
++                url="file:///etc/passwd"
++            />
++            <guid>unsafe-4</guid>
++            <pubDate>Tue, 8 Jan 2019 01:15:00 GMT</pubDate>
++        </item>
++    </channel>
++</rss>

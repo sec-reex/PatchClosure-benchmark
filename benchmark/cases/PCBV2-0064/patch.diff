@@ -1,0 +1,1296 @@
+PCBV2-0064 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: c59336f604f503df5b2f7c424fd5e392d5923a27 (Remove xml rpc #630)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0064/
+
+diff --git a/build.gradle b/build.gradle
+index c7afc0392b0..06cc546a2e3 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -218,8 +218,6 @@ dependencies {
+     compile 'org.apache.tomcat:tomcat-jasper:9.0.82'
+     compile 'org.apache.tomcat:tomcat-tribes:9.0.82'
+     compile 'org.apache.xmlgraphics:fop:2.3'
+-    compile 'org.apache.xmlrpc:xmlrpc-client:3.1.3'
+-    compile 'org.apache.xmlrpc:xmlrpc-server:3.1.3'
+     compile 'org.codehaus.groovy:groovy-all:2.4.13' // Remember to change the version number in javadoc.options block
+     compile 'org.freemarker:freemarker:2.3.31' // Remember to change the version number in FreeMarkerWorker class when upgrading
+     compile 'org.hamcrest:hamcrest-all:1.3'
+diff --git a/framework/base/src/main/java/org/apache/ofbiz/base/util/CacheFilter.java b/framework/base/src/main/java/org/apache/ofbiz/base/util/CacheFilter.java
+index 8f05ce6b615..29ff7ba7df4 100644
+--- a/framework/base/src/main/java/org/apache/ofbiz/base/util/CacheFilter.java
++++ b/framework/base/src/main/java/org/apache/ofbiz/base/util/CacheFilter.java
+@@ -19,7 +19,6 @@
+ package org.apache.ofbiz.base.util;
+ 
+ import java.io.IOException;
+-import java.util.stream.Collectors;
+ 
+ import javax.servlet.Filter;
+ import javax.servlet.FilterChain;
+@@ -61,16 +60,6 @@ public void doFilter(ServletRequest request, ServletResponse response, FilterCha
+         String context = ((HttpServletRequest) request).getContextPath();
+         String uriWithContext = ((HttpServletRequest) request).getRequestURI();
+         String uri = uriWithContext.substring(context.length());
+-
+-        if ("/control/xmlrpc".equals(uri.toLowerCase())) {
+-            // Read request.getReader() as many time you need
+-            request = new RequestWrapper((HttpServletRequest) request);
+-            String body = request.getReader().lines().collect(Collectors.joining());
+-            if (body.contains("</serializable")) {
+-                Debug.logError("Content not authorised for security reason", "CacheFilter"); // Cf. OFBIZ-12332
+-                return;
+-            }
+-        }
+         chain.doFilter(request, response);
+     }
+ 
+diff --git a/framework/common/servicedef/services_test.xml b/framework/common/servicedef/services_test.xml
+index 8e9eae3d7e9..9a819bc91ac 100644
+--- a/framework/common/servicedef/services_test.xml
++++ b/framework/common/servicedef/services_test.xml
+@@ -208,13 +208,6 @@ under the License.
+         <description>Test the Route engine</description>
+     </service>
+ 
+-    <service name="simpleMapListTest" engine="java" auth="false" export="true"
+-            location="org.apache.ofbiz.common.CommonServices" invoke="simpleMapListTest">
+-        <description>To test XML-RPC handling of Maps and Lists</description>
+-        <attribute name="listOfStrings" type="List" mode="IN"/>
+-        <attribute name="mapOfStrings" type="Map" mode="IN"/>
+-    </service>
+-
+     <service name="testJavaScript" engine="javascript" auth="false"
+         location="component://common/minilang/JavaScriptTest.js" invoke="">
+         <description>Test JavaScript Service</description>
+diff --git a/framework/common/src/main/java/org/apache/ofbiz/common/login/LoginServices.java b/framework/common/src/main/java/org/apache/ofbiz/common/login/LoginServices.java
+index 74ac8ff0ddc..7dd0927df9f 100644
+--- a/framework/common/src/main/java/org/apache/ofbiz/common/login/LoginServices.java
++++ b/framework/common/src/main/java/org/apache/ofbiz/common/login/LoginServices.java
+@@ -228,8 +228,8 @@ public static Map<String, Object> userLogin(DispatchContext ctx, Map<String, ?>
+                         boolean useTomcatSSO = EntityUtilProperties.propertyValueEquals("security", "security.login.tomcat.sso", "true");
+                         HttpServletRequest request = (javax.servlet.http.HttpServletRequest) context.get("request");
+                         // when request is not supplied, we will treat that SSO is not required as
+-                        // in the usage of userLogin service in ICalWorker.java and XmlRpcEventHandler.java.
+-                        useTomcatSSO = useTomcatSSO && (request!=null);
++                        // in the usage of userLogin service in ICalWorker.java
++                        useTomcatSSO = useTomcatSSO && (request != null);
+ 
+                         // resolve the key for decrypt the token and control the validity
+                         boolean jwtTokenValid = SecurityUtil.authenticateUserLoginByJWT(delegator, username, jwtToken);
+diff --git a/framework/common/webcommon/WEB-INF/handlers-controller.xml b/framework/common/webcommon/WEB-INF/handlers-controller.xml
+index 0be248bf2a5..cc0453b5625 100644
+--- a/framework/common/webcommon/WEB-INF/handlers-controller.xml
++++ b/framework/common/webcommon/WEB-INF/handlers-controller.xml
+@@ -25,7 +25,6 @@ under the License.
+     <!-- event handlers -->
+     <handler name="java" type="request" class="org.apache.ofbiz.webapp.event.JavaEventHandler"/>
+     <!-- <handler name="soap" type="request" class="org.apache.ofbiz.webapp.event.SOAPEventHandler"/> -->
+-    <handler name="xmlrpc" type="request" class="org.apache.ofbiz.webapp.event.XmlRpcEventHandler"/>
+     <handler name="service" type="request" class="org.apache.ofbiz.webapp.event.ServiceEventHandler"/>
+     <handler name="service-multi" type="request" class="org.apache.ofbiz.webapp.event.ServiceMultiEventHandler"/>
+     <handler name="simple" type="request" class="org.apache.ofbiz.webapp.event.SimpleEventHandler"/>
+diff --git a/framework/service/config/ServiceErrorUiLabels.xml b/framework/service/config/ServiceErrorUiLabels.xml
+index 0b6c54cff00..fa4abe79c07 100644
+--- a/framework/service/config/ServiceErrorUiLabels.xml
++++ b/framework/service/config/ServiceErrorUiLabels.xml
+@@ -254,27 +254,6 @@
+         <value xml:lang="zh">调用子服务时出错，它应该返回一个错误，而不是抛出一个意外，因此发生了错误：${errorString}</value>
+         <value xml:lang="zh-TW">呼叫子服務時出錯,它應該回傳一個錯誤,而不是拋出一個異常外,因此發生了錯誤:${errorString}</value>
+     </property>
+-    <property key="ServiceTestXmlRpcCalculationOK">
+-        <value xml:lang="en">adding integer 125 to 365 yields </value>
+-        <value xml:lang="it">aggiungere intero 125 a 365 yields </value>
+-        <value xml:lang="ja">整数 125 ～ 365 の加算が生じます </value>
+-        <value xml:lang="zh">把整数125加到365，生成</value>
+-        <value xml:lang="zh-TW">把整數125加到365,產生</value>
+-    </property>
+-    <property key="ServiceTestXmlRpcCalculationKO">
+-        <value xml:lang="en">calcul is wrong ! Why ?</value>
+-        <value xml:lang="it">calcolo è errato ! Perchè ?</value>
+-        <value xml:lang="ja">計算に誤りがあります!なぜ?</value>
+-        <value xml:lang="zh">计算错误！为什么？</value>
+-        <value xml:lang="zh-TW">計算錯誤！為什麼？</value>
+-    </property>
+-    <property key="ServiceTestXmlRpcMissingParameters">
+-        <value xml:lang="en">missing parameters</value>
+-        <value xml:lang="it">parametri mancanti</value>
+-        <value xml:lang="ja">パラメータが正しくありません</value>
+-        <value xml:lang="zh">缺少参数</value>
+-        <value xml:lang="zh-TW">缺少參數</value>
+-    </property>
+     <property key="ServiceValueFound">
+         <value xml:lang="en">Value found (with ids ${pkFields}), cannot create a new one</value>
+         <value xml:lang="fr">La valeur a été trouvée (avec les réfs. ${pkFields}), une nouvelle ne peut donc pas être créée</value>
+diff --git a/framework/service/config/serviceengine.xml b/framework/service/config/serviceengine.xml
+index e1dc68322e2..f0142943b00 100644
+--- a/framework/service/config/serviceengine.xml
++++ b/framework/service/config/serviceengine.xml
+@@ -56,14 +56,6 @@ under the License.
+         <engine name="jms" class="org.apache.ofbiz.service.jms.JmsServiceEngine"/>
+         <engine name="rmi" class="org.apache.ofbiz.service.rmi.RmiServiceEngine"/>
+         <!-- <engine name="soap" class="org.apache.ofbiz.service.engine.SOAPClientEngine"/> -->
+-        <!-- The engine xml-rpc-local is only used by a test service and for this reason it is configured to run on port 8080.
+-             In order to use this in OFBiz change the port accordingly (for demo the default value is 8080)
+-        -->
+-        <engine name="xml-rpc-local" class="org.apache.ofbiz.service.engine.XMLRPCClientEngine">
+-            <parameter name="url" value="http://localhost:8080/webtools/control/xmlrpc"/>
+-            <parameter name="login" value="admin"/>
+-            <parameter name="password" value="ofbiz"/>
+-        </engine>
+ 
+         <service-location name="main-rmi" location="rmi://localhost:1099/RMIDispatcher"/>
+         <!-- <service-location name="main-http" location="http://localhost:8080/webtools/control/httpService"/>
+diff --git a/framework/service/servicedef/services_test_se.xml b/framework/service/servicedef/services_test_se.xml
+index f5df51c8da6..fa8ebbef622 100644
+--- a/framework/service/servicedef/services_test_se.xml
++++ b/framework/service/servicedef/services_test_se.xml
+@@ -151,19 +151,4 @@ under the License.
+     <service name="testServiceEcaGlobalEventExecOnRollback" engine="java" auth="false"
+         location="org.apache.ofbiz.service.test.ServiceEngineTestServices" invoke="testServiceEcaGlobalEventExecOnRollback">
+     </service>
+-
+-    <!-- Call xml rpc from engine -->
+-    <service name="testXmlRpcAdd" engine="java" auth="false" location="org.apache.ofbiz.service.test.XmlRpcTests" invoke="testXmlRpcAdd" export="true">
+-        <attribute name="num1" mode="IN" type="Integer"/>
+-        <attribute name="num2" mode="IN" type="Integer"/>
+-        <attribute name="resulting" mode="OUT" type="Integer"/>
+-    </service>
+-    <service name="testXmlRpcLocalEngine" engine="xml-rpc-local" auth="false" invoke="testXmlRpcAdd">
+-        <attribute name="num1" mode="IN" type="Integer"/>
+-        <attribute name="num2" mode="IN" type="Integer"/>
+-        <attribute name="resulting" mode="OUT" type="Integer"/>
+-    </service>
+-    <service name="testXmlRpcClientAdd" engine="java" auth="false" location="org.apache.ofbiz.service.test.XmlRpcTests" invoke="testXmlRpcClientAdd">
+-        <implements service="testServiceInterface"/>
+-    </service>
+ </services>
+diff --git a/framework/service/src/main/java/org/apache/ofbiz/service/engine/XMLRPCClientEngine.java b/framework/service/src/main/java/org/apache/ofbiz/service/engine/XMLRPCClientEngine.java
+deleted file mode 100644
+index 108abd1d9e4..00000000000
+--- a/framework/service/src/main/java/org/apache/ofbiz/service/engine/XMLRPCClientEngine.java
++++ /dev/null
+@@ -1,153 +0,0 @@
+-/*******************************************************************************
+- * Licensed to the Apache Software Foundation (ASF) under one
+- * or more contributor license agreements.  See the NOTICE file
+- * distributed with this work for additional information
+- * regarding copyright ownership.  The ASF licenses this file
+- * to you under the Apache License, Version 2.0 (the
+- * "License"); you may not use this file except in compliance
+- * with the License.  You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing,
+- * software distributed under the License is distributed on an
+- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+- * KIND, either express or implied.  See the License for the
+- * specific language governing permissions and limitations
+- * under the License.
+- *******************************************************************************/
+-package org.apache.ofbiz.service.engine;
+-
+-import java.net.MalformedURLException;
+-import java.net.URL;
+-import java.util.HashMap;
+-import java.util.List;
+-import java.util.Map;
+-
+-import org.apache.ofbiz.base.config.GenericConfigException;
+-import org.apache.ofbiz.base.start.Start;
+-import org.apache.ofbiz.base.util.Debug;
+-import org.apache.ofbiz.base.util.UtilGenerics;
+-import org.apache.ofbiz.base.util.UtilMisc;
+-import org.apache.ofbiz.base.util.UtilValidate;
+-import org.apache.ofbiz.service.GenericServiceException;
+-import org.apache.ofbiz.service.ModelParam;
+-import org.apache.ofbiz.service.ModelService;
+-import org.apache.ofbiz.service.ServiceDispatcher;
+-import org.apache.ofbiz.service.ServiceUtil;
+-import org.apache.ofbiz.service.config.ServiceConfigUtil;
+-import org.apache.ofbiz.service.xmlrpc.XmlRpcClient;
+-import org.apache.xmlrpc.XmlRpcException;
+-import org.apache.xmlrpc.client.XmlRpcClientConfigImpl;
+-
+-/**
+- * Engine For XML RPC CLient Configuration management
+- */
+-public class XMLRPCClientEngine extends GenericAsyncEngine {
+-
+-    public static final String module = XMLRPCClientEngine.class.getName();
+-
+-    public XMLRPCClientEngine(ServiceDispatcher dispatcher) {
+-        super(dispatcher);
+-    }
+-
+-    /**
+-     * @see org.apache.ofbiz.service.engine.GenericEngine#runSyncIgnore(java.lang.String, org.apache.ofbiz.service.ModelService, java.util.Map)
+-     */
+-    @Override
+-    public void runSyncIgnore(String localName, ModelService modelService, Map<String, Object> context) throws GenericServiceException {
+-        runSync(localName, modelService, context);
+-    }
+-
+-    /**
+-     * @see org.apache.ofbiz.service.engine.GenericEngine#runSync(java.lang.String, org.apache.ofbiz.service.ModelService, java.util.Map)
+-     */
+-    @Override
+-    public Map<String, Object> runSync(String localName, ModelService modelService, Map<String, Object> context) throws GenericServiceException {
+-        Map<String, Object> result = serviceInvoker(modelService, context);
+-
+-        if (result == null) {
+-            throw new GenericServiceException("Service did not return expected result");
+-        }
+-        return result;
+-    }
+-
+-    /*
+-     *  Invoke the remote XMLRPC SERVICE : This engine convert all value in IN mode to one struct.
+-     */
+-    private Map<String, Object> serviceInvoker(ModelService modelService, Map<String, Object> context) throws GenericServiceException {
+-        if (modelService.location == null || modelService.invoke == null) {
+-            throw new GenericServiceException("Cannot locate service to invoke");
+-        }
+-
+-        XmlRpcClientConfigImpl config = null;
+-        XmlRpcClient client = null;
+-        String serviceName = modelService.invoke;
+-        String engine = modelService.engineName;
+-        String url = null;
+-        String login = null;
+-        String password = null;
+-        String keyStoreComponent = null;
+-        String keyStoreName = null;
+-        String keyAlias  = null;
+-        try {
+-            url = ServiceConfigUtil.getEngineParameter(engine, "url");
+-            if (Start.getInstance().getConfig().portOffset != 0) {
+-                String s = url.substring(url.lastIndexOf(":") + 1);
+-                Integer rpcPort = Integer.valueOf(s.substring(0, s.indexOf("/")));
+-                Integer port = rpcPort + Start.getInstance().getConfig().portOffset;
+-                url = url.replace(rpcPort.toString(), port.toString());
+-            }
+-            // Necessary for "service-xml-rpc-local-engine" test
+-            if (serviceName.equals("testXmlRpcAdd")) {
+-                url = url + "?USERNAME=admin&PASSWORD=ofbiz";
+-            }
+-            login = ServiceConfigUtil.getEngineParameter(engine, "login");
+-            password = ServiceConfigUtil.getEngineParameter(engine, "password");
+-            keyStoreComponent = ServiceConfigUtil.getEngineParameter(engine, "keyStoreComponent");
+-            keyStoreName = ServiceConfigUtil.getEngineParameter(engine, "keyStoreName");
+-            keyAlias = ServiceConfigUtil.getEngineParameter(engine, "keyAlias");
+-            config = new XmlRpcClientConfigImpl();
+-            config.setBasicUserName(login);
+-            config.setBasicPassword(password);
+-            config.setServerURL(new URL(url));
+-        } catch (MalformedURLException | GenericConfigException e) {
+-            throw new GenericServiceException("Cannot invoke service : engine parameters are not correct");
+-        }
+-        if (UtilValidate.isNotEmpty(keyStoreComponent) && UtilValidate.isNotEmpty(keyStoreName) && UtilValidate.isNotEmpty(keyAlias)) {
+-            client = new XmlRpcClient(config, keyStoreComponent, keyStoreName, keyAlias);
+-        } else {
+-            client = new XmlRpcClient(config);
+-        }
+-        List<ModelParam> inModelParamList = modelService.getInModelParamList();
+-
+-        if (Debug.verboseOn()) {
+-            Debug.logVerbose("[XMLRPCClientEngine.invoke] : Parameter length - " + inModelParamList.size(), module);
+-            for (ModelParam p: inModelParamList) {
+-                Debug.logVerbose("[XMLRPCClientEngine.invoke} : Parameter: " + p.name + " (" + p.mode + ")", module);
+-            }
+-        }
+-
+-        Map<String, Object> result = null;
+-        Map<String, Object> params = new HashMap<>();
+-        for (ModelParam modelParam: modelService.getModelParamList()) {
+-            // don't include OUT parameters in this list, only IN and INOUT
+-            if (ModelService.OUT_PARAM.equals(modelParam.mode) || modelParam.internal) {
+-                continue;
+-            }
+-
+-            Object paramValue = context.get(modelParam.name);
+-            if (paramValue != null) {
+-                params.put(modelParam.name, paramValue);
+-            }
+-        }
+-
+-        List<Map<String,Object>> listParams = UtilMisc.toList(params);
+-        try {
+-            result = UtilGenerics.cast(client.execute(serviceName, listParams.toArray()));
+-        } catch (XmlRpcException e) {
+-            result = ServiceUtil.returnError(e.getLocalizedMessage());
+-        }
+-        return result;
+-    }
+-}
+diff --git a/framework/service/src/main/java/org/apache/ofbiz/service/test/AbstractXmlRpcTestCase.java b/framework/service/src/main/java/org/apache/ofbiz/service/test/AbstractXmlRpcTestCase.java
+deleted file mode 100644
+index 00e1b231060..00000000000
+--- a/framework/service/src/main/java/org/apache/ofbiz/service/test/AbstractXmlRpcTestCase.java
++++ /dev/null
+@@ -1,75 +0,0 @@
+-/*
+- Licensed to the Apache Software Foundation (ASF) under one
+- or more contributor license agreements.  See the NOTICE file
+- distributed with this work for additional information
+- regarding copyright ownership.  The ASF licenses this file
+- to you under the Apache License, Version 2.0 (the
+- "License"); you may not use this file except in compliance
+- with the License.  You may obtain a copy of the License at
+-
+- http://www.apache.org/licenses/LICENSE-2.0
+-
+- Unless required by applicable law or agreed to in writing,
+- software distributed under the License is distributed on an
+- "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+- KIND, either express or implied.  See the License for the
+- specific language governing permissions and limitations
+- under the License.
+- */
+-
+-package org.apache.ofbiz.service.test;
+-
+-import java.net.MalformedURLException;
+-import java.net.URL;
+-
+-import org.apache.ofbiz.service.xmlrpc.XmlRpcClient;
+-import org.apache.xmlrpc.client.XmlRpcClientConfigImpl;
+-
+-import junit.framework.TestCase;
+-
+-/**
+- * AbstractXmlRpcTestCase
+- */
+-public class AbstractXmlRpcTestCase extends TestCase {
+-
+-    public static final String module = AbstractXmlRpcTestCase.class.getName();
+-
+-    protected String keyStoreComponent;
+-    protected String keyStoreName;
+-    protected String keyAlias;
+-
+-    public AbstractXmlRpcTestCase(String name, String keyStoreComponent, String keyStoreName, String keyAlias) {
+-        super(name);
+-        this.keyStoreComponent = keyStoreComponent;
+-        this.keyStoreName = keyStoreName;
+-        this.keyAlias = keyAlias;
+-    }
+-
+-    public AbstractXmlRpcTestCase(String name) {
+-        super(name);
+-        this.keyStoreComponent = null;
+-        this.keyStoreName = null;
+-        this.keyAlias = null;
+-    }
+-
+-
+-    public org.apache.xmlrpc.client.XmlRpcClient getRpcClient(String url) throws MalformedURLException {
+-        return getRpcClient(url, null, null);
+-    }
+-
+-    public org.apache.xmlrpc.client.XmlRpcClient getRpcClient(String url, String login, String password) throws MalformedURLException {
+-        XmlRpcClientConfigImpl config = new XmlRpcClientConfigImpl();
+-        config.setServerURL(new URL(url));
+-        if (login != null) {
+-            config.setBasicUserName(login);
+-        }
+-        if (password != null) {
+-            config.setBasicPassword(password);
+-        }
+-
+-        if (keyStoreComponent != null && keyStoreName != null && keyAlias != null) {
+-            return new XmlRpcClient(config, keyStoreComponent, keyStoreName, keyAlias);
+-        }
+-        return new XmlRpcClient(config);
+-    }
+-}
+diff --git a/framework/service/src/main/java/org/apache/ofbiz/service/test/XmlRpcTests.java b/framework/service/src/main/java/org/apache/ofbiz/service/test/XmlRpcTests.java
+deleted file mode 100644
+index c38608b97e9..00000000000
+--- a/framework/service/src/main/java/org/apache/ofbiz/service/test/XmlRpcTests.java
++++ /dev/null
+@@ -1,106 +0,0 @@
+-/*
+- Licensed to the Apache Software Foundation (ASF) under one
+- or more contributor license agreements.  See the NOTICE file
+- distributed with this work for additional information
+- regarding copyright ownership.  The ASF licenses this file
+- to you under the Apache License, Version 2.0 (the
+- "License"); you may not use this file except in compliance
+- with the License.  You may obtain a copy of the License at
+-
+- http://www.apache.org/licenses/LICENSE-2.0
+-
+- Unless required by applicable law or agreed to in writing,
+- software distributed under the License is distributed on an
+- "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+- KIND, either express or implied.  See the License for the
+- specific language governing permissions and limitations
+- under the License.
+- */
+-
+-package org.apache.ofbiz.service.test;
+-
+-import java.util.Locale;
+-import java.util.Map;
+-
+-import org.apache.ofbiz.base.start.Start;
+-import org.apache.ofbiz.base.util.UtilGenerics;
+-import org.apache.ofbiz.base.util.UtilProperties;
+-import org.apache.ofbiz.base.util.UtilValidate;
+-import org.apache.ofbiz.service.DispatchContext;
+-import org.apache.ofbiz.service.GenericServiceException;
+-import org.apache.ofbiz.service.ModelService;
+-import org.apache.ofbiz.service.ServiceUtil;
+-import org.apache.xmlrpc.client.XmlRpcClient;
+-/**
+- * XmlRpcTests
+- */
+-public class XmlRpcTests extends AbstractXmlRpcTestCase {
+-
+-    public static final String module = XmlRpcTests.class.getName();
+-    public static final String resource = "ServiceErrorUiLabels";
+-    private static String url = "http://localhost:8080/webtools/control/xmlrpc?USERNAME=admin&PASSWORD=ofbiz";
+-
+-    public XmlRpcTests(String name) {
+-        super(name);
+-        if (Start.getInstance().getConfig().portOffset != 0) {
+-            Integer port = 8080 + Start.getInstance().getConfig().portOffset;
+-            url = url.replace("8080", port.toString());
+-        }
+-    }
+-
+-    /**
+-     * Test Xml Rpc by java class call with a Object List
+-     * @throws Exception
+-     */
+-    public void testXmlRpcRequest() throws Exception {
+-        XmlRpcClient client = this.getRpcClient(url, "admin", "ofbiz");
+-        Object[] params = new Object[] { 55.00, "message from xml-rpc client" };
+-        Map<String, Object> result = UtilGenerics.cast(client.execute("testScv", params));
+-        assertEquals("XML-RPC Service result success", "service done", result.get("resp"));
+-    }
+-
+-    /**
+-     * Service to receive information from xml-rpc call
+-     */
+-    public static Map<String, Object> testXmlRpcAdd(DispatchContext dctx, Map<String, ?> context) {
+-        Locale locale = (Locale) context.get("locale");
+-        Map<String, Object> response = ServiceUtil.returnSuccess();
+-        Integer num1 = (Integer) context.get("num1");
+-        Integer num2 = (Integer) context.get("num2");
+-        if (UtilValidate.isEmpty(num1) || UtilValidate.isEmpty(num2)) {
+-            return ServiceUtil.returnError(UtilProperties.getMessage(resource, "ServiceTestXmlRpcMissingParameters", locale));
+-        }
+-        Integer res = num1 + num2;
+-        response.put("resulting", res);
+-        return response;
+-    }
+-
+-    /**
+-     * Service to send information to xml-rpc service
+-     */
+-    public static Map<String, Object> testXmlRpcClientAdd(DispatchContext dctx, Map<String, ?> context) {
+-        Locale locale = (Locale) context.get("locale");
+-        Map<String, Object> result = null;
+-        Integer num1 = 125;
+-        Integer num2 = 365;
+-        try {
+-            Map<String, Object> localMap = dctx.makeValidContext("testXmlRpcLocalEngine", ModelService.IN_PARAM, context);
+-            localMap.put("num1", num1);
+-            localMap.put("num2", num2);
+-            result = dctx.getDispatcher().runSync("testXmlRpcLocalEngine", localMap);
+-        }
+-        catch (GenericServiceException e) {
+-            return ServiceUtil.returnError(e.getLocalizedMessage());
+-        }
+-        if (ServiceUtil.isError(result)) {
+-            return result;
+-        }
+-        Integer res = (Integer) result.get("resulting");
+-        if (res == (num1 + num2)) {
+-            result = ServiceUtil.returnSuccess(UtilProperties.getMessage(resource, "ServiceTestXmlRpcCalculationOK", locale) + res);
+-        } else {
+-            result = ServiceUtil.returnError(UtilProperties.getMessage(resource, "ServiceTestXmlRpcCalculationKO", locale));
+-        }
+-        return result;
+-    }
+-}
+diff --git a/framework/service/src/main/java/org/apache/ofbiz/service/xmlrpc/AliasSupportedTransportFactory.java b/framework/service/src/main/java/org/apache/ofbiz/service/xmlrpc/AliasSupportedTransportFactory.java
+deleted file mode 100644
+index 32dc46746d6..00000000000
+--- a/framework/service/src/main/java/org/apache/ofbiz/service/xmlrpc/AliasSupportedTransportFactory.java
++++ /dev/null
+@@ -1,142 +0,0 @@
+-/*
+- Licensed to the Apache Software Foundation (ASF) under one
+- or more contributor license agreements.  See the NOTICE file
+- distributed with this work for additional information
+- regarding copyright ownership.  The ASF licenses this file
+- to you under the Apache License, Version 2.0 (the
+- "License"); you may not use this file except in compliance
+- with the License.  You may obtain a copy of the License at
+-
+- http://www.apache.org/licenses/LICENSE-2.0
+-
+- Unless required by applicable law or agreed to in writing,
+- software distributed under the License is distributed on an
+- "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+- KIND, either express or implied.  See the License for the
+- specific language governing permissions and limitations
+- under the License.
+- */
+-
+-package org.apache.ofbiz.service.xmlrpc;
+-
+-import java.io.IOException;
+-import java.io.InputStream;
+-import java.net.HttpURLConnection;
+-import java.net.URL;
+-import java.net.URLConnection;
+-import java.security.GeneralSecurityException;
+-import java.security.KeyStore;
+-
+-import javax.net.ssl.HttpsURLConnection;
+-
+-import org.apache.ofbiz.base.util.GeneralException;
+-import org.apache.ofbiz.base.util.SSLUtil;
+-import org.apache.xmlrpc.XmlRpcException;
+-import org.apache.xmlrpc.XmlRpcRequest;
+-import org.apache.xmlrpc.client.XmlRpcClientException;
+-import org.apache.xmlrpc.client.XmlRpcHttpClientConfig;
+-import org.apache.xmlrpc.client.XmlRpcHttpTransport;
+-import org.apache.xmlrpc.client.XmlRpcTransport;
+-import org.apache.xmlrpc.client.XmlRpcTransportFactoryImpl;
+-import org.apache.xmlrpc.common.XmlRpcStreamRequestConfig;
+-import org.apache.xmlrpc.util.HttpUtil;
+-import org.xml.sax.SAXException;
+-
+-/**
+- * AliasSupportedTransportFactory
+- */
+-public class AliasSupportedTransportFactory extends XmlRpcTransportFactoryImpl {
+-
+-    private final AliasSupportedTransport transport;
+-
+-    public AliasSupportedTransportFactory(org.apache.xmlrpc.client.XmlRpcClient client, KeyStore ks, String password, String alias) {
+-        super(client);
+-        transport = new AliasSupportedTransport(client, ks, password, alias);
+-    }
+-
+-    public XmlRpcTransport getTransport() {
+-        return transport;
+-    }
+-
+-    class AliasSupportedTransport extends XmlRpcHttpTransport {
+-
+-        private URLConnection con;
+-        private String password;
+-        private String alias;
+-        private KeyStore ks;
+-
+-        protected AliasSupportedTransport(org.apache.xmlrpc.client.XmlRpcClient client, KeyStore ks, String password, String alias) {
+-            super(client, USER_AGENT + " (Sun HTTP Transport)");
+-            this.password = password;
+-            this.alias = alias;
+-            this.ks = ks;
+-        }
+-
+-        @Override
+-        public Object sendRequest(XmlRpcRequest req) throws XmlRpcException {
+-            XmlRpcHttpClientConfig config = (XmlRpcHttpClientConfig) req.getConfig();
+-            URL serverUrl = config.getServerURL();
+-            if (serverUrl == null) {
+-                throw new XmlRpcException("Invalid server URL");
+-            }
+-
+-            try {
+-                con = openConnection(serverUrl);
+-                con.setUseCaches(false);
+-                con.setDoInput(true);
+-                con.setDoOutput(true);
+-            } catch (IOException e) {
+-                throw new XmlRpcException("Failed to create URLConnection: " + e.getMessage(), e);
+-            }
+-            return super.sendRequest(req);
+-        }
+-
+-        protected URLConnection openConnection(URL url) throws IOException {
+-            URLConnection con = url.openConnection();
+-            if ("HTTPS".equalsIgnoreCase(url.getProtocol())) {
+-                HttpsURLConnection scon = (HttpsURLConnection) con;
+-                try {
+-                    scon.setSSLSocketFactory(SSLUtil.getSSLSocketFactory(ks, password, alias));
+-                    scon.setHostnameVerifier(SSLUtil.getHostnameVerifier(SSLUtil.getHostCertMinCheck()));
+-                } catch (GeneralException e) {
+-                    throw new IOException(e.getMessage());
+-                } catch (GeneralSecurityException e) {
+-                    throw new IOException(e.getMessage());
+-                }
+-            }
+-
+-            return con;
+-        }
+-
+-        @Override
+-        protected void setRequestHeader(String header, String value) {
+-            con.setRequestProperty(header, value);
+-        }
+-
+-        @Override
+-        protected void close() throws XmlRpcClientException {
+-            if (con instanceof HttpURLConnection) {
+-                ((HttpURLConnection) con).disconnect();
+-            }
+-        }
+-
+-        @Override
+-        protected boolean isResponseGzipCompressed(XmlRpcStreamRequestConfig config) {
+-            return HttpUtil.isUsingGzipEncoding(con.getHeaderField("Content-Encoding"));
+-        }
+-
+-        @Override
+-        protected InputStream getInputStream() throws XmlRpcException {
+-            try {
+-                return con.getInputStream();
+-            } catch (IOException e) {
+-                throw new XmlRpcException("Failed to create input stream: " + e.getMessage(), e);
+-            }
+-        }
+-
+-        @Override
+-        protected void writeRequest(ReqWriter pWriter) throws IOException, XmlRpcException, SAXException {
+-            pWriter.write(con.getOutputStream());
+-        }
+-    }
+-}
+diff --git a/framework/service/src/main/java/org/apache/ofbiz/service/xmlrpc/XmlRpcClient.java b/framework/service/src/main/java/org/apache/ofbiz/service/xmlrpc/XmlRpcClient.java
+deleted file mode 100644
+index f5279cd3349..00000000000
+--- a/framework/service/src/main/java/org/apache/ofbiz/service/xmlrpc/XmlRpcClient.java
++++ /dev/null
+@@ -1,69 +0,0 @@
+-/*
+- Licensed to the Apache Software Foundation (ASF) under one
+- or more contributor license agreements.  See the NOTICE file
+- distributed with this work for additional information
+- regarding copyright ownership.  The ASF licenses this file
+- to you under the Apache License, Version 2.0 (the
+- "License"); you may not use this file except in compliance
+- with the License.  You may obtain a copy of the License at
+-
+- http://www.apache.org/licenses/LICENSE-2.0
+-
+- Unless required by applicable law or agreed to in writing,
+- software distributed under the License is distributed on an
+- "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+- KIND, either express or implied.  See the License for the
+- specific language governing permissions and limitations
+- under the License.
+- */
+-
+-package org.apache.ofbiz.service.xmlrpc;
+-
+-import java.security.KeyStore;
+-
+-import org.apache.ofbiz.base.component.ComponentConfig;
+-import org.apache.ofbiz.base.util.Debug;
+-import org.apache.ofbiz.base.util.KeyStoreUtil;
+-import org.apache.xmlrpc.client.XmlRpcClientConfig;
+-import org.apache.xmlrpc.client.XmlRpcTransportFactory;
+-
+-/**
+- * XmlRpcClient
+- */
+-public class XmlRpcClient extends org.apache.xmlrpc.client.XmlRpcClient {
+-
+-    public static final String module = XmlRpcClient.class.getName();
+-
+-    protected String keyStoreComponent;
+-    protected String keyStoreName;
+-    protected String keyAlias;
+-
+-    public XmlRpcClient(XmlRpcClientConfig config, String keyStoreComponent, String keyStoreName, String keyAlias) {
+-        this(config);
+-        this.keyStoreComponent = keyStoreComponent;
+-        this.keyStoreName = keyStoreName;
+-        this.keyAlias = keyAlias;
+-        this.setTransportFactory(this.getClientTransportFactory());
+-    }
+-
+-    public XmlRpcClient(XmlRpcClientConfig config) {
+-        super();
+-        this.setConfig(config);
+-    }
+-
+-    public XmlRpcTransportFactory getClientTransportFactory() {
+-        if (keyStoreComponent == null || keyStoreName == null || keyAlias == null) {
+-            return this.getTransportFactory();
+-        }
+-
+-        ComponentConfig.KeystoreInfo ks = ComponentConfig.getKeystoreInfo(keyStoreComponent, keyStoreName);
+-        KeyStore keyStore = null;
+-        try {
+-            keyStore = KeyStoreUtil.getStore(ks.createResourceHandler().getURL(), ks.getPassword(), ks.getType());
+-        } catch (Exception e) {
+-            Debug.logError(e, "Unable to load keystore: " + keyStoreName, module);
+-        }
+-
+-        return new AliasSupportedTransportFactory(this, keyStore, ks.getPassword(), keyAlias);
+-    }
+-}
+diff --git a/framework/service/testdef/servicetests.xml b/framework/service/testdef/servicetests.xml
+index 00771a293ab..67ce7fe4d57 100644
+--- a/framework/service/testdef/servicetests.xml
++++ b/framework/service/testdef/servicetests.xml
+@@ -67,11 +67,4 @@ under the License.
+         <entity-xml action="assert" entity-xml-url="component://service/testdef/data/ServiceEcaGlobalEventAssertData.xml"/>
+     </test-case>
+ 
+-    <!-- This alone should allow Buildbot 3.2 to run the integration tests, cf OFBIZ-12456 -->
+-    <!-- <test-case case-name="service-xml-rpc">
+-        <junit-test-suite class-name="org.apache.ofbiz.service.test.XmlRpcTests"/>
+-    </test-case>
+-    <test-case case-name="service-xml-rpc-local-engine">
+-        <service-test service-name="testXmlRpcClientAdd"/>
+-    </test-case!-->
+ </test-suite>
+diff --git a/framework/webapp/config/url.properties b/framework/webapp/config/url.properties
+index 3a23f9442e5..5584097fe6a 100644
+--- a/framework/webapp/config/url.properties
++++ b/framework/webapp/config/url.properties
+@@ -22,7 +22,7 @@
+ 
+ # If you want to use HTTP then set no.http=N. Else all requests will use HTTPS (also enforced by a HSTS header) except if put in the http.request-map.list  
+ no.http=Y
+-http.request-map.list=SOAPService,xmlrpc,viewShipmentLabel
++http.request-map.list=SOAPService,viewShipmentLabel
+ 
+ # HTTPS Port (Secure port)
+ port.https.enabled=Y
+diff --git a/framework/webapp/src/main/java/org/apache/ofbiz/webapp/event/XmlRpcEventHandler.java b/framework/webapp/src/main/java/org/apache/ofbiz/webapp/event/XmlRpcEventHandler.java
+deleted file mode 100644
+index b2d0e043d37..00000000000
+--- a/framework/webapp/src/main/java/org/apache/ofbiz/webapp/event/XmlRpcEventHandler.java
++++ /dev/null
+@@ -1,474 +0,0 @@
+-/*
+- Licensed to the Apache Software Foundation (ASF) under one
+- or more contributor license agreements.  See the NOTICE file
+- distributed with this work for additional information
+- regarding copyright ownership.  The ASF licenses this file
+- to you under the Apache License, Version 2.0 (the
+- "License"); you may not use this file except in compliance
+- with the License.  You may obtain a copy of the License at
+-
+- http://www.apache.org/licenses/LICENSE-2.0
+-
+- Unless required by applicable law or agreed to in writing,
+- software distributed under the License is distributed on an
+- "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+- KIND, either express or implied.  See the License for the
+- specific language governing permissions and limitations
+- under the License.
+- */
+-
+-package org.apache.ofbiz.webapp.event;
+-
+-import static org.apache.ofbiz.base.util.UtilGenerics.checkMap;
+-
+-import java.io.BufferedReader;
+-import java.io.ByteArrayOutputStream;
+-import java.io.IOException;
+-import java.io.InputStream;
+-import java.io.InputStreamReader;
+-import java.io.OutputStream;
+-import java.io.Writer;
+-import java.util.HashMap;
+-import java.util.List;
+-import java.util.Locale;
+-import java.util.Map;
+-
+-import javax.servlet.ServletContext;
+-import javax.servlet.http.HttpServletRequest;
+-import javax.servlet.http.HttpServletResponse;
+-
+-import org.apache.ofbiz.base.util.Debug;
+-import org.apache.ofbiz.base.util.UtilValidate;
+-import org.apache.ofbiz.entity.Delegator;
+-import org.apache.ofbiz.entity.DelegatorFactory;
+-import org.apache.ofbiz.service.DispatchContext;
+-import org.apache.ofbiz.service.GenericServiceException;
+-import org.apache.ofbiz.service.LocalDispatcher;
+-import org.apache.ofbiz.service.ModelService;
+-import org.apache.ofbiz.service.ServiceContainer;
+-import org.apache.ofbiz.service.ServiceUtil;
+-import org.apache.ofbiz.webapp.control.ConfigXMLReader;
+-import org.apache.ofbiz.webapp.control.ConfigXMLReader.Event;
+-import org.apache.ofbiz.webapp.control.ConfigXMLReader.RequestMap;
+-import org.apache.xmlrpc.XmlRpcException;
+-import org.apache.xmlrpc.XmlRpcHandler;
+-import org.apache.xmlrpc.XmlRpcRequest;
+-import org.apache.xmlrpc.XmlRpcRequestConfig;
+-import org.apache.xmlrpc.common.ServerStreamConnection;
+-import org.apache.xmlrpc.common.XmlRpcHttpRequestConfig;
+-import org.apache.xmlrpc.common.XmlRpcHttpRequestConfigImpl;
+-import org.apache.xmlrpc.common.XmlRpcStreamRequestConfig;
+-import org.apache.xmlrpc.parser.XmlRpcRequestParser;
+-import org.apache.xmlrpc.server.AbstractReflectiveHandlerMapping;
+-import org.apache.xmlrpc.server.XmlRpcHttpServer;
+-import org.apache.xmlrpc.server.XmlRpcHttpServerConfig;
+-import org.apache.xmlrpc.server.XmlRpcNoSuchHandlerException;
+-import org.apache.xmlrpc.util.HttpUtil;
+-import org.apache.xmlrpc.util.SAXParsers;
+-import org.xml.sax.InputSource;
+-import org.xml.sax.SAXException;
+-import org.xml.sax.XMLReader;
+-
+-/**
+- * XmlRpcEventHandler
+- */
+-public class XmlRpcEventHandler extends XmlRpcHttpServer implements EventHandler {
+-
+-    public static final String module = XmlRpcEventHandler.class.getName();
+-    protected LocalDispatcher dispatcher;
+-
+-    private Boolean enabledForExtensions = null;
+-    private Boolean enabledForExceptions = null;
+-
+-    public void init(ServletContext context) throws EventHandlerException {
+-        String delegatorName = context.getInitParameter("entityDelegatorName");
+-        Delegator delegator = DelegatorFactory.getDelegator(delegatorName);
+-        this.dispatcher = ServiceContainer.getLocalDispatcher(delegator.getDelegatorName(), delegator);
+-        this.setHandlerMapping(new ServiceRpcHandler());
+-
+-        String extensionsEnabledString = context.getInitParameter("xmlrpc.enabledForExtensions");
+-        if (UtilValidate.isNotEmpty(extensionsEnabledString)) {
+-            enabledForExtensions = Boolean.valueOf(extensionsEnabledString);
+-        }
+-        String exceptionsEnabledString = context.getInitParameter("xmlrpc.enabledForExceptions");
+-        if (UtilValidate.isNotEmpty(exceptionsEnabledString)) {
+-            enabledForExceptions = Boolean.valueOf(exceptionsEnabledString);
+-        }
+-    }
+-
+-    /**
+-     * @see org.apache.ofbiz.webapp.event.EventHandler#invoke(ConfigXMLReader.Event, ConfigXMLReader.RequestMap, javax.servlet.http.HttpServletRequest, javax.servlet.http.HttpServletResponse)
+-     */
+-    public String invoke(Event event, RequestMap requestMap, HttpServletRequest request, HttpServletResponse response) throws EventHandlerException {
+-        String report = request.getParameter("echo");
+-        if (report != null) {
+-            BufferedReader reader = null;
+-            StringBuilder buf = new StringBuilder();
+-            try {
+-                // read the inputstream buffer
+-                String line;
+-                reader = new BufferedReader(new InputStreamReader(request.getInputStream()));
+-                while ((line = reader.readLine()) != null) {
+-                    buf.append(line).append("\n");
+-                }
+-            } catch (Exception e) {
+-                throw new EventHandlerException(e.getMessage(), e);
+-            } finally {
+-                if (reader != null) {
+-                    try {
+-                        reader.close();
+-                    } catch (IOException e) {
+-                        throw new EventHandlerException(e.getMessage(), e);
+-                    }
+-                }
+-            }
+-            Debug.logInfo("Echo: " + buf.toString(), module);
+-
+-            // echo back the request
+-            try {
+-                response.setContentType("text/xml");
+-                Writer out = response.getWriter();
+-                out.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+-                out.write("<methodResponse>");
+-                out.write("<params><param>");
+-                out.write("<value><string><![CDATA[");
+-                out.write(buf.toString());
+-                out.write("]]></string></value>");
+-                out.write("</param></params>");
+-                out.write("</methodResponse>");
+-                out.flush();
+-            } catch (Exception e) {
+-                throw new EventHandlerException(e.getMessage(), e);
+-            }
+-        } else {
+-            try {
+-                this.execute(this.getXmlRpcConfig(request), new HttpStreamConnection(request, response));
+-            } catch (XmlRpcException e) {
+-                Debug.logError(e, module);
+-                throw new EventHandlerException(e.getMessage(), e);
+-            }
+-        }
+-
+-        return null;
+-    }
+-
+-    @Override
+-    protected void setResponseHeader(ServerStreamConnection con, String header, String value) {
+-        ((HttpStreamConnection) con).getResponse().setHeader(header, value);
+-    }
+-
+-    protected XmlRpcHttpRequestConfig getXmlRpcConfig(HttpServletRequest req) {
+-        OFBizXmlRpcHttpRequestConfigImpl result = new OFBizXmlRpcHttpRequestConfigImpl(req);
+-        XmlRpcHttpServerConfig serverConfig = (XmlRpcHttpServerConfig) getConfig();
+-
+-        result.setBasicEncoding(serverConfig.getBasicEncoding());
+-        result.setContentLengthOptional(serverConfig.isContentLengthOptional());
+-        result.setEnabledForExtensions(serverConfig.isEnabledForExtensions());
+-        result.setGzipCompressing(HttpUtil.isUsingGzipEncoding(req.getHeader("Content-Encoding")));
+-        result.setGzipRequesting(HttpUtil.isUsingGzipEncoding(req.getHeaders("Accept-Encoding")));
+-        result.setEncoding(req.getCharacterEncoding());
+-        //result.setEnabledForExceptions(serverConfig.isEnabledForExceptions());
+-        HttpUtil.parseAuthorization(result, req.getHeader("Authorization"));
+-
+-        // context overrides
+-        if (enabledForExtensions != null) {
+-            result.setEnabledForExtensions(enabledForExtensions);
+-        }
+-        if (enabledForExceptions != null) {
+-            result.setEnabledForExtensions(enabledForExceptions);
+-        }
+-        return result;
+-    }
+-
+-    class OfbizRpcAuthHandler implements AbstractReflectiveHandlerMapping.AuthenticationHandler {
+-
+-        public boolean isAuthorized(XmlRpcRequest xmlRpcReq) throws XmlRpcException {
+-        OFBizXmlRpcHttpRequestConfigImpl config = (OFBizXmlRpcHttpRequestConfigImpl) xmlRpcReq.getConfig();
+-        LocalDispatcher dispatcher = config.getDispatcher();
+-
+-            ModelService model;
+-            try {
+-                model = dispatcher.getDispatchContext().getModelService(xmlRpcReq.getMethodName());
+-            } catch (GenericServiceException e) {
+-                throw new XmlRpcException(e.getMessage(), e);
+-            }
+-
+-            if (model != null && model.auth) {
+-                String username = config.getBasicUserName();
+-                String password = config.getBasicPassword();
+-
+-                // check the account
+-                Map<String, Object> context = new HashMap<String, Object>();
+-                context.put("login.username", username);
+-                context.put("login.password", password);
+-
+-                Map<String, Object> resp;
+-                try {
+-                    resp = dispatcher.runSync("userLogin", context);
+-                } catch (GenericServiceException e) {
+-                    throw new XmlRpcException(e.getMessage(), e);
+-                }
+-
+-                if (ServiceUtil.isError(resp)) {
+-                    return false;
+-                }
+-            }
+-
+-            return true;
+-        }
+-    }
+-
+-    @Override
+-    public void execute(XmlRpcStreamRequestConfig pConfig,
+-            ServerStreamConnection pConnection) throws XmlRpcException {
+-        try {
+-            Object result = null;
+-            boolean foundError = false;
+-
+-            try (InputStream istream = getInputStream(pConfig, pConnection)) {
+-                XmlRpcRequest request = getRequest(pConfig, istream);
+-                result = execute(request);
+-            } catch (Exception e) {
+-                Debug.logError(e, module);
+-                foundError = true;
+-            }
+-
+-            ByteArrayOutputStream baos;
+-            OutputStream initialStream;
+-            if (isContentLengthRequired(pConfig)) {
+-                baos = new ByteArrayOutputStream();
+-                initialStream = baos;
+-            } else {
+-                baos = null;
+-                initialStream = pConnection.newOutputStream();
+-            }
+-
+-            try (OutputStream ostream = getOutputStream(pConnection, pConfig, initialStream)) {
+-                if (!foundError) {
+-                    writeResponse(pConfig, ostream, result);
+-                } else {
+-                    writeError(pConfig, ostream, new Exception("Failed to read XML-RPC request. Please check logs for more information"));
+-                }
+-            }
+-
+-            if (baos != null) {
+-                try (OutputStream dest = getOutputStream(pConfig, pConnection, baos.size())) {
+-                    baos.writeTo(dest);
+-                }
+-            }
+-
+-            pConnection.close();
+-            pConnection = null;
+-        } catch (IOException e) {
+-            throw new XmlRpcException("I/O error while processing request: " + e.getMessage(), e);
+-        } finally {
+-            if (pConnection != null) {
+-                try {
+-                    pConnection.close();
+-                } catch (IOException e) {
+-                    Debug.logError(e, "Unable to close stream connection");
+-                }
+-            }
+-        }
+-    }
+-
+-    protected XmlRpcRequest getRequest(final XmlRpcStreamRequestConfig pConfig, InputStream pStream)
+-            throws XmlRpcException {
+-        final XmlRpcRequestParser parser = new XmlRpcRequestParser(pConfig, getTypeFactory());
+-        final XMLReader xr = SAXParsers.newXMLReader();
+-        xr.setContentHandler(parser);
+-        try {
+-            xr.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+-            xr.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+-            xr.setFeature("http://xml.org/sax/features/external-general-entities", false);
+-            xr.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+-            xr.parse(new InputSource(pStream));
+-        } catch (SAXException | IOException e) {
+-            throw new XmlRpcException("Failed to parse / read XML-RPC request: " + e.getMessage(), e);
+-        }
+-        final List<?> params = parser.getParams();
+-        return new XmlRpcRequest() {
+-            public XmlRpcRequestConfig getConfig() {
+-                return pConfig;
+-            }
+-            public String getMethodName() {
+-                return parser.getMethodName();
+-            }
+-            public int getParameterCount() {
+-                return params == null ? 0 : params.size();
+-            }
+-            public Object getParameter(int pIndex) {
+-                return params.get(pIndex);
+-            }
+-        };
+-    }
+-
+-    class ServiceRpcHandler extends AbstractReflectiveHandlerMapping implements XmlRpcHandler {
+-
+-        public ServiceRpcHandler() {
+-            this.setAuthenticationHandler(new OfbizRpcAuthHandler());
+-        }
+-
+-        @Override
+-        public XmlRpcHandler getHandler(String method) throws XmlRpcNoSuchHandlerException, XmlRpcException {
+-            ModelService model = null;
+-            try {
+-                model = dispatcher.getDispatchContext().getModelService(method);
+-            } catch (GenericServiceException e) {
+-                Debug.logWarning(e, module);
+-            }
+-            if (model == null) {
+-                throw new XmlRpcNoSuchHandlerException("No such service [" + method + "]");
+-            }
+-            return this;
+-        }
+-
+-        public Object execute(XmlRpcRequest xmlRpcReq) throws XmlRpcException {
+-
+-        OFBizXmlRpcHttpRequestConfigImpl requestConfig = (OFBizXmlRpcHttpRequestConfigImpl) xmlRpcReq.getConfig();
+-        LocalDispatcher dispatcher = requestConfig.getDispatcher();
+-        
+-            DispatchContext dctx = dispatcher.getDispatchContext();
+-            String serviceName = xmlRpcReq.getMethodName();
+-            ModelService model = null;
+-            try {
+-                model = dctx.getModelService(serviceName);
+-            } catch (GenericServiceException e) {
+-                throw new XmlRpcException(e.getMessage(), e);
+-            }
+-
+-            // check remote invocation security
+-            if (model == null || !model.export) {
+-                throw new XmlRpcException("Unknown method");
+-            }
+-
+-            // prepare the context -- single parameter type struct (map)
+-            Map<String, Object> context = this.getContext(xmlRpcReq, serviceName);
+-
+-            // add in auth parameters
+-            XmlRpcHttpRequestConfig config = (XmlRpcHttpRequestConfig) xmlRpcReq.getConfig();
+-            String username = config.getBasicUserName();
+-            String password = config.getBasicPassword();
+-            if (UtilValidate.isNotEmpty(username)) {
+-                context.put("login.username", username);
+-                context.put("login.password", password);
+-            }
+-
+-            // add the locale to the context
+-            if (context.get("locale") == null) {
+-                context.put("locale", Locale.getDefault());
+-            }
+-
+-            // invoke the service
+-            Map<String, Object> resp;
+-            try {
+-                resp = dispatcher.runSync(serviceName, context);
+-            } catch (GenericServiceException e) {
+-                throw new XmlRpcException(e.getMessage(), e);
+-            }
+-            if (ServiceUtil.isError(resp)) {
+-                Debug.logError(ServiceUtil.getErrorMessage(resp), module);
+-                throw new XmlRpcException(ServiceUtil.getErrorMessage(resp));
+-            }
+-
+-            // return only definied parameters
+-            return model.makeValid(resp, ModelService.OUT_PARAM, false, null);
+-        }
+-
+-        protected Map<String, Object> getContext(XmlRpcRequest xmlRpcReq, String serviceName) throws XmlRpcException {
+-            ModelService model;
+-        OFBizXmlRpcHttpRequestConfigImpl requestConfig = (OFBizXmlRpcHttpRequestConfigImpl) xmlRpcReq.getConfig();
+-        LocalDispatcher dispatcher = requestConfig.getDispatcher();
+-            try {
+-                model = dispatcher.getDispatchContext().getModelService(serviceName);
+-            } catch (GenericServiceException e) {
+-                throw new XmlRpcException(e.getMessage(), e);
+-            }
+-
+-            // context placeholder
+-            Map<String, Object> context = new HashMap<String, Object>();
+-
+-            if (model != null) {
+-                int parameterCount = xmlRpcReq.getParameterCount();
+-
+-                // more than one parameter; use list notation based on service def order
+-                if (parameterCount > 1) {
+-                    int x = 0;
+-                    for (String name: model.getParameterNames(ModelService.IN_PARAM, true, true)) {
+-                        context.put(name, xmlRpcReq.getParameter(x));
+-                        x++;
+-
+-                        if (x == parameterCount) {
+-                            break;
+-                        }
+-                    }
+-
+-                // only one parameter; if its a map use it as the context; otherwise make sure the service takes one param
+-                } else if (parameterCount == 1) {
+-                    Object param = xmlRpcReq.getParameter(0);
+-                    if (param instanceof Map<?, ?>) {
+-                        context = checkMap(param, String.class, Object.class);
+-                    } else {
+-                        if (model.getDefinedInCount() == 1) {
+-                            String paramName = model.getInParamNames().iterator().next();
+-                            context.put(paramName, xmlRpcReq.getParameter(0));
+-                        } else {
+-                            throw new XmlRpcException("More than one parameter defined on service; cannot call via RPC with parameter list");
+-                        }
+-                    }
+-                }
+-
+-                // do map value conversions
+-                context = model.makeValid(context, ModelService.IN_PARAM);
+-            }
+-
+-            return context;
+-        }
+-    }
+-
+-    class HttpStreamConnection implements ServerStreamConnection {
+-
+-        protected HttpServletRequest request;
+-        protected HttpServletResponse response;
+-
+-        protected HttpStreamConnection(HttpServletRequest req, HttpServletResponse res) {
+-            this.request = req;
+-            this.response = res;
+-        }
+-
+-        public HttpServletRequest getRequest() {
+-            return request;
+-        }
+-
+-        public HttpServletResponse getResponse() {
+-            return response;
+-        }
+-
+-        public InputStream newInputStream() throws IOException {
+-            return request.getInputStream();
+-        }
+-
+-        public OutputStream newOutputStream() throws IOException {
+-            response.setContentType("text/xml");
+-            return response.getOutputStream();
+-        }
+-
+-        public void close() throws IOException {
+-            response.getOutputStream().close();
+-        }
+-    }
+-
+-    class OFBizXmlRpcHttpRequestConfigImpl extends XmlRpcHttpRequestConfigImpl  {
+-        private LocalDispatcher dispatcher;
+-
+-        public OFBizXmlRpcHttpRequestConfigImpl  (HttpServletRequest request) {
+-        dispatcher = (LocalDispatcher) request.getAttribute("dispatcher");
+-        }
+-    
+-        public LocalDispatcher getDispatcher() {
+-        return dispatcher;
+-        }
+-    }
+-    
+-
+-}
+diff --git a/framework/webapp/testdef/webapptests.xml b/framework/webapp/testdef/webapptests.xml
+index bc375080322..f33f4989947 100644
+--- a/framework/webapp/testdef/webapptests.xml
++++ b/framework/webapp/testdef/webapptests.xml
+@@ -21,7 +21,4 @@
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://ofbiz.apache.org/dtds/test-suite.xsd">
+ 
+-    <test-case case-name="webapp-tests">
+-        <junit-test-suite class-name="org.apache.ofbiz.webapp.test.XmlRpcTests"/>
+-    </test-case>
+ </test-suite>
+diff --git a/framework/webtools/webapp/webtools/WEB-INF/controller.xml b/framework/webtools/webapp/webtools/WEB-INF/controller.xml
+index fe58a780098..6242bc5386d 100644
+--- a/framework/webtools/webapp/webtools/WEB-INF/controller.xml
++++ b/framework/webtools/webapp/webtools/WEB-INF/controller.xml
+@@ -55,13 +55,6 @@ under the License.
+         <response name="error" type="none"/>
+         <response name="success" type="none"/>
+     </request-map> -->
+-    <request-map uri="xmlrpc" track-serverhit="false" track-visit="false">
+-        <security auth="true"/>
+-        <event type="xmlrpc"/>
+-        <response name="error" type="none"/>
+-        <response name="success" type="none"/>
+-    </request-map>
+-
+     <request-map uri="ping">
+         <security auth="true"/>
+         <event type="service" invoke="ping"/>
+diff --git a/framework/webtools/webapp/webtools/WEB-INF/web.xml b/framework/webtools/webapp/webtools/WEB-INF/web.xml
+index 3109316c6c7..b82354dd7e8 100644
+--- a/framework/webtools/webapp/webtools/WEB-INF/web.xml
++++ b/framework/webtools/webapp/webtools/WEB-INF/web.xml
+@@ -33,10 +33,6 @@ under the License.
+         <param-value>webtools</param-value>
+         <!--<description>A unique name used to identify/recognize the local dispatcher for the Service Engine</description>-->
+     </context-param>
+-    <context-param>
+-        <param-name>xmlrpc.enabledForExtensions</param-name>
+-        <param-value>true</param-value>
+-    </context-param>
+     <context-param>
+         <description>The location of the main-decorator screen to use for this webapp; referred to as a context variable
+             in screen def XML files.

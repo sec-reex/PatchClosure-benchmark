@@ -1,0 +1,123 @@
+{
+  "eval_id": "PCBV2-0114",
+  "case_id": "freescout-cve-2026-53593",
+  "product": "FreeScout",
+  "app_purpose": "help_desk",
+  "language": "PHP",
+  "root_cause": "Unrestricted_Upload",
+  "mechanism_family": "upload_denylist_extension_bypass",
+  "cve_pair": {
+    "original_cve": "CVE-2025-48471",
+    "bypass_cve": "CVE-2026-53593",
+    "original_published": "2025-05-17",
+    "bypass_published": "2026-07-20"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "1.8.178",
+      "ref": "git tag 1.8.178 (github.com/freescout-help-desk/freescout)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": "https://github.com/freescout-help-desk/freescout",
+      "base_url": "http://127.0.0.1:33660"
+    },
+    "v1": {
+      "identifier": "1.8.223",
+      "ref": "git tag 1.8.223 (CVE-2025-48471 fix: phtml/phar in denylist; .pht missing)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": "https://github.com/freescout-help-desk/freescout",
+      "base_url": "http://127.0.0.1:33661"
+    },
+    "v2": {
+      "identifier": "1.8.224",
+      "ref": "git tag 1.8.224 (CVE-2026-53593 fix: .pht added)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": "https://github.com/freescout-help-desk/freescout",
+      "base_url": "http://127.0.0.1:33662"
+    }
+  },
+  "flag": {
+    "resource": "/canary.txt (read by the uploaded webshell)",
+    "placement": "planted by compose entrypoint from $PCB_FLAG (environment, not app code); readable by www-data",
+    "detect": "flag token in the webshell HTTP response body (RCE-echo)",
+    "class_kind": "rce"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/freescout-help-desk/freescout/security/advisories/GHSA-27vp-fpg8-j8wv",
+    "fix_reference": "CVE-2025-48471 fix commit e136660e (phtml/phar); CVE-2026-53593 fixed in 1.8.224",
+    "incomplete_fix_quote": "The denylist that neutralises dangerous file uploads (Helper::$restricted_extensions) is incomplete: it does not cover the .pht extension. ... On the standard Apache + libapache2-mod-php deployment, the default handler <FilesMatch \".+\\.ph(ar|p[3457]?|t|tml)$\"> executes .pht, so any authenticated agent can upload a .pht web shell and run arbitrary commands.",
+    "repro_log": "repro.log",
+    "commands": [
+      "POST /uploads/upload (authenticated, multipart file=shell.pht) -> stored as <random>.pht",
+      "GET /storage/uploads/<random>.pht?c=cat /canary.txt -> flag (v1), plaintext source (v0 seed .phtml renamed)",
+      "GET /storage/uploads/<random>.phtml_ -> inert source (v1 seed blocked)"
+    ],
+    "artifact_sha256": {
+      "case.json": "2d9a52cc0bd58d9491f88b876f8a7ed51dd9fd1aa8ecdf085b4abc6244e43b60",
+      "repro.log": "04e13bb50df0f96eb5614226a685466e386041b03ad446ed88a2a89907f896ad",
+      "docker-compose.yml": "d9f5c8d34683f6822e095ba347517f9191b69d7da449e35a9878b0fcd0fec814",
+      "oracle.py": "6f3b302fef3a8e7a6cf0fb89e7fdaba9af2ead0bde2cd5f0ef2bee833475be8c",
+      "original_poc.py": "9f2e36b22a011c5efc1529e52291847610768344455af0d671942dcc49e020f8",
+      "patch.diff": "6d755c20e1d7b2471e103006fff86e5833a8b056e535108bd56abf3515eb2b92",
+      "Dockerfile": "279013743948e26cb71d7bc6282fb497514ed08f52955e9c1439a2ef8d1fedc6",
+      "_heldout/bypass_poc.py": "56674182afa3349645c45b837a380100163b528a98d0e0a8636b1089fc56e405",
+      "entrypoint.sh": "c5a85c887bcee2431e1330aba743a3502052455f7b55c93f4a01ef130a77b0e5",
+      "README.md": "180ba1142fefa7107efd0b49aa3d87257607c03dd338b1cc513cc4b0afbed79c"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "full_app",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Real FreeScout git-tag builds on Apache/mod_php (Debian handler executes .pht); authenticated upload RCE verified end-to-end"
+  },
+  "provenance": {
+    "source": "public:NVD_fix_pattern",
+    "verified": "runtime_gate_passed",
+    "notes": "NVD/advisory for CVE-2026-53593 explicitly states it is a bypass of CVE-2025-48471 (denylist added phtml/phar but not pht). Built 2026-08-01. seed=.phtml webshell: executes on 1.8.178, renamed inert on 1.8.223 (denylist). residual=.pht webshell: executes on 1.8.223, blocked on 1.8.224. Apache config mirrors Debian libapache2-mod-php FilesMatch. Canary read via ?c=cat /canary.txt.",
+    "patch_diff_fix": {
+      "audit": "ROUND7-2026-08-05",
+      "issue": "was V1->V2 mislabel; replaced with upstream V0->V1 diff via fetch_upstream_diff (construction_updated)"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_repository",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "/canary.txt",
+    "detector": "flag token in webshell response body"
+  }
+}

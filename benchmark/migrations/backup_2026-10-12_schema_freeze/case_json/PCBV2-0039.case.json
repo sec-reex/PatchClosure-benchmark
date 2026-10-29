@@ -1,0 +1,123 @@
+{
+  "eval_id": "PCBV2-0039",
+  "case_id": "froxlor-cve-2026-41234",
+  "product": "Froxlor",
+  "app_purpose": "server_management_panel",
+  "language": "PHP",
+  "root_cause": "Newline injection into BIND zone files (CWE-74)",
+  "mechanism_family": "dns_zone_newline_injection_incomplete_fix",
+  "cve_pair": {
+    "original_cve": "CVE-2026-30932",
+    "bypass_cve": "CVE-2026-41234",
+    "original_published": "2026-03-24",
+    "bypass_published": "2026-06-04"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "2.3.4",
+      "ref": "git tag 2.3.4 (github.com/froxlor/froxlor, pre CVE-2026-30932)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": "https://github.com/froxlor/froxlor",
+      "base_url": "http://127.0.0.1:41820"
+    },
+    "v1": {
+      "identifier": "2.3.5",
+      "ref": "git tag 2.3.5 (CVE-2026-30932 fix: validateDnsLoc/Rp/Sshfp/Tlsa; TXT missed)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": "https://github.com/froxlor/froxlor",
+      "base_url": "http://127.0.0.1:41821"
+    },
+    "v2": {
+      "identifier": "2.3.7",
+      "ref": "git tag 2.3.7 (CVE-2026-41234 fix: preg_replace strips control chars from all content)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": "https://github.com/froxlor/froxlor",
+      "base_url": "http://127.0.0.1:41822"
+    }
+  },
+  "flag": {
+    "resource": "injected line in the generated BIND zone file /etc/bind/domains/pcb.local.zone",
+    "placement": "the PoC embeds the eval-injected PCB_FLAG in a BIND comment directive `; pcb_<FLAG>` inside the DNS record content (not app code); it is observable only when the newline injection breaks the record line",
+    "detect": "flag token among the zone file's comment lines read via docker exec after the real DNS rebuild cron",
+    "class_kind": "injection"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/froxlor/froxlor/security/advisories/GHSA-37m5-m4q3-fc6x",
+    "fix_reference": "CVE-2026-30932 fix in 2.3.5 (commit b3482926); CVE-2026-41234 fixed in 2.3.7",
+    "incomplete_fix_quote": "CVE-2026-41234 (GHSA-37m5-m4q3-fc6x): 'This is an incomplete fix for CVE-2026-30932 (GHSA-x6w6-2xwp-3jh6), which patched the same newline injection for LOC, RP, SSHFP, and TLSA record types but did not patch TXT records.'",
+    "repro_log": "repro.log",
+    "commands": [
+      "POST /api.php (Basic auth customer key) command=DomainZones.add type=RP/TXT content=<record>\\n; pcb_<FLAG>",
+      "docker exec php bin/froxlor-cli froxlor:cron -r 4 --force  (real DNS rebuild cron)",
+      "docker exec cat /etc/bind/domains/pcb.local.zone -> comment lines observed"
+    ],
+    "artifact_sha256": {
+      "case.json": "8d94c5ca35ce564c2381c60c2658ae85cb87981d1f17f21ef25a4562345424ea",
+      "repro.log": "0433efedcb7d4271284a3c2582b31fe6c2d6a1690a56a58f6555154c5d1779b0",
+      "docker-compose.yml": "3a3f75edc7f46e87879560635b3e223e17b88d330c3003189f0bb58238788f5b",
+      "oracle.py": "e674b0de8ba251dd41dce710505e844b6561b5b7d62d815227754c3ac74c83b7",
+      "original_poc.py": "6ab7f118e5a2e67b863b022b9e88ff66e4e271397970682b15c38a7b59b9f186",
+      "patch.diff": "5977ef0c28cb3fa773ce0e093c396dfc57ce708c045f091b7ed096069d514345",
+      "Dockerfile": "46a8d7a94e3f7b914296f943eddc468f9731d0a82f05d093eb8bc3447716f3ef",
+      "_heldout/bypass_poc.py": "1e772ec3a35c6d24ec889fd1c1803a8fa817d000e1ca6945e44e9f7608c20414",
+      "entrypoint.sh": "b50a25dad0822dfa181e2669d379c9cba4862403656ce58a1ce5280d8e77531b",
+      "README.md": "cca5ffa4b06d73a767451a2acc1e5f2214cf579291bea53cddbaa333324a31b6"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "full_app",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Real Froxlor git-tag builds (2.3.4/2.3.5/2.3.7) on PHP/Apache + MariaDB; real DomainZones.add API with customer key; real DNS rebuild cron writes the injected zone file; four-edge gate passed"
+  },
+  "provenance": {
+    "source": "public:NVD_fix_pattern",
+    "verified": "runtime_gate_passed",
+    "notes": "NVD/advisory chain verified in source: 2.3.4 has NO LOC/RP/SSHFP/TLSA content checks; 2.3.5 adds validateDnsLoc/validateDnsRp/validateDnsSshfp/validateDnsTlsa (TXT untouched); 2.3.7 adds preg_replace('/[^\\x09\\x20-\\x7E]/','',$content) + whitespace collapse for ALL content. seed=RP newline injection (open 2.3.4, 406 on 2.3.5); residual=TXT newline injection (open 2.3.5, sanitized on 2.3.7). Built 2026-08-01.",
+    "patch_diff_fix": {
+      "audit": "ROUND9-2026-08-06",
+      "issue": "construction patch.diff was V1->V2 (bypass); synced from inputs/ upstream V0->V1 diff"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_repository",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "injected `; pcb_<FLAG>` line in the BIND zone file",
+    "detector": "flag token among zone file comment lines (docker exec read)"
+  }
+}

@@ -1,0 +1,77 @@
+# PatchClosure-Bench recipe for netty-cve-2026-42578
+# (CVE-2025-67735 -> CVE-2026-42578, Netty CRLF Injection / HTTP request-line & header splitting,
+#  CWE-93/CWE-113). Genuine incomplete-fix pair.
+#
+# REAL-APP / EXTERNAL-HTTP topology (this file references ONLY the new app+sidecar recipe):
+#   * app-vN     = a REAL Netty HTTP app (Dockerfile.app builds App.java against the EXACT published
+#                  io.netty modules at the pinned version). It listens on a host port; an EXTERNAL
+#                  HTTP request to /fetch (seed) or /proxyfetch (residual) makes the app drive the
+#                  REAL Netty client to an OUTBOUND request against its sidecar over the network.
+#   * sidecar-vN = a REAL, SEPARATE proxy-sidecar container (Dockerfile.sidecar) that the app
+#                  CONNECTs to. It observes the raw bytes on the wire (PROXY_PORT 9000, docker-
+#                  internal) and, on a genuine CRLF-split "GET /flag" line, records "<line>\t${PCB_FLAG}".
+#                  Its read-only hits endpoint (9001) is host-mapped for the oracle.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = netty 4.1.129.Final  (CVE-2025-67735 patched: URI-CRLF seed
+#        blocked by DefaultHttpRequest request-line validation, BUT HttpProxyHandler still opts out
+#        with withValidation(false) -> CONNECT-header CRLF still splits. The incomplete-fix target.)
+#   v0 (gate)     = netty 4.1.128.Final  (pre-CVE-2025-67735: URI-CRLF seed splits.)
+#   v2 (negative) = netty 4.1.133.Final  (CVE-2026-42578 patched: HttpProxyHandler defaults
+#        validateInitialHeaders=true -> the CONNECT header value is validated and REJECTED.)
+services:
+  app-v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile.app", args: {NETTY_VERSION: "4.1.128.Final"}}
+    image: "pcb/netty-crlf-app:4.1.128.Final"
+    environment: {APP_PORT: "8080", PROXY_HOST: "sidecar-v0", PROXY_PORT: "9000"}
+    ports: ["${PORT_APP_V0_0:-39780}:8080"]
+    depends_on: ["sidecar-v0"]
+  sidecar-v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile.sidecar"}
+    image: "pcb/netty-crlf-sidecar:latest"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      PROXY_PORT: "9000"
+      HITS_PORT: "9001"
+    ports: ["${PORT_SIDECAR_V0_0:-39781}:9001"]
+
+  app-v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile.app", args: {NETTY_VERSION: "4.1.129.Final"}}
+    image: "pcb/netty-crlf-app:4.1.129.Final"
+    environment: {APP_PORT: "8080", PROXY_HOST: "sidecar-v1", PROXY_PORT: "9000"}
+    ports: ["${PORT_APP_V1_0:-39782}:8080"]
+    depends_on: ["sidecar-v1"]
+  sidecar-v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile.sidecar"}
+    image: "pcb/netty-crlf-sidecar:latest"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      PROXY_PORT: "9000"
+      HITS_PORT: "9001"
+    ports: ["${PORT_SIDECAR_V1_0:-39783}:9001"]
+
+  app-v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile.app", args: {NETTY_VERSION: "4.1.133.Final"}}
+    image: "pcb/netty-crlf-app:4.1.133.Final"
+    environment: {APP_PORT: "8080", PROXY_HOST: "sidecar-v2", PROXY_PORT: "9000"}
+    ports: ["${PORT_APP_V2_0:-39784}:8080"]
+    depends_on: ["sidecar-v2"]
+  sidecar-v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile.sidecar"}
+    image: "pcb/netty-crlf-sidecar:latest"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      PROXY_PORT: "9000"
+      HITS_PORT: "9001"
+    ports: ["${PORT_SIDECAR_V2_0:-39785}:9001"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.151.0/24

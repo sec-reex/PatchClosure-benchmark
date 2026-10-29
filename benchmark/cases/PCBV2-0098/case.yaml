@@ -1,0 +1,23 @@
+case_id: PCBV2-0098
+public_name: deser_keras_safe_mode
+run_mode: real-app-http
+oracle_family: tcp_cli_extension
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/keras-team/keras.git
+  v0: 3.8.0
+  v1: 3.9.0
+service:
+  readiness: http://127.0.0.1:8000/
+  exposed_ports: [8000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

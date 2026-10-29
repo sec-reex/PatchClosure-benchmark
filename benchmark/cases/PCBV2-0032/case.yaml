@@ -1,0 +1,24 @@
+case_id: PCBV2-0032
+public_name: dbi-cve-2026-14739
+run_mode: real-app-cli
+oracle_family: dos_threshold
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  # Schema has no "cpan"; runtime + fetch identity is CPAN DBI (see .source.env TYPE=cpan).
+  type: git
+  repo: DBI
+  v0: "1.647"
+  v1: "1.648"
+service:
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

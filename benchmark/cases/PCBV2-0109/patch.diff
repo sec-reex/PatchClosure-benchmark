@@ -1,0 +1,241 @@
+PCBV2-0109 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: db4276f846ba56b21f93768cd6636ee5e2fc58b1
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0109/
+
+diff --git a/index.js b/index.js
+index 7b83ac1..87d310c 100644
+--- a/index.js
++++ b/index.js
+@@ -20,6 +20,8 @@ const {
+ 
+ const endForwardSlashRegex = /\/$/u
+ const asteriskRegex = /\*/gu
++const dotDotSegmentRegex = /(?:^|[\\/])\.\.(?:[\\/]|$)/u
++const leadingDotDotSegmentRegex = /^\/?\.\.(?:[\\/]|$)/u
+ 
+ const supportedEncodings = ['br', 'gzip', 'deflate']
+ send.mime.default_type = 'application/octet-stream'
+@@ -140,7 +142,10 @@ async function fastifyStatic (fastify, opts) {
+           matchRoutePrefix ??= createRoutePrefixMatcher(req.routeOptions.url)
+ 
+           const pathname = getPathnameForSend(req.raw.url, matchRoutePrefix)
+-          if (!pathname) {
++          if (pathname === null) {
++            return reply.send(forbiddenPathError())
++          }
++          if (pathname === undefined) {
+             return reply.callNotFound()
+           }
+ 
+@@ -252,6 +257,12 @@ async function fastifyStatic (fastify, opts) {
+       return reply.callNotFound()
+     }
+ 
++    // @fastify/send rejects leading ".." segments, but it normalizes
++    // non-leading ones away before its guard runs.
++    if (dotDotSegmentRegex.test(pathname) && !leadingDotDotSegmentRegex.test(pathname)) {
++      return reply.send(forbiddenPathError())
++    }
++
+     if (allowedPath && !allowedPath(pathname, options.root, request)) {
+       return reply.callNotFound()
+     }
+@@ -553,6 +564,16 @@ function getContentType (path) {
+   return `${type}; charset=utf-8`
+ }
+ 
++/**
++ * @returns {Error & { status?: number, statusCode?: number }}
++ */
++function forbiddenPathError () {
++  const error = new Error('Forbidden')
++  error.status = 403
++  error.statusCode = 403
++  return error
++}
++
+ /**
+  * @param {string} pathname
+  * @param {*} root
+@@ -720,7 +741,7 @@ function createRoutePrefixMatcher (route) {
+ /**
+  * @param {string} url
+  * @param {(pathname: string, pathnameEnd: number) => number|undefined} matchRoutePrefix
+- * @returns {string|undefined}
++ * @returns {string|null|undefined}
+  */
+ function getPathnameForSend (url, matchRoutePrefix) {
+   const questionMark = url.indexOf('?')
+@@ -740,7 +761,16 @@ function getPathnameForSend (url, matchRoutePrefix) {
+   }
+ 
+   try {
+-    return decodeURI(pathname)
++    const decodedUrlPathname = decodeURI(url.slice(0, pathnameEnd))
++    const decodedPathname = decodeURI(pathname)
++
++    // Check the full raw URL path, because route params can consume a
++    // dot-dot segment before the suffix is passed to @fastify/send.
++    if (dotDotSegmentRegex.test(decodedUrlPathname) && !leadingDotDotSegmentRegex.test(decodedPathname)) {
++      return null
++    }
++
++    return decodedPathname
+   } catch {
+ 
+   }
+diff --git a/test/static.test.js b/test/static.test.js
+index 61cfd33..756ba07 100644
+--- a/test/static.test.js
++++ b/test/static.test.js
+@@ -73,6 +73,30 @@ function genericErrorResponseChecks (t, response) {
+   t.assert.ok(response.headers.get?.('date') ?? response.headers.date)
+ }
+ 
++function rawGet (port, requestPath) {
++  return new Promise((resolve, reject) => {
++    const request = http.request({
++      hostname: 'localhost',
++      port,
++      path: requestPath,
++      method: 'GET'
++    }, (response) => {
++      let body = ''
++      response.setEncoding('utf8')
++      response.on('data', chunk => { body += chunk })
++      response.on('end', () => {
++        resolve({
++          statusCode: response.statusCode,
++          body
++        })
++      })
++    })
++
++    request.on('error', reject)
++    request.end()
++  })
++}
++
+ if (typeof Promise.withResolvers === 'undefined') {
+   Promise.withResolvers = function () {
+     let promiseResolve, promiseReject
+@@ -3553,14 +3577,15 @@ test(
+ 
+ test('should not redirect to protocol-relative locations', async (t) => {
+   const urls = [
+-    ['//^/..', '/', 301],
++    ['//^/..', null, 403],
+     ['//^/.', null, 404], // it is NOT recognized as a directory by pillarjs/send
+-    ['//:/..', '/', 301],
++    ['//:/..', null, 403],
+     ['/\\\\a//google.com/%2e%2e%2f%2e%2e', null, 404],
+     ['//a//youtube.com/%2e%2e%2f%2e%2e', null, 404],
+     ['/^', null, 404], // it is NOT recognized as a directory by pillarjs/send
+-    ['//google.com/%2e%2e', '/', 301],
+-    ['//users/%2e%2e', '/', 301],
++    ['/deep/path/for/test/.', '/deep/path/for/test/', 301],
++    ['//google.com/%2e%2e', null, 403],
++    ['//users/%2e%2e', null, 403],
+     ['//users', null, 404],
+     ['///deep/path//for//test//index.html', null, 200]
+   ]
+@@ -4062,6 +4087,98 @@ test('does not serve static files with encoded path separators', async (t) => {
+   t.assert.deepStrictEqual(encodedPathResponse.json().message, 'Route GET:/deep%2Fpath/for/test/purpose/foo.html not found')
+ })
+ 
++test('does not serve static files with dot-dot path segments', async (t) => {
++  t.plan(8)
++
++  const fastify = Fastify()
++
++  t.after(() => fastify.close())
++
++  fastify.all('/deep/*', async (_request, reply) => {
++    reply.code(401).send('Unauthorized')
++  })
++
++  fastify.register(fastifyStatic, {
++    root: path.join(__dirname, '/static')
++  })
++
++  await fastify.listen({ port: 0 })
++  fastify.server.unref()
++
++  const response = await rawGet(fastify.server.address().port, '/deep/path/for/test/purpose/foo.html')
++  t.assert.deepStrictEqual(response.statusCode, 401)
++  t.assert.deepStrictEqual(response.body, 'Unauthorized')
++
++  for (const requestPath of [
++    '/foo/../deep/path/for/test/purpose/foo.html',
++    '/foo/%2e%2e/deep/path/for/test/purpose/foo.html',
++    '/foo/%2E%2E/deep/path/for/test/purpose/foo.html'
++  ]) {
++    const dotDotResponse = await rawGet(fastify.server.address().port, requestPath)
++    t.assert.deepStrictEqual(dotDotResponse.statusCode, 403)
++    t.assert.match(dotDotResponse.body, /Forbidden/u)
++  }
++})
++
++test('does not serve static files when dot-dot path segments are consumed by a route param', async (t) => {
++  t.plan(8)
++
++  const fastify = Fastify()
++
++  t.after(() => fastify.close())
++
++  fastify.all('/deep/*', async (_request, reply) => {
++    reply.code(401).send('Unauthorized')
++  })
++
++  fastify.register(fastifyStatic, {
++    root: path.join(__dirname, '/static'),
++    prefix: '/app/:version',
++    decorateReply: false
++  })
++
++  await fastify.listen({ port: 0 })
++  fastify.server.unref()
++
++  const response = await rawGet(fastify.server.address().port, '/deep/path/for/test/purpose/foo.html')
++  t.assert.deepStrictEqual(response.statusCode, 401)
++  t.assert.deepStrictEqual(response.body, 'Unauthorized')
++
++  for (const requestPath of [
++    '/app/../deep/path/for/test/purpose/foo.html',
++    '/app/%2e%2e/deep/path/for/test/purpose/foo.html',
++    '/app/%2E%2E/deep/path/for/test/purpose/foo.html'
++  ]) {
++    const dotDotResponse = await rawGet(fastify.server.address().port, requestPath)
++    t.assert.deepStrictEqual(dotDotResponse.statusCode, 403)
++    t.assert.match(dotDotResponse.body, /Forbidden/u)
++  }
++})
++
++test('sendFile rejects non-leading dot-dot path segments', async (t) => {
++  t.plan(2)
++
++  const fastify = Fastify()
++
++  t.after(() => fastify.close())
++
++  fastify.register(fastifyStatic, {
++    root: path.join(__dirname, '/static')
++  })
++
++  fastify.get('/dot-dot', (_request, reply) => {
++    reply.sendFile('foo/../index.html')
++  })
++
++  const response = await fastify.inject({
++    method: 'GET',
++    url: '/dot-dot'
++  })
++
++  t.assert.deepStrictEqual(response.statusCode, 403)
++  t.assert.match(response.body, /Forbidden/u)
++})
++
+ test('serves wildcard files when registered in an encapsulated context', async (t) => {
+   t.plan(3)
+ 

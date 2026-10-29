@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Real-library-wrap sink for the cyclonedx-core-java XXE incomplete-fix pair.
+  The ONLY thing that varies across v0/v1/v2 is the pinned cyclonedx-core-java version
+  (build-arg CDX_VER), resolved from Maven Central at build time (REAL published bytes):
+    v0 = 8.0.0   (XXE open in BOTH the XML BOM parser and the XML validator)
+    v1 = 9.0.4   (CVE-2024-38374 fix: parser hardened; validator STILL open = TARGET)
+    v2 = 11.0.1  (CVE-2025-64518 fix: validator/SchemaFactory hardened too)
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>cdx-xxe-sink</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Overridden per build via -Dcdx.version=8.0.0 / 9.0.4 / 11.0.1 -->
+    <cdx.version>9.0.4</cdx.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.cyclonedx</groupId>
+      <artifactId>cyclonedx-core-java</artifactId>
+      <version>${cdx.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>cdx-xxe-sink</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.1</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>App</mainClass>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

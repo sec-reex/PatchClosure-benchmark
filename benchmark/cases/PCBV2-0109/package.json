@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "fastify": "5.11.0",
+    "@fastify/static": "__VERSION__"
+  }
+}

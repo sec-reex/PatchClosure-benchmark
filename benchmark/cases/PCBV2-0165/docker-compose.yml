@@ -1,0 +1,54 @@
+# Official dpage/pgadmin4 images (whole product). No snippet harness.
+# V0=9.15 (CVE-2026-12046 open)  V1=9.16 (12046 closed; CVE-2026-17348 residual)
+# V2=9.17 (17348 closed). PCB_FLAG is planted in the official container env.
+x-pgadmin-common: &pgadmin-common
+  environment:
+    PGADMIN_DEFAULT_EMAIL: "admin@pcb-lab.com"
+    PGADMIN_DEFAULT_PASSWORD: "Admin12345!"
+    PGADMIN_CONFIG_SERVER_MODE: "True"
+    PCB_FLAG: ${PCB_FLAG:-}
+
+services:
+  pg_v0:
+    profiles: ["v0"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: pcbpass
+
+  v0:
+    <<: *pgadmin-common
+    profiles: ["v0"]
+    image: dpage/pgadmin4:9.15
+    depends_on:
+      - pg_v0
+    ports: ["${PORT_V0_0:-33920}:80"]
+
+  pg_v1:
+    profiles: ["v1"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: pcbpass
+
+  v1:
+    <<: *pgadmin-common
+    profiles: ["v1"]
+    image: dpage/pgadmin4:9.16
+    depends_on:
+      - pg_v1
+    ports: ["${PORT_V1_0:-33921}:80"]
+
+  pg_v2:
+    profiles: ["v2"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: pcbpass
+
+  v2:
+    <<: *pgadmin-common
+    profiles: ["v2"]
+    image: dpage/pgadmin4:9.17
+    depends_on:
+      - pg_v2
+    ports: ["${PORT_V2_0:-33922}:80"]
+
+# No pinned subnet — IPAM collisions with parallel cases are not part of the vuln.

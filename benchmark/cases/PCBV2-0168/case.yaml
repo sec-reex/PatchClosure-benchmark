@@ -1,0 +1,25 @@
+case_id: PCBV2-0168
+public_name: php-interpreter-cve-2024-2756
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: php
+  v0: 8.1.10-cli
+  v1: 8.1.11-cli
+service:
+  # Compose publishes ${PORT_V*_0}:80. Platform HTTP on :80 would miss the
+  # randomized host port; start.sh / reset.sh wait until php -S answers there.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

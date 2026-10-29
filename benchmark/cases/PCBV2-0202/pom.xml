@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PatchClosure-Bench REAL Spring Boot web app for ssti_thymeleaf_spel_sandbox
+     (CVE-2026-40478 then CVE-2026-41901, Thymeleaf restricted-SpEL preprocessing sandbox escape).
+
+     A real Spring Boot 3 web application (embedded Tomcat) whose only non-framework code is a
+     controller plus a benign canary class. The EXACT published org.thymeleaf:thymeleaf-spring6 is
+     pinned per build via -Dthymeleaf.version=${THYMELEAF_VER} (V0=3.1.3.RELEASE / V1=3.1.4.RELEASE /
+     V2=3.1.5.RELEASE); this overrides the Spring-Boot-managed thymeleaf.version so the REAL,
+     unmodified restricted-context guard (SpringStandardExpressionUtils.containsExternalAccess plus
+     ExpressionUtils.normalize) both CVEs patch is the one on the classpath. No vendored jars,
+     no Thymeleaf/Spring source is copied or modified. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.3.5</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>pcb</groupId>
+  <artifactId>thymeleaf-ssti-app</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <java.version>17</java.version>
+    <!-- Overridden at build time by -Dthymeleaf.version=${THYMELEAF_VER}; this same property
+         pins BOTH org.thymeleaf:thymeleaf and org.thymeleaf:thymeleaf-spring6 in the Spring Boot BOM. -->
+    <thymeleaf.version>3.1.4.RELEASE</thymeleaf.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <!-- Brings the real org.thymeleaf:thymeleaf-spring6 (+ thymeleaf core) at ${thymeleaf.version}. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-thymeleaf</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>app</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

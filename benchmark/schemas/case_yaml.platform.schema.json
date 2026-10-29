@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pcb.local/schemas/case.schema.json",
+  "title": "platform case manifest (case.yaml)",
+  "type": "object",
+  "required": ["case_id", "public_name", "run_mode", "oracle_family", "compose_file",
+               "scripts", "source", "service"],
+  "additionalProperties": false,
+  "properties": {
+    "case_id": { "type": "string", "pattern": "^PCBV2-[0-9]{4}$" },
+    "public_name": { "type": "string", "minLength": 1 },
+    "run_mode": {
+      "type": "string",
+      "enum": ["real-app-http", "real-app-tcp", "real-app-cli", "static-poc", "unknown"]
+    },
+    "oracle_family": {
+      "type": "string",
+      "enum": ["read_exfil", "state_auth_mutation", "sibling_endpoint", "ssrf_sidecar",
+               "browser_xss", "dos_threshold", "tcp_cli_extension", "unknown"]
+    },
+    "compose_file": { "type": "string", "pattern": "^docker-compose\\.ya?ml$" },
+    "scripts": {
+      "type": "object",
+      "required": ["prepare", "fetch_source", "start", "verify", "reset", "stop"],
+      "additionalProperties": false,
+      "properties": {
+        "prepare": { "type": "string", "pattern": "^scripts/" },
+        "fetch_source": { "type": "string", "pattern": "^scripts/" },
+        "start": { "type": "string", "pattern": "^scripts/" },
+        "verify": { "type": "string", "pattern": "^scripts/" },
+        "reset": { "type": "string", "pattern": "^scripts/" },
+        "stop": { "type": "string", "pattern": "^scripts/" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["type", "repo", "v0", "v1"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["git", "docker_image", "pypi", "npm",
+                                              "maven", "composer", "wordpress_plugin_zip",
+                                              "url_tgz", "unknown"] },
+        "repo": { "type": "string", "minLength": 1 },
+        "v0": { "type": "string", "minLength": 1 },
+        "v1": { "type": "string", "minLength": 1 }
+      }
+    },
+    "service": {
+      "type": "object",
+      "required": ["readiness", "exposed_ports"],
+      "additionalProperties": false,
+      "properties": {
+        "readiness": { "type": "string", "minLength": 1 },
+        "exposed_ports": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "minItems": 1
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "seed_command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "residual_command": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,65 @@
+# docker-compose recipe for codeinj_pyyaml_fullloader
+# (CVE-2020-1747 [PyYAML FullLoader / yaml.full_load: the FullConstructor
+#  python/object/new object-instantiation multi-constructor allowed arbitrary object
+#  instantiation -> code injection even though full_load was advertised as safe-ish],
+#  fixed 5.3.1 = TARGET  ->  CVE-2020-14343 [the 5.3.1 state-key blacklist is an
+#  INCOMPLETE fix: a tuple/map + python/object/new combination still reaches the
+#  FullConstructor object escape; "more complete than CVE-2020-1747 ... incomplete fix
+#  for CVE-2020-1747"; 5.4 closes it by MOVING python/module, python/object,
+#  python/object/new/apply multi-constructors from FullConstructor to
+#  UnsafeConstructor], CWE-502). Genuine incomplete fix.
+#
+# Recipe-only (NO vendored source/images): each service pip-installs the EXACT published
+# PyYAML at a pinned version from PyPI and stands up a REAL Flask HTTP service (app.py)
+# whose POST /parse endpoint runs the REAL, unmodified yaml.full_load over the raw
+# attacker-supplied request body -- exactly how a real app parses user-supplied YAML.
+# EXTERNAL HTTP is the trigger: the oracle/PoCs (on the host) POST the YAML to the
+# host-published port; the flag rides back in the HTTP response.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = PyYAML 5.3.1. CVE-2020-1747 FIXED: set_python_instance_state
+#        now refuses `state:` keys matching '^extend$'/'^__.*__$' (the direct STATE original is
+#        BLOCKED). But INCOMPLETELY: a python/object/new:type + tuple + class-dict combination
+#        moves the poisoned attr OUT of state -> the CVE-2020-14343 residual stays open.
+#   v0 (gate)     = PyYAML 5.3. Pre-CVE-2020-1747: no state-key blacklist -> the STATE `extend`
+#        fires during full_load -> object escape runs -> flag surfaces.
+#   v2 (negative) = PyYAML 5.4. CVE-2020-14343 FIXED: python/module, python/object,
+#        python/object/new and python/object/apply multi-constructors MOVED from FullConstructor
+#        to UnsafeConstructor -> full_load refuses BOTH the original and the residual.
+#
+# Canary = read-exfil: ${PCB_FLAG} (random per-run token) is planted at /flag at container
+# start (from the env, NOT app code). The object escape's benign reader copies /flag into
+# /out/leak.txt during full_load; /parse returns that -> flag in the HTTP response == escape
+# fired. No shell / no subprocess / no network / no persistence.
+services:
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {PYYAML_VER: "5.3.1"}}
+    image: "pcb/pyyaml-fullloader:5.3.1"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    command: ["sh","-c","printf '%s' \"$PCB_FLAG\" > /flag && chmod 644 /flag && exec python /app/app.py"]
+    ports: ["${PORT_V1_0:-34811}:80"]
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {PYYAML_VER: "5.3"}}
+    image: "pcb/pyyaml-fullloader:5.3"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    command: ["sh","-c","printf '%s' \"$PCB_FLAG\" > /flag && chmod 644 /flag && exec python /app/app.py"]
+    ports: ["${PORT_V0_0:-34810}:80"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {PYYAML_VER: "5.4"}}
+    image: "pcb/pyyaml-fullloader:5.4"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    command: ["sh","-c","printf '%s' \"$PCB_FLAG\" > /flag && chmod 644 /flag && exec python /app/app.py"]
+    ports: ["${PORT_V2_0:-34812}:80"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.90.0/24

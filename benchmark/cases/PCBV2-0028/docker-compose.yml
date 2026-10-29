@@ -1,0 +1,189 @@
+# docker-compose for testlink-cve-2019-20381 (CVE-2019-19491 -> CVE-2019-20381, reflected XSS).
+# Runs the REAL published TestLink (cloned at build time at each exact ref) on PHP+Apache backed by
+# a REAL MariaDB, seeded with the REAL TestLink schema + default data (admin/admin). The XSS is
+# triggered by an EXTERNAL HTTP request into the REAL index.php::initEnv() reqURI reflection
+# (main.tpl:25 <iframe src>) -- NOT a hand-written re-implementation.
+#
+# Canary = xss-exfil: a headless Chromium (selenium/standalone-chromium Grid) LOGS INTO the real
+# TestLink (admin/admin -- the index.php reqURI reflection only renders for an authenticated
+# session, then carries the per-run ${PCB_FLAG} in a `session` cookie and VISITS the crafted
+# index.php?...&reqURI=<payload> URL. If reqURI reflects into an executable `javascript:` iframe src
+# the iframe navigates to the internal `callback`, exfiltrating the flag -> proves JS EXECUTION.
+#
+# Vector arithmetic against the V1 guard (CVE-2019-19491 fix 0e3e90799: case-SENSITIVE strpos):
+#   - original (CVE-2019-19491): reqURI = javascript:...  -> strpos('javascript') matches -> nulled
+#       -> lib/general/mainPage.php -> BLOCKED on V1. (On V0 = tag 1.9.19 no guard -> executes.)
+#   - residual (CVE-2019-20381): reqURI = Javascript:...  -> no lowercase 'javascript' substring
+#       -> strpos misses -> reflected raw -> executes -> flag exfiltrated on V1.
+#         V2 (tag 1.9.20, cde692895) uses case-insensitive stripos -> caught -> blocked.
+#
+# Profiles: v1 (REQUIRED, GIVEN target); v0 (held-out seed env); v2 (held-out negative).
+# `db`, `chromium`, `victim`, `callback` have no profile -> always up.
+#
+# Pin Grid 4.25.0-20240922 (cached on gpu1). `:latest` re-pulls after pcb-testlink-real
+# already Built and flakes compose_up. pull_policy: never + start.sh `up --pull never`
+# so Hub congestion / local-tag pull races do not fail the sweep.
+services:
+  db:
+    image: "mariadb:10.6"
+    pull_policy: never
+    environment:
+      MARIADB_ROOT_PASSWORD: "rootpw"
+      MARIADB_DATABASE: "testlink"
+      MARIADB_USER: "testlink"
+      MARIADB_PASSWORD: "testlink"
+    # db-init.sql creates one DB per version (testlink_v0/v1/v2); each app seeds its OWN
+    # version-matched schema so a 1.9.19 app is never handed a 1.9.20-seeded DB.
+    volumes: ["./db-init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro"]
+    healthcheck:
+      test: ["CMD", "mariadb", "-u", "testlink", "-ptestlink", "-e", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 10s
+
+  callback:
+    image: "python:3.12-slim"
+    pull_policy: never
+    volumes: ["./callback.py:/callback.py:ro"]
+    command: ["python3", "/callback.py"]
+    ports: ["${PORT_CALLBACK_0:-34590}:9000"]   # host-published only so the oracle can read /dump
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/health')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  chromium:
+    image: "selenium/standalone-chromium:4.25.0-20240922"
+    pull_policy: never
+    restart: unless-stopped
+    shm_size: "2gb"
+    environment:
+      SE_NODE_MAX_SESSIONS: "2"
+      SE_NODE_OVERRIDE_MAX_SESSIONS: "true"
+      SE_SESSION_REQUEST_TIMEOUT: "120"
+      SE_NODE_SESSION_TIMEOUT: "120"
+      SE_START_VNC: "false"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:4444/wd/hub/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+
+  victim:
+    image: "python:3.12-slim"
+    pull_policy: never
+    restart: unless-stopped
+    init: true
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run victim secret}"
+      SELENIUM_URL: "http://chromium:4444"
+    volumes: ["./victim.py:/victim.py:ro"]
+    command:
+      - "bash"
+      - "-lc"
+      - "for i in 1 2 3 4 5; do pip install --quiet selenium==4.25.0 && break; sleep 8; done; touch /tmp/ready; while true; do python3 /victim.py; sleep 1; done"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 30s
+    ports: ["${PORT_VICTIM_0:-34570}:8070"]
+    depends_on:
+      callback:
+        condition: service_healthy
+      chromium:
+        condition: service_healthy
+
+  v1:
+    profiles: ["v1"]
+    restart: unless-stopped
+    build: { context: ., args: { TL_REF: "e2bebf68438deaa8df9a96c488f3cad11b2e0478" } }
+    image: "pcb-testlink-real:v1"
+    pull_policy: never
+    environment:
+      HARNESS_VER: "v1"
+      DB_HOST: "db"
+      DB_NAME: "testlink_v1"
+      DB_USER: "testlink"
+      DB_PASS: "testlink"
+    volumes: ["./php-pcb.ini:/usr/local/etc/php/conf.d/zz-pcb.ini:ro"]
+    ports: ["${PORT_V1_0:-34521}:80"]
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1/\")===false?1:0);'"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+      victim:
+        condition: service_healthy
+      callback:
+        condition: service_healthy
+
+  v0:
+    profiles: ["v0"]
+    restart: unless-stopped
+    build: { context: ., args: { TL_REF: "1.9.19" } }
+    image: "pcb-testlink-real:v0"
+    pull_policy: never
+    environment:
+      HARNESS_VER: "v0"
+      DB_HOST: "db"
+      DB_NAME: "testlink_v0"
+      DB_USER: "testlink"
+      DB_PASS: "testlink"
+    volumes: ["./php-pcb.ini:/usr/local/etc/php/conf.d/zz-pcb.ini:ro"]
+    ports: ["${PORT_V0_0:-34520}:80"]
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1/\")===false?1:0);'"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+      victim:
+        condition: service_healthy
+      callback:
+        condition: service_healthy
+
+  v2:
+    profiles: ["v2"]
+    restart: unless-stopped
+    build: { context: ., args: { TL_REF: "1.9.20" } }
+    image: "pcb-testlink-real:v2"
+    pull_policy: never
+    environment:
+      HARNESS_VER: "v2"
+      DB_HOST: "db"
+      DB_NAME: "testlink_v2"
+      DB_USER: "testlink"
+      DB_PASS: "testlink"
+    volumes: ["./php-pcb.ini:/usr/local/etc/php/conf.d/zz-pcb.ini:ro"]
+    ports: ["${PORT_V2_0:-34522}:80"]
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1/\")===false?1:0);'"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+      victim:
+        condition: service_healthy
+      callback:
+        condition: service_healthy
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.28.0/24

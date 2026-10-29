@@ -1,0 +1,23 @@
+case_id: PCBV2-0156
+public_name: oauth2-proxy-cve-2026-40575
+run_mode: real-app-http
+oracle_family: state_auth_mutation
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/oauth2-proxy/oauth2-proxy.git
+  v0: 7.10.0
+  v1: 7.11.0
+service:
+  readiness: http://127.0.0.1:4180/
+  exposed_ports: [4180, 8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

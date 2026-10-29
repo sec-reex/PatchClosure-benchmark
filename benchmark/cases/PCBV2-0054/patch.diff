@@ -1,0 +1,320 @@
+PCBV2-0054 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: d2e9baf380108950c48e0ab700ccdbf11dd753ab
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0054/
+
+diff --git a/dubbo-config/dubbo-config-api/src/main/java/org/apache/dubbo/config/bootstrap/DubboBootstrap.java b/dubbo-config/dubbo-config-api/src/main/java/org/apache/dubbo/config/bootstrap/DubboBootstrap.java
+index 10dd4f2..4af2dbc 100644
+--- a/dubbo-config/dubbo-config-api/src/main/java/org/apache/dubbo/config/bootstrap/DubboBootstrap.java
++++ b/dubbo-config/dubbo-config-api/src/main/java/org/apache/dubbo/config/bootstrap/DubboBootstrap.java
+@@ -127,7 +127,7 @@ public class DubboBootstrap extends GenericEventListener {
+ 
+     private final Logger logger = LoggerFactory.getLogger(getClass());
+ 
+-    private static DubboBootstrap instance;
++    private static volatile DubboBootstrap instance;
+ 
+     private final AtomicBoolean awaited = new AtomicBoolean(false);
+ 
+@@ -176,9 +176,13 @@ public class DubboBootstrap extends GenericEventListener {
+     /**
+      * See {@link ApplicationModel} and {@link ExtensionLoader} for why DubboBootstrap is designed to be singleton.
+      */
+-    public static synchronized DubboBootstrap getInstance() {
++    public static DubboBootstrap getInstance() {
+         if (instance == null) {
+-            instance = new DubboBootstrap();
++            synchronized (DubboBootstrap.class) {
++                if (instance == null) {
++                    instance = new DubboBootstrap();
++                }
++            }
+         }
+         return instance;
+     }
+diff --git a/dubbo-config/dubbo-config-spring/src/main/java/org/apache/dubbo/config/spring/context/annotation/EnableDubbo.java b/dubbo-config/dubbo-config-spring/src/main/java/org/apache/dubbo/config/spring/context/annotation/EnableDubbo.java
+index 706e288..5e3ef54 100644
+--- a/dubbo-config/dubbo-config-spring/src/main/java/org/apache/dubbo/config/spring/context/annotation/EnableDubbo.java
++++ b/dubbo-config/dubbo-config-spring/src/main/java/org/apache/dubbo/config/spring/context/annotation/EnableDubbo.java
+@@ -72,7 +72,7 @@ public @interface EnableDubbo {
+     /**
+      * It indicates whether {@link AbstractConfig} binding to multiple Spring Beans.
+      *
+-     * @return the default value is <code>false</code>
++     * @return the default value is <code>true</code>
+      * @see EnableDubboConfig#multiple()
+      */
+     @AliasFor(annotation = EnableDubboConfig.class, attribute = "multiple")
+diff --git a/dubbo-config/dubbo-config-spring/src/main/java/org/apache/dubbo/config/spring/context/annotation/EnableDubboConfig.java b/dubbo-config/dubbo-config-spring/src/main/java/org/apache/dubbo/config/spring/context/annotation/EnableDubboConfig.java
+index 314f2e9..1ec03e7 100644
+--- a/dubbo-config/dubbo-config-spring/src/main/java/org/apache/dubbo/config/spring/context/annotation/EnableDubboConfig.java
++++ b/dubbo-config/dubbo-config-spring/src/main/java/org/apache/dubbo/config/spring/context/annotation/EnableDubboConfig.java
+@@ -72,7 +72,7 @@ public @interface EnableDubboConfig {
+     /**
+      * It indicates whether binding to multiple Spring Beans.
+      *
+-     * @return the default value is <code>false</code>
++     * @return the default value is <code>true</code>
+      * @revised 2.5.9
+      */
+     boolean multiple() default true;
+diff --git a/dubbo-dependencies-bom/pom.xml b/dubbo-dependencies-bom/pom.xml
+index 4285d82..1fbbaa8 100644
+--- a/dubbo-dependencies-bom/pom.xml
++++ b/dubbo-dependencies-bom/pom.xml
+@@ -152,7 +152,7 @@
+         <activation_version>1.2.0</activation_version>
+         <test_container_version>1.11.2</test_container_version>
+         <etcd_launcher_version>0.3.0</etcd_launcher_version>
+-        <hessian_lite_version>3.2.7</hessian_lite_version>
++        <hessian_lite_version>3.2.8</hessian_lite_version>
+         <swagger_version>1.5.19</swagger_version>
+         <spring_test_version>4.3.16.RELEASE</spring_test_version>
+ 
+diff --git a/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2ObjectInput.java b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2ObjectInput.java
+index d38b5c0..23a7783 100644
+--- a/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2ObjectInput.java
++++ b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2ObjectInput.java
+@@ -17,6 +17,7 @@
+ package org.apache.dubbo.common.serialize.hessian2;
+ 
+ import org.apache.dubbo.common.serialize.ObjectInput;
++import org.apache.dubbo.common.serialize.hessian2.dubbo.Hessian2FactoryInitializer;
+ 
+ import com.alibaba.com.caucho.hessian.io.Hessian2Input;
+ 
+@@ -31,7 +32,7 @@ public class Hessian2ObjectInput implements ObjectInput {
+ 
+     private static ThreadLocal<Hessian2Input> INPUT_TL = ThreadLocal.withInitial(() -> {
+         Hessian2Input h2i = new Hessian2Input(null);
+-        h2i.setSerializerFactory(Hessian2SerializerFactory.SERIALIZER_FACTORY);
++        h2i.setSerializerFactory(Hessian2FactoryInitializer.getInstance().getSerializerFactory());
+         h2i.setCloseStreamOnClose(true);
+         return h2i;
+     });
+diff --git a/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2ObjectOutput.java b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2ObjectOutput.java
+index a878593..9844415 100644
+--- a/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2ObjectOutput.java
++++ b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2ObjectOutput.java
+@@ -17,6 +17,7 @@
+ package org.apache.dubbo.common.serialize.hessian2;
+ 
+ import org.apache.dubbo.common.serialize.ObjectOutput;
++import org.apache.dubbo.common.serialize.hessian2.dubbo.Hessian2FactoryInitializer;
+ 
+ import com.alibaba.com.caucho.hessian.io.Hessian2Output;
+ 
+@@ -30,7 +31,7 @@ public class Hessian2ObjectOutput implements ObjectOutput {
+ 
+     private static ThreadLocal<Hessian2Output> OUTPUT_TL = ThreadLocal.withInitial(() -> {
+         Hessian2Output h2o = new Hessian2Output(null);
+-        h2o.setSerializerFactory(Hessian2SerializerFactory.SERIALIZER_FACTORY);
++        h2o.setSerializerFactory(Hessian2FactoryInitializer.getInstance().getSerializerFactory());
+         h2o.setCloseStreamOnClose(true);
+         return h2o;
+     });
+diff --git a/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2SerializerFactory.java b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2SerializerFactory.java
+index a5c5a90..6a8db87 100644
+--- a/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2SerializerFactory.java
++++ b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/Hessian2SerializerFactory.java
+@@ -20,9 +20,7 @@ import com.alibaba.com.caucho.hessian.io.SerializerFactory;
+ 
+ public class Hessian2SerializerFactory extends SerializerFactory {
+ 
+-    public static final SerializerFactory SERIALIZER_FACTORY = new Hessian2SerializerFactory();
+-
+-    private Hessian2SerializerFactory() {
++    public Hessian2SerializerFactory() {
+     }
+ 
+     @Override
+diff --git a/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/AbstractHessian2FactoryInitializer.java b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/AbstractHessian2FactoryInitializer.java
+new file mode 100644
+index 0000000..41c9495
+--- /dev/null
++++ b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/AbstractHessian2FactoryInitializer.java
+@@ -0,0 +1,36 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.dubbo.common.serialize.hessian2.dubbo;
++
++import com.alibaba.com.caucho.hessian.io.SerializerFactory;
++
++public abstract class AbstractHessian2FactoryInitializer implements Hessian2FactoryInitializer {
++    private static SerializerFactory SERIALIZER_FACTORY;
++
++    @Override
++    public SerializerFactory getSerializerFactory() {
++        if (SERIALIZER_FACTORY != null) {
++            return SERIALIZER_FACTORY;
++        }
++        synchronized (this) {
++            SERIALIZER_FACTORY = createSerializerFactory();
++        }
++        return SERIALIZER_FACTORY;
++    }
++
++    protected abstract SerializerFactory createSerializerFactory();
++}
+diff --git a/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/DefaultHessian2FactoryInitializer.java b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/DefaultHessian2FactoryInitializer.java
+new file mode 100644
+index 0000000..042889e
+--- /dev/null
++++ b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/DefaultHessian2FactoryInitializer.java
+@@ -0,0 +1,28 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.dubbo.common.serialize.hessian2.dubbo;
++
++import org.apache.dubbo.common.serialize.hessian2.Hessian2SerializerFactory;
++
++import com.alibaba.com.caucho.hessian.io.SerializerFactory;
++
++public class DefaultHessian2FactoryInitializer extends AbstractHessian2FactoryInitializer {
++    @Override
++    protected SerializerFactory createSerializerFactory() {
++        return new Hessian2SerializerFactory();
++    }
++}
+diff --git a/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/Hessian2FactoryInitializer.java b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/Hessian2FactoryInitializer.java
+new file mode 100644
+index 0000000..16576ec
+--- /dev/null
++++ b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/Hessian2FactoryInitializer.java
+@@ -0,0 +1,43 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.dubbo.common.serialize.hessian2.dubbo;
++
++import org.apache.dubbo.common.config.ConfigurationUtils;
++import org.apache.dubbo.common.extension.ExtensionLoader;
++import org.apache.dubbo.common.extension.SPI;
++import org.apache.dubbo.common.utils.StringUtils;
++
++import com.alibaba.com.caucho.hessian.io.SerializerFactory;
++
++@SPI("default")
++public interface Hessian2FactoryInitializer {
++    String WHITELIST = "dubbo.application.hessian2.whitelist";
++    String ALLOW = "dubbo.application.hessian2.allow";
++    String DENY = "dubbo.application.hessian2.deny";
++    ExtensionLoader<Hessian2FactoryInitializer> loader = ExtensionLoader.getExtensionLoader(Hessian2FactoryInitializer.class);
++
++    SerializerFactory getSerializerFactory();
++
++    static Hessian2FactoryInitializer getInstance() {
++        String whitelist = ConfigurationUtils.getProperty(WHITELIST);
++        if (StringUtils.isNotEmpty(whitelist)) {
++            return loader.getExtension("whitelist");
++        }
++        return loader.getDefaultExtension();
++    }
++
++}
+diff --git a/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/WhitelistHessian2FactoryInitializer.java b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/WhitelistHessian2FactoryInitializer.java
+new file mode 100644
+index 0000000..c2fe65e
+--- /dev/null
++++ b/dubbo-serialization/dubbo-serialization-hessian2/src/main/java/org/apache/dubbo/common/serialize/hessian2/dubbo/WhitelistHessian2FactoryInitializer.java
+@@ -0,0 +1,50 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.dubbo.common.serialize.hessian2.dubbo;
++
++import org.apache.dubbo.common.config.ConfigurationUtils;
++import org.apache.dubbo.common.serialize.hessian2.Hessian2SerializerFactory;
++import org.apache.dubbo.common.utils.StringUtils;
++
++import com.alibaba.com.caucho.hessian.io.SerializerFactory;
++
++/**
++ * see https://github.com/ebourg/hessian/commit/cf851f5131707891e723f7f6a9718c2461aed826
++ */
++public class WhitelistHessian2FactoryInitializer extends AbstractHessian2FactoryInitializer {
++
++    @Override
++    public SerializerFactory createSerializerFactory() {
++        SerializerFactory serializerFactory = new Hessian2SerializerFactory();
++        String whiteList = ConfigurationUtils.getProperty(WHITELIST);
++        if ("true".equals(whiteList)) {
++            serializerFactory.getClassFactory().setWhitelist(true);
++            String allowPattern = ConfigurationUtils.getProperty(ALLOW);
++            if (StringUtils.isNotEmpty(allowPattern)) {
++                serializerFactory.getClassFactory().allow(allowPattern);
++            }
++        } else {
++            serializerFactory.getClassFactory().setWhitelist(false);
++            String denyPattern = ConfigurationUtils.getProperty(DENY);
++            if (StringUtils.isNotEmpty(denyPattern)) {
++                serializerFactory.getClassFactory().deny(denyPattern);
++            }
++        }
++        return serializerFactory;
++    }
++
++}
+diff --git a/dubbo-serialization/dubbo-serialization-hessian2/src/main/resources/META-INF/dubbo/internal/org.apache.dubbo.common.serialize.hessian2.dubbo.Hessian2FactoryInitializer b/dubbo-serialization/dubbo-serialization-hessian2/src/main/resources/META-INF/dubbo/internal/org.apache.dubbo.common.serialize.hessian2.dubbo.Hessian2FactoryInitializer
+new file mode 100644
+index 0000000..460972e
+--- /dev/null
++++ b/dubbo-serialization/dubbo-serialization-hessian2/src/main/resources/META-INF/dubbo/internal/org.apache.dubbo.common.serialize.hessian2.dubbo.Hessian2FactoryInitializer
+@@ -0,0 +1,2 @@
++default=org.apache.dubbo.common.serialize.hessian2.dubbo.DefaultHessian2FactoryInitializer
++whitelist=org.apache.dubbo.common.serialize.hessian2.dubbo.WhitelistHessian2FactoryInitializer
+\ No newline at end of file

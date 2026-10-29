@@ -1,0 +1,25 @@
+case_id: PCBV2-0071
+public_name: open-webui-cve-2026-54019
+run_mode: real-app-http
+oracle_family: state_auth_mutation
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: ghcr.io/open-webui/open-webui
+  v0: "0.8.12"
+  v1: "0.9.0"
+service:
+  # Host port is ${PORT_OPENWEBUI_0}. Platform must not probe a stale :8080.
+  # start.sh waits until official Open WebUI /health returns 200.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

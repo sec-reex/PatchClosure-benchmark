@@ -1,0 +1,11 @@
+{
+  "name": "pcb-minimist-core",
+  "private": true,
+  "type": "commonjs",
+  "description": "Faithful-core prototype-pollution guard using the REAL npm `minimist` CLI arg-parser per version (pre-guard 1.2.1 -> __proto__ string guard 1.2.5 [CVE-2020-7598 fix, still bypassable via constructor.prototype] -> isConstructorOrProto 1.2.6 [CVE-2021-44906 fix]). npm aliases hold all three versions side-by-side; the harness selects one by HARNESS_VER and drives the REAL published minimist() setKey() on the crafted argv.",
+  "dependencies": {
+    "minimist-v0": "npm:minimist@1.2.1",
+    "minimist-v1": "npm:minimist@1.2.5",
+    "minimist-v2": "npm:minimist@1.2.6"
+  }
+}

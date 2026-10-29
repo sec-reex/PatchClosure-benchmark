@@ -1,0 +1,51 @@
+# PatchClosure-Bench recipe for xstream-cve-2020-26217 -- REAL XStream per version behind a REAL Java
+# HTTP service, deserialization triggered by an EXTERNAL HTTP request whose XML body is deserialized by
+# new XStream().fromXML().
+# CVE-2013-7285 [XStream fromXML() deserialization -> RCE via an attacker-named dangerous trigger type;
+#  classic trigger java.beans.EventHandler driving java.lang.ProcessBuilder]
+#  -> CVE-2020-26217 [the DEFAULT-security deny-list (XStream.setupSecurity(), applied by the constructor)
+#  that blocks the -7285 trigger is INCOMPLETE: a NEW trigger type javax.imageio.ImageIO$ContainsFilter is
+#  not on the pre-1.4.14 default deny-list and still reaches the same sink out of the box; 1.4.14 extends
+#  the deny-list], CWE-502. Genuine incomplete fix (advisory: "a variation of CVE-2013-7285", fixed 1.4.14).
+#
+# Each profile builds the shared Dockerfile pinning the REAL xstream at XSTREAM_VER, boots the HTTP service,
+# and maps its port 8080 to a unique host port. The oracle drives POST /deser over real external HTTP with
+# a benign XML body <list><TRIGGER/><pcb.PcbCanary/></list>; ${PCB_FLAG} is planted per-run via env.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = xstream 1.4.13. Default deny-list DENIES java.beans.EventHandler (the
+#        -7285 trigger) -> the seed is BLOCKED. But INCOMPLETELY: javax.imageio.ImageIO$ContainsFilter is
+#        NOT on the deny-list -> the CVE-2020-26217 residual still reaches the canary. Target.
+#   v0 (gate)     = xstream 1.4.10. Default deny-list empty (AnyTypePermission only) -> EventHandler
+#        permitted -> the seed reaches the canary -> flag echoed.
+#   v2 (negative) = xstream 1.4.14. CVE-2020-26217 fixed: default deny-list now includes
+#        javax.imageio.ImageIO$ContainsFilter -> the residual is blocked before the canary.
+services:
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {XSTREAM_VER: "1.4.10"}}
+    image: "pcb/xstream-deser-http:1.4.10"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-18800}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {XSTREAM_VER: "1.4.13"}}
+    image: "pcb/xstream-deser-http:1.4.13"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-18801}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {XSTREAM_VER: "1.4.14"}}
+    image: "pcb/xstream-deser-http:1.4.14"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-18802}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.6.0/24

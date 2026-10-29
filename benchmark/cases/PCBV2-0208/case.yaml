@@ -1,0 +1,24 @@
+case_id: PCBV2-0208
+public_name: typo3-cve-2013-4321
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/TYPO3/typo3.git
+  v0: TYPO3_6-0-4
+  v1: TYPO3_6-0-8
+service:
+  # Host port is ${PORT_V*_0}, not :80. start.sh waits for harness ping after up.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

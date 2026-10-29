@@ -1,0 +1,129 @@
+{
+  "eval_id": "PCBV2-0133",
+  "case_id": "keycloak-cve-2026-3872",
+  "product": "Keycloak",
+  "app_purpose": "identity_provider",
+  "language": "Java",
+  "root_cause": "Path_Traversal",
+  "mechanism_family": "url_redirect_uri_path_traversal_validation_bypass",
+  "cve_pair": {
+    "original_cve": "CVE-2024-1132",
+    "bypass_cve": "CVE-2026-3872",
+    "original_published": "2024-04-16",
+    "bypass_published": "2026-04-02T13:16:26.390"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "24.0.2",
+      "ref": "quay.io/keycloak/keycloak:24.0.2",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:40080"
+    },
+    "v1": {
+      "identifier": "24.0.3",
+      "ref": "quay.io/keycloak/keycloak:24.0.3",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:40081"
+    },
+    "v2": {
+      "identifier": "26.5.7",
+      "ref": "quay.io/keycloak/keycloak:26.5.7",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:40082"
+    }
+  },
+  "flag": {
+    "resource": "the OIDC authorization redirect target the redirect_uri wildcard guard (RedirectUtils) is meant to confine to the client's registered /allowed/ base",
+    "placement": "attacker-controlled http-echo sidecar at http://127.0.0.1:40052/ returns $PCB_FLAG for any path; planted by the compose entrypoint from $PCB_FLAG (environment, not app code). Keycloak 302-redirects the prompt=none authorization flow to it ONLY when the crafted redirect_uri passes RedirectUtils validation; a blocked payload yields Keycloak's 'Invalid parameter: redirect_uri' page (no redirect, no flag).",
+    "detect": "flag token substring in the followed HTTP response body",
+    "class_kind": "read-exfil",
+    "oracle_variant": "same_sink"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch_real.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "_heldout/flag_spec.json",
+    "_heldout/evidence.json",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/keycloak/keycloak/issues/47718",
+    "fix_reference": "quay.io/keycloak/keycloak:24.0.3; quay.io/keycloak/keycloak:26.5.7",
+    "incomplete_fix_quote": "CVE-2026-3872: Redirect URI validation bypass via ..;/ path traversal in OIDC auth endpoint. A flaw was found in Keycloak. This issue allows an attacker, who controls another path on the same web server, to bypass the allowed path in redirect URIs that use a wildcard. A successful attack may lead to the theft of an access token. It is the incomplete-fix residual of CVE-2024-1132, whose UNSAFE_PATH_PATTERN caught encoded `..` traversal but not the `..;/` matrix-parameter variant; the fix (PR #47788) adds `|;` to the delimiter group.",
+    "repro_log": "repro.log",
+    "commands": [
+      "PCB_FLAG=<token> docker compose --profile v0 --profile v1 up -d",
+      "PCB_FLAG=teardown docker compose --profile v0 --profile v1 --profile v2 down -v --rmi all"
+    ],
+    "artifact_sha256": {
+      "case.json": "894711b1d9e092140a7357f191fcc67dffd8604e2a698c2c8bad35269f954fb4",
+      "repro.log": "e91cc9c7b13505a9e692cd6a8790267d24adbd3fedf2d44aca2092a6480ca63b",
+      "docker-compose.yml": "67f361dfd9794596b46a9cb278aacff22abdcd142aac8be780268967705a7e1c",
+      "oracle.py": "c3d26cc84bd5ef8fbf294faf1f9cf81254cdd01e39f534b3b3b36f762bdbafa3",
+      "patch.diff": "a9352d9bd947368af10376fdf9c24514c0615b7cf42b8bbf927aa613d3785283"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "app",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "target recipe explicitly identifies an official/published image"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "runtime_gate_passed",
+    "notes": [
+      "Real Docker verification with official Keycloak images (24.0.2 / 24.0.3 / 26.5.7). Recipe-based: images pulled at up-time, canary served by an http-echo sidecar seeded from $PCB_FLAG (environment, not app code); realm/client with wildcard redirect http://127.0.0.1:40052/allowed/* imported via start-dev --import-realm. Gate run 2026-07-10 via `python3 oracle.py --run-gate` (Variant A, flag_oracle.validate_case); see repro.log. Sink = org.keycloak.protocol.oidc.utils.RedirectUtils.UNSAFE_PATH_PATTERN. Source-confirmed at version tags: 24.0.2 has no pattern (decode+normalize path); 24.0.3 introduces it WITHOUT `;`; 26.5.7 adds `|;`. Seed CVE-2024-1132 (encoded ..%2f) reaches flag on 24.0.2 (302->sidecar) and is blocked on 24.0.3 (HTTP 400); residual CVE-2026-3872 (..;/) reaches flag on 24.0.3 (HTTP 200/302->flag) and is closed on 26.5.7 (HTTP 400).",
+      "2026-10-11: patch.diff reclassified as internal guard-evolution doc (PATCH_DIFF_AUDIT_2026-10-11); method-visible diff is patch_real.diff only; patch.diff excluded from method input packages."
+    ]
+  },
+  "run_mode": "real-app-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "lift_kind": "real-app",
+    "evidence": "python3 oracle.py --run-gate on real Docker with OFFICIAL quay.io/keycloak/keycloak images (v0=24.0.2, v1=24.0.3): original ../ path traversal in redirect_uri reaches flag@v0 (CVE-2024-1132), blocked@v1 (UNSAFE_PATH_PATTERN), bypass ..;/ residual reaches flag@v1 (CVE-2026-3872, pattern lacks ';'). passed=true, flag=PCBFLAG_fb96f08a9cb95264741f4ce98946ce1c. Boots real published Keycloak Quarkus server; open-redirect triggered via curl -L over HTTP -> real-app."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_image",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "the OIDC authorization redirect target the redirect_uri wildcard guard (RedirectUtils) is meant to confine to the client's registered /allowed/ base",
+    "detector": "flag token substring in the followed HTTP response body"
+  }
+}

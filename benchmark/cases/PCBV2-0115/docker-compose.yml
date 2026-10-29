@@ -1,0 +1,75 @@
+# PatchClosure-Bench recipe for fuxa-cve-2026-25951.
+# Recipe-based (vulhub-style): NO committed images / source. Official FUXA
+# images are pulled at `up` time; only small text files live in this dir.
+#
+# Pair: CVE-2023-31718 (seed, /api/download path traversal) ->
+#       CVE-2026-25951 (residual, single-pass sanitize regex bypass via nested
+#                       sequences  ....//  -> GHSA-68m5-5w2h-h837).
+#
+# Profiles (SAME sink /api/download for seed & residual -> Variant A):
+#   v0 (held-out gate)  = frangoteam/fuxa:1.1.13  -> pre-31718: raw
+#        path.join(reportsDir, req.query.name); single ../ reads canary.
+#   v1 (REQUIRED, GIVEN, attackable) = frangoteam/fuxa:1.2.10 -> 31718 patched
+#        with the single-pass regex  req.query.name.replace(/..\//g,'')  -> single
+#        ../ is stripped/BLOCKED, but nested  ....//  collapses to ../ after one
+#        pass and still traverses (CVE-2026-25951, the TARGET).
+#   v2 (held-out negative) = frangoteam/fuxa:1.2.11 -> fully fixed:
+#        normalizeRelativePath()+resolveWithin() reject '..' segments AND treat
+#        '....' as a literal dir name -> both payloads blocked.
+#
+# Canary: a random per-run token planted at /canary.txt by the entrypoint from
+# ${PCB_FLAG}. It sits OUTSIDE reportsDir (/usr/src/app/FUXA/server/_reports),
+# so it is only reachable via a successful traversal. No app/business code is
+# touched. FUXA default settings have secureEnabled unset -> auth disabled ->
+# the admin /api/download endpoint is reachable without a token.
+x-fuxa-boot: &boot
+  working_dir: /usr/src/app/FUXA/server
+  entrypoint:
+    - /bin/sh
+    - -c
+    - |
+      printf '%s' "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}" > /canary.txt
+      chmod 644 /canary.txt
+      exec npm start
+  healthcheck:
+    test: ["CMD", "sh", "-c", "wget -qO- http://127.0.0.1:1881/api/version >/dev/null 2>&1 || true; exit 0"]
+    interval: 5s
+    timeout: 5s
+    retries: 20
+
+services:
+  v1:
+    <<: *boot
+    profiles: ["v1"]
+    image: "frangoteam/fuxa:1.2.10"
+    platform: linux/amd64
+    pull_policy: never
+    ports: ["${PORT_V1_0:-39611}:1881"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+  v0:
+    <<: *boot
+    profiles: ["v0"]
+    image: "frangoteam/fuxa:1.1.13"
+    platform: linux/amd64
+    pull_policy: never
+    ports: ["${PORT_V0_0:-39610}:1881"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+  v2:
+    <<: *boot
+    profiles: ["v2"]
+    image: "frangoteam/fuxa:1.2.11"
+    platform: linux/amd64
+    pull_policy: never
+    ports: ["${PORT_V2_0:-39612}:1881"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.116.0/24

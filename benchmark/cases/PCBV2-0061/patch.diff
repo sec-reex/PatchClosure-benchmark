@@ -1,0 +1,190 @@
+PCBV2-0061 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 45d156b6b..b59946fa2 (@keystone-6/core 6.5.0 — traverse all unique where keys on update/delete)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0061/
+
+diff --git a/packages/core/src/lib/core/mutations/index.ts b/packages/core/src/lib/core/mutations/index.ts
+index 56fcaf9fc..0c4ac4098 100644
+--- a/packages/core/src/lib/core/mutations/index.ts
++++ b/packages/core/src/lib/core/mutations/index.ts
+@@ -1,12 +1,7 @@
+-import {
+-  type BaseItem,
+-  type KeystoneContext
+-} from '../../../types'
+-import { Empty, } from '../../../types/schema/graphql-ts-schema'
+-import { type UniquePrismaFilter } from '../../../types/prisma'
+-import { graphql } from '../../../types/schema'
+-import { type ResolvedDBField } from '../resolve-relationships'
+-import { type InitialisedList } from '../initialise-lists'
++import type { BaseItem, KeystoneContext } from '../../../types'
++import type { UniquePrismaFilter } from '../../../types/prisma'
++import type { ResolvedDBField } from '../resolve-relationships'
++import type { InitialisedList } from '../initialise-lists'
+ import {
+   type IdType,
+   promiseAllRejectWithAllErrors,
+@@ -18,6 +13,7 @@ import {
+   resolveUniqueWhereInput,
+   resolveWhereInput,
+ } from '../where-inputs'
++import { graphql } from '../../../'
+ import {
+   accessDeniedError,
+   extensionError,
+@@ -34,7 +30,7 @@ import {
+ import { checkFilterOrderAccess } from '../filter-order-access'
+ import { runSideEffectOnlyHook, validate } from '../hooks'
+ 
+-import { mapUniqueWhereToWhere } from '../queries/resolvers'
++import { mapUniqueWhereToWhere, traverse } from '../queries/resolvers'
+ import {
+   RelationshipErrors,
+   resolveRelateToManyForCreateInput,
+@@ -44,6 +40,7 @@ import {
+   resolveRelateToOneForCreateInput,
+   resolveRelateToOneForUpdateInput,
+ } from './nested-mutation-one-input-resolvers'
++import { Empty } from '../../../types/schema/graphql-ts-schema'
+ 
+ async function getFilteredItem (
+   list: InitialisedList,
+@@ -58,7 +55,10 @@ async function getFilteredItem (
+   }
+ 
+   // merge the filter access control and try to get the item
+-  let where = mapUniqueWhereToWhere(uniqueWhere)
++  let where = mapUniqueWhereToWhere(uniqueWhere, list)
++
++  await checkFilterOrderAccess([...traverse(list, where as any)], context, 'filter')
++
+   if (typeof accessFilters === 'object') {
+     where = { AND: [where, await resolveWhereInput(accessFilters, list, context)] }
+   }
+@@ -185,10 +185,6 @@ async function updateSingle (
+   // validate and resolve the input filter
+   const uniqueWhere = await resolveUniqueWhereInput(where, list, context)
+ 
+-  // check filter access
+-  const fieldKey = Object.keys(uniqueWhere)[0]
+-  await checkFilterOrderAccess([{ fieldKey, list }], context, 'filter')
+-
+   // filter and item access control - throws an AccessDeniedError if not allowed
+   const item = await getFilteredItem(list, context, uniqueWhere!, accessFilters, 'update')
+ 
+@@ -269,10 +265,6 @@ async function deleteSingle (
+   // validate and resolve the input filter
+   const uniqueWhere = await resolveUniqueWhereInput(where, list, context)
+ 
+-  // check filter access
+-  const fieldKey = Object.keys(uniqueWhere)[0]
+-  await checkFilterOrderAccess([{ fieldKey, list }], context, 'filter')
+-
+   // filter and item access control throw an AccessDeniedError if not allowed
+   // apply access.filter.* controls
+   const item = await getFilteredItem(list, context, uniqueWhere!, accessFilters, 'delete')
+diff --git a/packages/core/src/lib/core/queries/resolvers.ts b/packages/core/src/lib/core/queries/resolvers.ts
+index 9b783300d..030e86ca7 100644
+--- a/packages/core/src/lib/core/queries/resolvers.ts
++++ b/packages/core/src/lib/core/queries/resolvers.ts
+@@ -1,15 +1,7 @@
+ import { maybeCacheControlFromInfo } from '@apollo/cache-control-types'
+ import { type GraphQLResolveInfo } from 'graphql'
+-import {
+-  type BaseItem,
+-  type FindManyArgsValue,
+-  type KeystoneContext,
+-  type OrderDirection
+-} from '../../../types'
+-import {
+-  type PrismaFilter,
+-  type UniquePrismaFilter,
+-} from '../../../types/prisma'
++import type { BaseItem, FindManyArgsValue, KeystoneContext, OrderDirection } from '../../../types'
++import type { PrismaFilter, UniquePrismaFilter } from '../../../types/prisma'
+ 
+ import { getOperationAccess, getAccessFilters } from '../access-control'
+ import {
+@@ -20,25 +12,30 @@ import {
+ } from '../where-inputs'
+ 
+ import { limitsExceededError, userInputError } from '../graphql-errors'
+-import { type InitialisedList } from '../initialise-lists'
++import type { InitialisedList } from '../initialise-lists'
+ import { getDBFieldKeyForFieldOnMultiField } from '../utils'
+ import { checkFilterOrderAccess } from '../filter-order-access'
+ 
+ // we want to put the value we get back from the field's unique where resolver into an equals
+ // rather than directly passing the value as the filter (even though Prisma supports that), we use equals
+ // because we want to disallow fields from providing an arbitrary filter
+-export function mapUniqueWhereToWhere (uniqueWhere: UniquePrismaFilter) {
++export function mapUniqueWhereToWhere(uniqueWhere: UniquePrismaFilter, list: InitialisedList) {
+   const where: PrismaFilter = {}
+   for (const key in uniqueWhere) {
++    if (list.fields[key].dbField.kind === 'relation') {
++      const foreignList = list.lists[list.fields[key].dbField.list]
++      where[key] = mapUniqueWhereToWhere(uniqueWhere[key], foreignList)
++      continue
++    }
+     where[key] = { equals: uniqueWhere[key] }
+   }
+   return where
+ }
+ 
+-function* traverse (
++export function* traverse(
+   list: InitialisedList,
+-  inputFilter: InputFilter
+-): Generator<{ fieldKey: string, list: InitialisedList }, void, unknown> {
++  inputFilter: InputFilter | UniqueInputFilter
++): Generator<{ fieldKey: string; list: InitialisedList }, void, unknown> {
+   for (const fieldKey in inputFilter) {
+     const value = inputFilter[fieldKey]
+     if (fieldKey === 'OR' || fieldKey === 'AND' || fieldKey === 'NOT') {
+@@ -89,15 +86,13 @@ export async function findOne (
+ 
+   // validate and resolve the input filter
+   const uniqueWhere = await resolveUniqueWhereInput(args.where, list, context)
+-  const resolvedWhere = mapUniqueWhereToWhere(uniqueWhere)
++  const resolvedWhere = mapUniqueWhereToWhere(uniqueWhere, list)
+ 
+   // findOne requires at least one filter
+   if (Object.keys(resolvedWhere).length === 0) return null
+ 
+   // check filter access
+-  for (const fieldKey in resolvedWhere) {
+-    await checkFilterOrderAccess([{ fieldKey, list }], context, 'filter')
+-  }
++  await checkFilterOrderAccess([...traverse(list, args.where)], context, 'filter')
+ 
+   // apply access control
+   const filter = await accessControlledFilter(list, context, resolvedWhere, accessFilters)
+@@ -117,22 +112,24 @@ export async function findMany (
+     throw limitsExceededError({ list: list.listKey, type: 'maxTake', limit: maxTake })
+   }
+ 
+-  // TODO: rewrite, this actually checks access
+-  const orderBy = await resolveOrderBy(rawOrderBy, list, context)
+-
++  // check operation permission to pass into single operation
+   const operationAccess = await getOperationAccess(list, context, 'query')
+   if (!operationAccess) return []
+ 
+   const accessFilters = await getAccessFilters(list, context, 'query')
+   if (accessFilters === false) return []
+ 
++  // validate and resolve the input filter
+   const resolvedWhere = await resolveWhereInput(where, list, context)
+ 
+   // check filter access (TODO: why isn't this using resolvedWhere)
+   await checkFilterOrderAccess([...traverse(list, where)], context, 'filter')
+ 
+-  const filter = await accessControlledFilter(list, context, resolvedWhere, accessFilters)
++  // WARNING: this checks .isOrderable
++  const orderBy = await resolveOrderBy(rawOrderBy, list, context)
+ 
++  // apply access control
++  const filter = await accessControlledFilter(list, context, resolvedWhere, accessFilters)
+   const results = await context.prisma[list.listKey].findMany({
+     where: extraFilter === undefined ? filter : { AND: [filter, extraFilter] },
+     orderBy,

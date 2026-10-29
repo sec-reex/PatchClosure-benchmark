@@ -1,0 +1,23 @@
+case_id: PCBV2-0211
+public_name: urllib3-redirect-header-strip
+run_mode: real-app-cli
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/urllib3/urllib3.git
+  v0: 1.26.16
+  v1: 1.26.17
+service:
+  readiness: none  # exec 型：client 是 compose run 探针；sidecar 不发布宿主端口
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

@@ -1,0 +1,3423 @@
+PCBV2-0041 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: alibaba/fastjson commit 90af6aadfa9be7592fdc8e174458ddaebb2b19c4 (2017-01-28, "bug fixed for autoType support.", adds the ParserConfig prefix denyList string incl. com.mchange) + commit d7078548dc34c4f7645be9641490edac6f336ced (2017-01-29, "1.2.25.internal.v6", adds ParserConfig.checkAutoType(String,Class) and routes all @type resolution through it)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0041/
+
+diff --git a/src/main/java/com/alibaba/fastjson/parser/DefaultJSONParser.java b/src/main/java/com/alibaba/fastjson/parser/DefaultJSONParser.java
+index 29d8bcf6e7..090fad6060 100755
+--- a/src/main/java/com/alibaba/fastjson/parser/DefaultJSONParser.java
++++ b/src/main/java/com/alibaba/fastjson/parser/DefaultJSONParser.java
+@@ -319,7 +319,7 @@ public final Object parseObject(final Map object, Object fieldName) {
+ 
+                 if (key == JSON.DEFAULT_TYPE_KEY && !lexer.isEnabled(Feature.DisableSpecialKeyDetect)) {
+                     String typeName = lexer.scanSymbol(symbolTable, '"');
+-                    Class<?> clazz = TypeUtils.loadClass(typeName, config.getDefaultClassLoader());
++                    Class<?> clazz = config.checkAutoType(typeName);
+ 
+                     if (clazz == null) {
+                         object.put(JSON.DEFAULT_TYPE_KEY, typeName);
+diff --git a/src/main/java/com/alibaba/fastjson/parser/ParserConfig.java b/src/main/java/com/alibaba/fastjson/parser/ParserConfig.java
+index 60b0b30efc..4666556322 100644
+--- a/src/main/java/com/alibaba/fastjson/parser/ParserConfig.java
++++ b/src/main/java/com/alibaba/fastjson/parser/ParserConfig.java
+@@ -104,14 +104,9 @@
+ import com.alibaba.fastjson.serializer.ObjectArrayCodec;
+ import com.alibaba.fastjson.serializer.ReferenceCodec;
+ import com.alibaba.fastjson.serializer.StringCodec;
+-import com.alibaba.fastjson.util.ASMClassLoader;
+-import com.alibaba.fastjson.util.ASMUtils;
+-import com.alibaba.fastjson.util.FieldInfo;
+-import com.alibaba.fastjson.util.IOUtils;
+-import com.alibaba.fastjson.util.IdentityHashMap;
+-import com.alibaba.fastjson.util.JavaBeanInfo;
+-import com.alibaba.fastjson.util.ServiceLoader;
++import com.alibaba.fastjson.util.*;
+ 
++import javax.sql.DataSource;
+ import javax.xml.datatype.XMLGregorianCalendar;
+ 
+ /**
+@@ -120,20 +115,38 @@
+ public class ParserConfig {
+     
+     public final static String DENY_PROPERTY = "fastjson.parser.deny";
++    public final static String AUTOTYPE_ACCEPT = "fastjson.parser.autoTypeAccept";
++    public final static String AUTOTYPE_SUPPORT_PROPERTY = "fastjson.parser.autoTypeSupport";
+     
+-    public static final String[] DENYS=readSystemDenyPropety();
++    public static final String[] DENYS;
++    private static final String[] AUTO_TYPE_ACCEPT_LIST;
++    public static final boolean AUTO_SUPPORT;
++    static  {
++        {
++            String property = IOUtils.getStringProperty(DENY_PROPERTY);
++            DENYS = splitItemsFormProperty(property);
++        }
++        {
++            String property = IOUtils.getStringProperty(AUTOTYPE_SUPPORT_PROPERTY);
++            AUTO_SUPPORT = "true".equals(property);
++        }
++        {
++            String property = IOUtils.getStringProperty(AUTOTYPE_ACCEPT);
++            AUTO_TYPE_ACCEPT_LIST = splitItemsFormProperty(property);
++        }
++    }
+ 
+     public static ParserConfig getGlobalInstance() {
+         return global;
+     }
+ 
+-    public static ParserConfig                              global      = new ParserConfig();
++    public static ParserConfig                              global         = new ParserConfig();
+ 
+-    private final IdentityHashMap<Type, ObjectDeserializer> derializers = new IdentityHashMap<Type, ObjectDeserializer>();
++    private final IdentityHashMap<Type, ObjectDeserializer> derializers    = new IdentityHashMap<Type, ObjectDeserializer>();
+ 
+-    private boolean                                         asmEnable   = !ASMUtils.IS_ANDROID;
++    private boolean                                         asmEnable      = !ASMUtils.IS_ANDROID;
+ 
+-    public final SymbolTable                                symbolTable = new SymbolTable(4096);
++    public final SymbolTable                                symbolTable    = new SymbolTable(4096);
+     
+     public PropertyNamingStrategy                           propertyNamingStrategy;
+ 
+@@ -141,10 +154,12 @@ public static ParserConfig getGlobalInstance() {
+ 
+     protected ASMDeserializerFactory                        asmFactory;
+ 
+-    private static boolean                                  awtError    = false;
+-    private static boolean                                  jdk8Error   = false;
++    private static boolean                                  awtError        = false;
++    private static boolean                                  jdk8Error       = false;
+ 
+-    private String[]                                        denyList    = new String[] { "java.lang.Thread" };
++    private boolean                                         autoTypeSupport = AUTO_SUPPORT;
++    private String[]                                        denyList        = "bsh,com.mchange,com.sun.,java.lang.Thread,java.net.Socket,java.rmi,javax.xml,org.apache.bcel,org.apache.commons.beanutils,org.apache.commons.collections.Transformer,org.apache.commons.collections.functors,org.apache.commons.collections4.comparators,org.apache.commons.fileupload,org.apache.myfaces.context.servlet,org.apache.tomcat,org.apache.wicket.util,org.codehaus.groovy.runtime,org.hibernate,org.jboss,org.mozilla.javascript,org.python.core,org.springframework".split(",");
++    private String[]                                        acceptList      = new String[0];
+ 
+     public ParserConfig(){
+         this(null, null);
+@@ -260,8 +275,9 @@ private ParserConfig(ASMDeserializerFactory asmFactory, ClassLoader parentClassL
+         derializers.put(Comparable.class, JavaObjectDeserializer.instance);
+         derializers.put(Closeable.class, JavaObjectDeserializer.instance);
+ 
+-        addDeny("java.lang.Thread");
+         addItemsToDeny(DENYS);
++        addItemsToAccept(AUTO_TYPE_ACCEPT_LIST);
++
+     }
+     
+     private static String[] splitItemsFormProperty(final String property ){
+@@ -270,24 +286,56 @@ private static String[] splitItemsFormProperty(final String property ){
+         }
+         return null;
+     }
++
+     public void configFromPropety(Properties properties) {
+-        String property = properties.getProperty(DENY_PROPERTY);
+-        String[] items =splitItemsFormProperty(property);
+-        addItemsToDeny(items);
++        {
++            String property = properties.getProperty(DENY_PROPERTY);
++            String[] items = splitItemsFormProperty(property);
++            addItemsToDeny(items);
++        }
++        {
++            String property = properties.getProperty(AUTOTYPE_ACCEPT);
++            String[] items = splitItemsFormProperty(property);
++            addItemsToAccept(items);
++        }
++        {
++            String property = properties.getProperty(AUTOTYPE_SUPPORT_PROPERTY);
++            if ("true".equals(property)) {
++                this.autoTypeSupport = true;
++            } else if ("false".equals(property)) {
++                this.autoTypeSupport = false;
++            }
++        }
+     }
+     
+     private void addItemsToDeny(final String[] items){
+-        if (items!=null){
+-            for (int i = 0; i < items.length; ++i) {
+-                String item = items[i];
+-                this.addDeny(item);
+-            }
++        if (items == null){
++            return;
++        }
++
++        for (int i = 0; i < items.length; ++i) {
++            String item = items[i];
++            this.addDeny(item);
+         }
+     }
+-    
+-    public static String[] readSystemDenyPropety() {
+-        String property = IOUtils.getStringProperty(DENY_PROPERTY);
+-        return splitItemsFormProperty(property);
++
++    private void addItemsToAccept(final String[] items){
++        if (items == null){
++            return;
++        }
++
++        for (int i = 0; i < items.length; ++i) {
++            String item = items[i];
++            this.addAccept(item);
++        }
++    }
++
++    public boolean isAutoTypeSupport() {
++        return autoTypeSupport;
++    }
++
++    public void setAutoTypeSupport(boolean autoTypeSupport) {
++        this.autoTypeSupport = autoTypeSupport;
+     }
+ 
+     public boolean isAsmEnable() {
+@@ -359,12 +407,6 @@ public ObjectDeserializer getDeserializer(Class<?> clazz, Type type) {
+ 
+         String className = clazz.getName();
+         className = className.replace('$', '.');
+-        for (int i = 0; i < denyList.length; ++i) {
+-            String deny = denyList[i];
+-            if (className.startsWith(deny)) {
+-                throw new JSONException("parser deny : " + className);
+-            }
+-        }
+ 
+         if (className.startsWith("java.awt.") //
+             && AwtCodec.support(clazz)) {
+@@ -466,6 +508,24 @@ public ObjectDeserializer getDeserializer(Class<?> clazz, Type type) {
+         return derializer;
+     }
+ 
++    /**
++     *
++     * @since 1.2.25
++     */
++    public void initJavaBeanDeserializers(Class<?>... classes) {
++        if (classes == null) {
++            return;
++        }
++
++        for (Class<?> type : classes) {
++            if (type == null) {
++                continue;
++            }
++            ObjectDeserializer deserializer = createJavaBeanDeserializer(type, type);
++            putDeserializer(type, deserializer);
++        }
++    }
++
+     public ObjectDeserializer createJavaBeanDeserializer(Class<?> clazz, Type type) {
+         boolean asmEnable = this.asmEnable;
+         if (asmEnable) {
+@@ -698,9 +758,91 @@ public void addDeny(String name) {
+             return;
+         }
+ 
++        for (String item : denyList) {
++            if (name.equals(item)) {
++                return; // skip duplication
++            }
++        }
++
+         String[] denyList = new String[this.denyList.length + 1];
+         System.arraycopy(this.denyList, 0, denyList, 0, this.denyList.length);
+         denyList[denyList.length - 1] = name;
+         this.denyList = denyList;
+     }
++
++    public void addAccept(String name) {
++        if (name == null || name.length() == 0) {
++            return;
++        }
++
++        for (String item : acceptList) {
++            if (name.equals(item)) {
++                return; // skip duplication
++            }
++        }
++
++        String[] acceptList = new String[this.acceptList.length + 1];
++        System.arraycopy(this.acceptList, 0, acceptList, 0, this.acceptList.length);
++        acceptList[acceptList.length - 1] = name;
++        this.acceptList = acceptList;
++    }
++
++    public Class<?> checkAutoType(String typeName) {
++        if (typeName == null) {
++            return null;
++        }
++
++        final String className = typeName.replace('$', '.');
++
++        if (autoTypeSupport) {
++            for (int i = 0; i < denyList.length; ++i) {
++                String deny = denyList[i];
++                if (className.startsWith(deny)) {
++                    throw new JSONException("autoType is not support. " + typeName);
++                }
++            }
++        }
++
++        Class<?> clazz = TypeUtils.getClassFromMapping(typeName);
++        if (clazz == null) {
++            clazz = derializers.findClass(typeName);
++        }
++
++        if (clazz != null) {
++            return clazz;
++        }
++
++        for (int i = 0; i < acceptList.length; ++i) {
++            String accept = acceptList[i];
++            if (className.startsWith(accept)) {
++                return TypeUtils.loadClass(typeName, defaultClassLoader);
++            }
++        }
++
++        if (autoTypeSupport) {
++            clazz = TypeUtils.loadClass(typeName, defaultClassLoader);
++        }
++
++        if (clazz != null) {
++            if (ClassLoader.class.isAssignableFrom(clazz) || DataSource.class.isAssignableFrom(clazz)) {
++                throw new JSONException("autoType is not support. " + typeName);
++            }
++
++            if (derializers.get(clazz) != null) {
++                return clazz;
++            }
++
++            if (Throwable.class.isAssignableFrom(clazz)) {
++                return clazz;
++            }
++        }
++
++        // java.awt.Desktop
++
++        if (!autoTypeSupport) {
++            throw new JSONException("autoType is not support. " + typeName);
++        }
++
++        return clazz;
++    }
+ }
+diff --git a/src/main/java/com/alibaba/fastjson/parser/deserializer/MapDeserializer.java b/src/main/java/com/alibaba/fastjson/parser/deserializer/MapDeserializer.java
+index a44d0d2afa..efdd189514 100644
+--- a/src/main/java/com/alibaba/fastjson/parser/deserializer/MapDeserializer.java
++++ b/src/main/java/com/alibaba/fastjson/parser/deserializer/MapDeserializer.java
+@@ -10,12 +10,8 @@
+ import com.alibaba.fastjson.JSON;
+ import com.alibaba.fastjson.JSONException;
+ import com.alibaba.fastjson.JSONObject;
+-import com.alibaba.fastjson.parser.DefaultJSONParser;
++import com.alibaba.fastjson.parser.*;
+ import com.alibaba.fastjson.parser.DefaultJSONParser.ResolveTask;
+-import com.alibaba.fastjson.parser.Feature;
+-import com.alibaba.fastjson.parser.JSONLexer;
+-import com.alibaba.fastjson.parser.JSONToken;
+-import com.alibaba.fastjson.parser.ParseContext;
+ import com.alibaba.fastjson.util.TypeUtils;
+ 
+ public class MapDeserializer implements ObjectDeserializer {
+@@ -129,7 +125,9 @@ public static Map parseMap(DefaultJSONParser parser, Map<String, Object> map, Ty
+ 
+                 if (key == JSON.DEFAULT_TYPE_KEY && !lexer.isEnabled(Feature.DisableSpecialKeyDetect)) {
+                     String typeName = lexer.scanSymbol(parser.getSymbolTable(), '"');
+-                    Class<?> clazz = TypeUtils.loadClass(typeName, parser.getConfig().getDefaultClassLoader());
++                    final ParserConfig config = parser.getConfig();
++
++                    Class<?> clazz = config.checkAutoType(typeName);
+ 
+                     if (Map.class.isAssignableFrom(clazz) ) {
+                         lexer.nextToken(JSONToken.COMMA);
+@@ -140,7 +138,7 @@ public static Map parseMap(DefaultJSONParser parser, Map<String, Object> map, Ty
+                         continue;
+                     }
+ 
+-                    ObjectDeserializer deserializer = parser.getConfig().getDeserializer(clazz);
++                    ObjectDeserializer deserializer = config.getDeserializer(clazz);
+ 
+                     lexer.nextToken(JSONToken.COMMA);
+ 
+diff --git a/src/main/java/com/alibaba/fastjson/support/config/FastJsonConfig.java b/src/main/java/com/alibaba/fastjson/support/config/FastJsonConfig.java
+index c05f990613..b0926bf704 100644
+--- a/src/main/java/com/alibaba/fastjson/support/config/FastJsonConfig.java
++++ b/src/main/java/com/alibaba/fastjson/support/config/FastJsonConfig.java
+@@ -74,7 +74,7 @@ public FastJsonConfig() {
+         this.charset = IOUtils.UTF8;
+ 
+         this.serializeConfig = SerializeConfig.getGlobalInstance();
+-        this.parserConfig = ParserConfig.getGlobalInstance();
++        this.parserConfig = new ParserConfig();
+ 
+         this.serializerFeatures = new SerializerFeature[0];
+         this.serializeFilters = new SerializeFilter[0];
+diff --git a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonHttpMessageConverter4.java b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonHttpMessageConverter4.java
+index 9772ccd047..bbfe3fab36 100644
+--- a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonHttpMessageConverter4.java
++++ b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonHttpMessageConverter4.java
+@@ -62,7 +62,6 @@ protected boolean supports(Class<?> paramClass) {
+         return true;
+     }
+ 
+-    @Override
+     public Object read(Type type, //
+                        Class<?> contextClass, //
+                        HttpInputMessage inputMessage //
+diff --git a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpHttpMessageConverter4.java b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpHttpMessageConverter4.java
+index d9bec71a2b..113a69f526 100644
+--- a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpHttpMessageConverter4.java
++++ b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpHttpMessageConverter4.java
+@@ -110,7 +110,6 @@ protected boolean supports(Class<?> paramClass) {
+         return true;
+     }
+ 
+-    @Override
+     public Object read(Type type, //
+             Class<?> contextClass, //
+             HttpInputMessage inputMessage //
+diff --git a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpResponseBodyAdvice.java b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpResponseBodyAdvice.java
+index 643afc6af2..4d7d9a0ddb 100644
+--- a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpResponseBodyAdvice.java
++++ b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpResponseBodyAdvice.java
+@@ -38,12 +38,10 @@ public FastJsonpResponseBodyAdvice(String... queryParamNames) {
+         this.jsonpQueryParamNames = queryParamNames;
+     }
+ 
+-    @Override
+     public boolean supports(MethodParameter returnType, Class<? extends HttpMessageConverter<?>> converterType) {
+         return FastJsonpHttpMessageConverter4.class.isAssignableFrom(converterType);
+     }
+ 
+-    @Override
+     public Object beforeBodyWrite(Object body, MethodParameter returnType, MediaType selectedContentType,
+             Class<? extends HttpMessageConverter<?>> selectedConverterType, ServerHttpRequest request,
+             ServerHttpResponse response) {
+diff --git a/src/main/java/com/alibaba/fastjson/support/spring/FastjsonSockJsMessageCodec.java b/src/main/java/com/alibaba/fastjson/support/spring/FastjsonSockJsMessageCodec.java
+index 6cf9c453a8..8768033401 100644
+--- a/src/main/java/com/alibaba/fastjson/support/spring/FastjsonSockJsMessageCodec.java
++++ b/src/main/java/com/alibaba/fastjson/support/spring/FastjsonSockJsMessageCodec.java
+@@ -11,12 +11,10 @@
+ 
+ public class FastjsonSockJsMessageCodec extends AbstractSockJsMessageCodec {
+ 
+-    @Override
+     public String[] decode(String content) throws IOException {
+         return JSON.parseObject(content, String[].class);
+     }
+ 
+-    @Override
+     public String[] decodeInputStream(InputStream content) throws IOException {
+         return JSON.parseObject(content, String[].class);
+     }
+diff --git a/src/main/java/com/alibaba/fastjson/util/IdentityHashMap.java b/src/main/java/com/alibaba/fastjson/util/IdentityHashMap.java
+index 1f4ed139d4..6fbaba272e 100755
+--- a/src/main/java/com/alibaba/fastjson/util/IdentityHashMap.java
++++ b/src/main/java/com/alibaba/fastjson/util/IdentityHashMap.java
+@@ -15,6 +15,8 @@
+  */
+ package com.alibaba.fastjson.util;
+ 
++import java.util.Collections;
++
+ /**
+  * for concurrent IdentityHashMap
+  * 
+@@ -47,6 +49,27 @@ public final V get(K key) {
+         return null;
+     }
+ 
++    public Class findClass(String keyString) {
++        for (Entry bucket : buckets) {
++            if (bucket == null) {
++                continue;
++            }
++
++            for (Entry<K, V> entry = bucket; entry != null; entry = entry.next) {
++                Object key = bucket.key;
++                if (key instanceof Class) {
++                    Class clazz = ((Class) key);
++                    String className = clazz.getName();
++                    if (className.equals(keyString)) {
++                        return clazz;
++                    }
++                }
++            }
++        }
++
++        return null;
++    }
++
+     public boolean put(K key, V value) {
+         final int hash = System.identityHashCode(key);
+         final int bucket = hash & indexMask;
+diff --git a/src/main/java/com/alibaba/fastjson/util/TypeUtils.java b/src/main/java/com/alibaba/fastjson/util/TypeUtils.java
+index 9195690c08..e461fee50e 100755
+--- a/src/main/java/com/alibaba/fastjson/util/TypeUtils.java
++++ b/src/main/java/com/alibaba/fastjson/util/TypeUtils.java
+@@ -928,7 +928,7 @@ public static <T> T castToJavaBean(Map<String, Object> map, Class<T> clazz, Pars
+         }
+     }
+ 
+-    private static ConcurrentMap<String, Class<?>> mappings = new ConcurrentHashMap<String, Class<?>>();
++    private static ConcurrentMap<String, Class<?>> mappings = new ConcurrentHashMap<String, Class<?>>(16, 0.75f, 1);
+ 
+     static {
+         addBaseClassMappings();
+@@ -962,7 +962,75 @@ private static void addBaseClassMappings() {
+         mappings.put("[C", char[].class);
+         mappings.put("[Z", boolean[].class);
+ 
+-        mappings.put(HashMap.class.getName(), HashMap.class);
++        Class<?>[] classes = new Class[] {
++                Object.class,
++                java.lang.Cloneable.class,
++                loadClass("java.lang.AutoCloseable"),
++                java.lang.Exception.class,
++                java.lang.RuntimeException.class,
++                java.lang.IllegalAccessError.class,
++                java.lang.IllegalAccessException.class,
++                java.lang.IllegalArgumentException.class,
++                java.lang.IllegalMonitorStateException.class,
++                java.lang.IllegalStateException.class,
++                java.lang.IllegalThreadStateException.class,
++                java.lang.IndexOutOfBoundsException.class,
++                java.lang.InstantiationError.class,
++                java.lang.InstantiationException.class,
++                java.lang.InternalError.class,
++                java.lang.InterruptedException.class,
++                java.lang.LinkageError.class,
++                java.lang.NegativeArraySizeException.class,
++                java.lang.NoClassDefFoundError.class,
++                java.lang.NoSuchFieldError.class,
++                java.lang.NoSuchFieldException.class,
++                java.lang.NoSuchMethodError.class,
++                java.lang.NoSuchMethodException.class,
++                java.lang.NullPointerException.class,
++                java.lang.NumberFormatException.class,
++                java.lang.OutOfMemoryError.class,
++                java.lang.SecurityException.class,
++                java.lang.StackOverflowError.class,
++                java.lang.StringIndexOutOfBoundsException.class,
++                java.lang.TypeNotPresentException.class,
++                java.lang.VerifyError.class,
++                java.lang.StackTraceElement.class,
++                java.util.HashMap.class,
++                java.util.Hashtable.class,
++                java.util.TreeMap.class,
++                java.util.IdentityHashMap.class,
++                java.util.WeakHashMap.class,
++                java.util.LinkedHashMap.class,
++                java.util.HashSet.class,
++                java.util.LinkedHashSet.class,
++                java.util.TreeSet.class,
++                java.util.concurrent.TimeUnit.class,
++                java.util.concurrent.ConcurrentHashMap.class,
++                java.util.concurrent.ConcurrentSkipListMap.class,
++                java.util.concurrent.ConcurrentSkipListSet.class,
++                java.util.concurrent.atomic.AtomicInteger.class,
++                java.util.concurrent.atomic.AtomicLong.class,
++                java.util.Collections.EMPTY_MAP.getClass(),
++                java.util.BitSet.class,
++                java.util.Calendar.class,
++                java.util.Date.class,
++                java.util.Locale.class,
++                java.util.UUID.class,
++                java.sql.Time.class,
++                java.sql.Date.class,
++                java.sql.Timestamp.class,
++                loadClass("java.awt.Rectangle"),
++                loadClass("java.awt.Point"),
++                loadClass("java.awt.Font"),
++                loadClass("java.awt.Color"),
++        };
++
++        for (Class clazz : classes) {
++            if (clazz == null) {
++                continue;
++            }
++            mappings.put(clazz.getName(), clazz);
++        }
+     }
+ 
+     public static void clearClassMapping() {
+@@ -992,6 +1060,10 @@ public static boolean isPath(Class<?> clazz) {
+         return false;
+     }
+ 
++    public static Class<?> getClassFromMapping(String className) {
++        return mappings.get(className);
++    }
++
+     public static Class<?> loadClass(String className, ClassLoader classLoader) {
+         if (className == null || className.length() == 0) {
+             return null;
+diff --git a/src/test/java/com/alibaba/json/bvt/MapRefTest1.java b/src/test/java/com/alibaba/json/bvt/MapRefTest1.java
+index 35c23969ad..dbd439b705 100755
+--- a/src/test/java/com/alibaba/json/bvt/MapRefTest1.java
++++ b/src/test/java/com/alibaba/json/bvt/MapRefTest1.java
+@@ -3,6 +3,7 @@
+ import java.util.HashMap;
+ import java.util.Map;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -10,6 +11,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class MapRefTest1 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.MapRefTest1");
++    }
+ 
+     public void test_0() throws Exception {
+         String text;
+diff --git a/src/test/java/com/alibaba/json/bvt/MapRefTest2.java b/src/test/java/com/alibaba/json/bvt/MapRefTest2.java
+index e71cc9d3f0..8a256472f4 100755
+--- a/src/test/java/com/alibaba/json/bvt/MapRefTest2.java
++++ b/src/test/java/com/alibaba/json/bvt/MapRefTest2.java
+@@ -3,6 +3,7 @@
+ import java.util.HashMap;
+ import java.util.Map;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -11,6 +12,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class MapRefTest2 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.MapRefTest2");
++    }
+ 
+     public void test_0() throws Exception {
+         String text;
+diff --git a/src/test/java/com/alibaba/json/bvt/MapRefTest3.java b/src/test/java/com/alibaba/json/bvt/MapRefTest3.java
+index 3c4ad9b497..b72cadfdbd 100755
+--- a/src/test/java/com/alibaba/json/bvt/MapRefTest3.java
++++ b/src/test/java/com/alibaba/json/bvt/MapRefTest3.java
+@@ -3,6 +3,7 @@
+ import java.util.HashMap;
+ import java.util.Map;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -11,6 +12,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class MapRefTest3 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.MapRefTest3");
++    }
+ 
+     public void test_0() throws Exception {
+         String text;
+diff --git a/src/test/java/com/alibaba/json/bvt/TestExternal3.java b/src/test/java/com/alibaba/json/bvt/TestExternal3.java
+index 27f6239510..1196824365 100755
+--- a/src/test/java/com/alibaba/json/bvt/TestExternal3.java
++++ b/src/test/java/com/alibaba/json/bvt/TestExternal3.java
+@@ -4,6 +4,7 @@
+ import java.io.InputStream;
+ import java.lang.reflect.Method;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -15,6 +16,10 @@
+ 
+ 
+ public class TestExternal3 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("external.VO");
++    }
++
+     public void test_0 () throws Exception {
+         ExtClassLoader classLoader = new ExtClassLoader();
+         Class<?> clazz = classLoader.loadClass("external.VO");
+@@ -25,8 +30,8 @@ public void test_0 () throws Exception {
+         String text = JSON.toJSONString(obj, SerializerFeature.WriteClassName);
+         System.out.println(text);
+         JSON.parseObject(text, clazz);
+-        JSONObject jsonObj = JSON.parseObject(text);
+-        Assert.assertEquals(jsonObj.getString("@type"), "external.VO");
++        String clazzName = JSON.parse(text).getClass().getName();
++        Assert.assertEquals(clazz.getName(), clazzName);
+     }
+     
+     public static class ExtClassLoader extends ClassLoader {
+diff --git a/src/test/java/com/alibaba/json/bvt/TestExternal4.java b/src/test/java/com/alibaba/json/bvt/TestExternal4.java
+index bc4a2fc789..e126804ef2 100755
+--- a/src/test/java/com/alibaba/json/bvt/TestExternal4.java
++++ b/src/test/java/com/alibaba/json/bvt/TestExternal4.java
+@@ -6,6 +6,7 @@
+ import java.lang.reflect.Method;
+ import java.util.HashMap;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -16,6 +17,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class TestExternal4 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("external.VO2");
++    }
+ 
+     public void test_0() throws Exception {
+         ExtClassLoader classLoader = new ExtClassLoader();
+@@ -35,8 +39,8 @@ public void test_0() throws Exception {
+         String text = JSON.toJSONString(obj, SerializerFeature.WriteClassName);
+         System.out.println(text);
+         JSON.parseObject(text, clazz);
+-        JSONObject jsonObj = JSON.parseObject(text);
+-        Assert.assertEquals(jsonObj.getString("@type"), "external.VO2");
++        String clazzName = JSON.parse(text).getClass().getName();
++        Assert.assertEquals(clazz.getName(), clazzName);
+     }
+ 
+     public static class ExtClassLoader extends ClassLoader {
+diff --git a/src/test/java/com/alibaba/json/bvt/TestExternal5.java b/src/test/java/com/alibaba/json/bvt/TestExternal5.java
+index 36301030c7..845fd91a9c 100755
+--- a/src/test/java/com/alibaba/json/bvt/TestExternal5.java
++++ b/src/test/java/com/alibaba/json/bvt/TestExternal5.java
+@@ -6,6 +6,7 @@
+ import java.lang.reflect.Method;
+ import java.util.HashMap;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -16,6 +17,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class TestExternal5 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.dubbo.demo");
++    }
+ 
+     public void test_0() throws Exception {
+         ExtClassLoader classLoader = new ExtClassLoader();
+@@ -33,8 +37,8 @@ public void test_0() throws Exception {
+         String text = JSON.toJSONString(obj, SerializerFeature.WriteClassName, SerializerFeature.WriteMapNullValue);
+         System.out.println(text);
+         JSON.parseObject(text, clazz);
+-        JSONObject jsonObj = JSON.parseObject(text);
+-        Assert.assertEquals(jsonObj.getString("@type"), "com.alibaba.dubbo.demo.MyEsbResultModel2");
++        String clazzName = JSON.parse(text).getClass().getName();
++        Assert.assertEquals(clazz.getName(), clazzName);
+     }
+ 
+     public static class ExtClassLoader extends ClassLoader {
+diff --git a/src/test/java/com/alibaba/json/bvt/TestExternal6.java b/src/test/java/com/alibaba/json/bvt/TestExternal6.java
+index 9bcd5e7a53..b7739372ff 100755
+--- a/src/test/java/com/alibaba/json/bvt/TestExternal6.java
++++ b/src/test/java/com/alibaba/json/bvt/TestExternal6.java
+@@ -6,6 +6,7 @@
+ import java.lang.reflect.Method;
+ import java.util.HashMap;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -16,6 +17,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class TestExternal6 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("org.mule.esb.model");
++    }
+ 
+     public void test_0() throws Exception {
+         ExtClassLoader classLoader = new ExtClassLoader();
+@@ -34,8 +38,8 @@ public void test_0() throws Exception {
+         String text = JSON.toJSONString(obj, SerializerFeature.WriteClassName, SerializerFeature.WriteMapNullValue);
+         System.out.println(text);
+         JSON.parseObject(text, clazz);
+-        JSONObject jsonObj = JSON.parseObject(text);
+-        Assert.assertEquals(jsonObj.getString("@type"), "org.mule.esb.model.tcc.result.EsbResultModel");
++        String clazzName = JSON.parse(text).getClass().getName();
++        Assert.assertEquals(clazz.getName(), clazzName);
+     }
+ 
+     public static class ExtClassLoader extends ClassLoader {
+diff --git a/src/test/java/com/alibaba/json/bvt/WriteClassNameTest.java b/src/test/java/com/alibaba/json/bvt/WriteClassNameTest.java
+index dc4dbf3b77..c10ee7e30c 100755
+--- a/src/test/java/com/alibaba/json/bvt/WriteClassNameTest.java
++++ b/src/test/java/com/alibaba/json/bvt/WriteClassNameTest.java
+@@ -1,5 +1,6 @@
+ package com.alibaba.json.bvt;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -7,6 +8,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class WriteClassNameTest extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.WriteClassNameTest.");
++    }
+ 
+     public void test_0() throws Exception {
+         Entity entity = new Entity(3, "jobs");
+diff --git a/src/test/java/com/alibaba/json/bvt/WriteClassNameTest2.java b/src/test/java/com/alibaba/json/bvt/WriteClassNameTest2.java
+index 297ece8d07..dae25de13c 100755
+--- a/src/test/java/com/alibaba/json/bvt/WriteClassNameTest2.java
++++ b/src/test/java/com/alibaba/json/bvt/WriteClassNameTest2.java
+@@ -1,5 +1,6 @@
+ package com.alibaba.json.bvt;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -7,6 +8,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class WriteClassNameTest2 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.WriteClassNameTest2");
++    }
+ 
+     public void test_0() throws Exception {
+         Entity entity = new Entity(3, "jobs");
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_Johnny.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_Johnny.java
+index 798ee8b612..46cea43dc2 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_Johnny.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_Johnny.java
+@@ -7,6 +7,7 @@
+ import java.util.Map;
+ import java.util.Set;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -14,7 +15,10 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class Bug_for_Johnny extends TestCase {
+-	
++	protected void setUp() throws Exception {
++		ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_Johnny.");
++	}
++
+ 	public void test_bug()throws Exception {
+ 		MyObject myObject = new MyObject();
+         List<String> listObj = new LinkedList<String>();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_NonStringKeyMap.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_NonStringKeyMap.java
+index c23b9fc818..63f6d21d5d 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_NonStringKeyMap.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_NonStringKeyMap.java
+@@ -4,11 +4,15 @@
+ import java.util.Map;
+ 
+ import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.parser.ParserConfig;
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ import junit.framework.TestCase;
+ 
+ public class Bug_for_NonStringKeyMap extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_NonStringKeyMap.");
++    }
+ 
+     public void test_bug() throws Exception {
+         VO vo = new VO();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_SpitFire_6.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_SpitFire_6.java
+index 45830242c6..ba3b34f32d 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_SpitFire_6.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_SpitFire_6.java
+@@ -3,12 +3,16 @@
+ import java.util.ArrayList;
+ import java.util.List;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import junit.framework.TestCase;
+ 
+ import com.alibaba.fastjson.JSON;
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class Bug_for_SpitFire_6 extends TestCase {
++    protected void setUp() throws Exception {
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_SpitFire_6.");
++    }
+ 
+     public void test_ref() throws Exception {
+         GenericRS<HotelAvailRS> rs = new GenericRS<HotelAvailRS>();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_cduym.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_cduym.java
+index 658efd5ace..910121443a 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_cduym.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_cduym.java
+@@ -3,6 +3,7 @@
+ import java.util.ArrayList;
+ import java.util.List;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -10,6 +11,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class Bug_for_cduym extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_cduym");
++    }
+ 
+     @SuppressWarnings("rawtypes")
+     public void test0() {
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dragoon26.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dragoon26.java
+index 3798bf56f6..017ef81577 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dragoon26.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dragoon26.java
+@@ -6,6 +6,7 @@
+ import java.util.List;
+ import java.util.Map;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import junit.framework.TestCase;
+ 
+ import com.alibaba.fastjson.JSON;
+@@ -13,6 +14,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class Bug_for_dragoon26 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_dragoon26");
++    }
+ 
+     public void test_0() throws Exception {
+         MonitorConfigMessage message = new MonitorConfigMessage();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dubbo.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dubbo.java
+index 5e2eff136a..ad1d176063 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dubbo.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dubbo.java
+@@ -1,5 +1,6 @@
+ package com.alibaba.json.bvt.bug;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -11,6 +12,10 @@
+ 
+ 
+ public class Bug_for_dubbo extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.test.dubbo.Tigers");
++    }
++
+     public void test_0 () throws Exception {
+         HelloServiceImpl helloService = new HelloServiceImpl();
+         
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dubbo2.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dubbo2.java
+index 2b7d7f3b4f..88d7245c95 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dubbo2.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_dubbo2.java
+@@ -2,12 +2,17 @@
+ 
+ import java.util.HashMap;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import junit.framework.TestCase;
+ 
+ import com.alibaba.fastjson.JSON;
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class Bug_for_dubbo2 extends TestCase {
++	protected void setUp() throws Exception {
++		ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_dubbo2");
++	}
++
+ 	public void test_emptyHashMap() throws Exception {
+ 		VO vo = new VO();
+ 		vo.setValue(new HashMap());
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_generic.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_generic.java
+index b33e0212e4..daee8f4ed6 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_generic.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_generic.java
+@@ -4,12 +4,17 @@
+ import java.util.ArrayList;
+ import java.util.List;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import junit.framework.TestCase;
+ 
+ import com.alibaba.fastjson.JSON;
+ 
+ public class Bug_for_generic extends TestCase {
+ 
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("NotifyDetail");
++    }
++
+     public void test() throws Exception {
+         String json = "{\"@type\":\"com.alibaba.json.bvt.bug.Bug_for_generic$NotifyDetail\",\"args\":[\"61354557\",\"依依\",\"六\"],\"destId\":60721687,\"detailId\":3155063,\"display\":false,\"foundTime\":{\"@type\":\"java.sql.Timestamp\",\"val\":1344530416000},\"hotId\":0,\"srcId\":1000,\"templateId\":482}";
+         JSON.parseObject(json, NotifyDetail.class);
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_184.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_184.java
+index b68df47045..9254217564 100644
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_184.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_184.java
+@@ -1,12 +1,16 @@
+ package com.alibaba.json.bvt.bug;
+ 
+ import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.parser.ParserConfig;
+ import com.alibaba.fastjson.serializer.SerializeConfig;
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ import junit.framework.TestCase;
+ 
+ public class Bug_for_issue_184 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_issue_184");
++    }
+ 
+     public void test_for_issue() throws Exception {
+         TUser user = new TUser();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_291.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_291.java
+index 833a83a634..99b3c1c144 100644
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_291.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_291.java
+@@ -1,5 +1,6 @@
+ package com.alibaba.json.bvt.bug;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ 
+ import com.alibaba.fastjson.JSON;
+@@ -7,6 +8,10 @@
+ import junit.framework.TestCase;
+ 
+ public class Bug_for_issue_291 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_issue_291.");
++    }
++
+     public void test_for_issue() throws Exception {
+         String text = "{\"id\":123,\"@type\":\"com.alibaba.json.bvt.bug.Bug_for_issue_291$VO\",\"value\":54321}";
+         
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_415.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_415.java
+index 7772e6878c..788de4c94e 100644
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_415.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_415.java
+@@ -3,6 +3,7 @@
+ import java.util.Arrays;
+ import java.util.List;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ 
+ import com.alibaba.fastjson.JSON;
+@@ -11,6 +12,9 @@
+ import junit.framework.TestCase;
+ 
+ public class Bug_for_issue_415 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_issue_415.");
++    }
+ 
+     public void test_for_issue() throws Exception {
+         Teacher t = new Teacher();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_430.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_430.java
+index 8e1789228f..a38dc7f87f 100644
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_430.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_issue_430.java
+@@ -2,6 +2,7 @@
+ 
+ import java.util.ArrayList;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ 
+ import com.alibaba.fastjson.JSON;
+@@ -10,6 +11,9 @@
+ import junit.framework.TestCase;
+ 
+ public class Bug_for_issue_430 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_issue_430");
++    }
+ 
+     public void test_for_issue() throws Exception {
+         String text = "[{\"@type\": \"com.alibaba.json.bvt.bug.Bug_for_issue_430$FooModel\", \"fooCollection\": null}, {\"@type\": \"com.alibaba.json.bvt.bug.Bug_for_issue_430$FooModel\", \"fooCollection\": null}]";
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_10.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_10.java
+index 20dddf510e..8954409ce0 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_10.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_10.java
+@@ -3,6 +3,7 @@
+ import java.util.HashMap;
+ import java.util.Map;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -10,6 +11,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class Bug_for_lenolix_10 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_lenolix_10.");
++    }
+ 
+     public void test_for_objectKey() throws Exception {
+         Map<Integer, User> map2 = new HashMap<Integer, User>();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_11.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_11.java
+index f8baa2172f..d865e062e4 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_11.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_11.java
+@@ -4,6 +4,7 @@
+ import java.util.Locale;
+ import java.util.TimeZone;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -14,6 +15,8 @@ public class Bug_for_lenolix_11 extends TestCase {
+     protected void setUp() throws Exception {
+         JSON.defaultTimeZone = TimeZone.getTimeZone("Asia/Shanghai");
+         JSON.defaultLocale = Locale.CHINA;
++
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_lenolix_11.");
+     }
+     
+     public void test_for_objectKey() throws Exception {
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_7.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_7.java
+index 124fb168ef..f39448d7a9 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_7.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_7.java
+@@ -6,6 +6,7 @@
+ import java.util.TimeZone;
+ 
+ import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.parser.ParserConfig;
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ import junit.framework.TestCase;
+@@ -14,6 +15,8 @@ public class Bug_for_lenolix_7 extends TestCase {
+     protected void setUp() throws Exception {
+         JSON.defaultTimeZone = TimeZone.getTimeZone("Asia/Shanghai");
+         JSON.defaultLocale = Locale.CHINA;
++
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_lenolix_7");
+     }
+     
+     public void test_for_objectKey() throws Exception {
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_8.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_8.java
+index 87323c5866..8d890b4cf0 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_8.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_8.java
+@@ -18,6 +18,8 @@ public class Bug_for_lenolix_8 extends TestCase {
+     protected void setUp() throws Exception {
+         JSON.defaultTimeZone = TimeZone.getTimeZone("Asia/Shanghai");
+         JSON.defaultLocale = Locale.CHINA;
++
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_lenolix_8.");
+     }
+     
+     public void test_for_objectKey() throws Exception {
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_9.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_9.java
+index 3d0e910ee9..7ea5ff0001 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_9.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_lenolix_9.java
+@@ -12,6 +12,10 @@
+ 
+ public class Bug_for_lenolix_9 extends TestCase {
+ 
++    protected void setUp() throws Exception {
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_lenolix_9.");
++    }
++
+     public void test_for_objectKey() throws Exception {
+         Map<String, Object> submap4 = new HashMap<String, Object>();
+         Address address = new Address();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_liuying.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_liuying.java
+new file mode 100644
+index 0000000000..1ad7adcfff
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_liuying.java
+@@ -0,0 +1,20 @@
++package com.alibaba.json.bvt.bug;
++
++import com.alibaba.fastjson.JSONArray;
++import com.alibaba.fastjson.JSONObject;
++import junit.framework.TestCase;
++
++/**
++ * Created by wenshao on 18/01/2017.
++ */
++public class Bug_for_liuying extends TestCase {
++
++    public void test_for_bug() throws Exception {
++        String aa = "[{\"dictFont\":\"&#xe62b;\",\"dictId\":\"wap\",\"dictName\":\"无线&手淘\"},{\"dictFont\":\"&#xe62a;\",\"dictId\":\"etao\",\"dictName\":\"搜索\"}]";
++        JSONObject jsonResult = new JSONObject();
++        JSONArray jsonArray = JSONArray.parseArray(aa);
++        jsonResult.put("aaa", jsonArray);
++
++        System.out.println(jsonResult);
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_stv_liu.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_stv_liu.java
+index 27e65b529a..239601bb66 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_stv_liu.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_stv_liu.java
+@@ -9,6 +9,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class Bug_for_stv_liu extends TestCase {
++    protected void setUp() throws Exception {
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_stv_liu.");
++    }
+ 
+     public void test() {
+         User user = new User();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_zhaoyao.java b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_zhaoyao.java
+index ab5a38d5b4..5b221fa4ca 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/Bug_for_zhaoyao.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Bug_for_zhaoyao.java
+@@ -9,6 +9,10 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class Bug_for_zhaoyao extends TestCase {
++    protected void setUp() throws Exception {
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_zhaoyao.");
++    }
++
+     public void test_FieldMap() throws Exception {
+         FieldMap map = new FieldMap();
+         map.put("a", 1);
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Issue146.java b/src/test/java/com/alibaba/json/bvt/bug/Issue146.java
+index 2254acd43c..eb1f745c18 100644
+--- a/src/test/java/com/alibaba/json/bvt/bug/Issue146.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Issue146.java
+@@ -6,6 +6,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class Issue146 extends TestCase {
++    protected void setUp() throws Exception {
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Issue146.");
++    }
+ 
+     public void test_for_issue() throws Exception {
+         VO vo = new VO();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Issue408.java b/src/test/java/com/alibaba/json/bvt/bug/Issue408.java
+index e2e9157488..7bcec9f22c 100644
+--- a/src/test/java/com/alibaba/json/bvt/bug/Issue408.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Issue408.java
+@@ -16,8 +16,11 @@ public class Issue408 extends TestCase {
+     public void setUp() throws Exception {
+         String resource = "json/Issue408.json";
+         inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream(resource);
++
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Issue408.");
+     }
+ 
++
+     @Override
+     public void tearDown() throws Exception {
+         inputStream.close();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Issue585.java b/src/test/java/com/alibaba/json/bvt/bug/Issue585.java
+index 67b9525c78..79249fa19a 100644
+--- a/src/test/java/com/alibaba/json/bvt/bug/Issue585.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Issue585.java
+@@ -21,6 +21,8 @@ protected void setUp() throws Exception {
+         if (!JSON.DEFAULT_TYPE_KEY.equals("mySpace")) {
+             JSON.setDefaultTypeKey("mySpace");
+         }
++
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Issue585.");
+     }
+ 
+     protected void tearDown() throws Exception {
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Issue859.java b/src/test/java/com/alibaba/json/bvt/bug/Issue859.java
+index b72e30c171..e3189009bc 100644
+--- a/src/test/java/com/alibaba/json/bvt/bug/Issue859.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Issue859.java
+@@ -17,6 +17,10 @@
+  * Created by wenshao on 2016/10/19.
+  */
+ public class Issue859 extends TestCase {
++    protected void setUp() throws Exception {
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Bug_for_zhaoyao.");
++    }
++
+     public void test_for_issue() throws Exception {
+         InputStream is = Issue72.class.getClassLoader().getResourceAsStream("issue859.zip");
+         GZIPInputStream gzipInputStream = new GZIPInputStream(is);
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/Issue_748.java b/src/test/java/com/alibaba/json/bvt/bug/Issue_748.java
+index bca50f6204..1156bd6004 100644
+--- a/src/test/java/com/alibaba/json/bvt/bug/Issue_748.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/Issue_748.java
+@@ -10,6 +10,9 @@
+ import junit.framework.TestCase;
+ 
+ public class Issue_748 extends TestCase {
++    protected void setUp() throws Exception {
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.Issue_748.");
++    }
+ 
+     public void testJsonObjectWithClassName() {
+         JSONObject jsonObject = new JSONObject();
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/SerDeserTest.java b/src/test/java/com/alibaba/json/bvt/bug/SerDeserTest.java
+index a03506cf15..452ff68276 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/SerDeserTest.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/SerDeserTest.java
+@@ -28,6 +28,9 @@
+  * @author lei.yaol 2011-12-27 下午03:44:18
+  */
+ public class SerDeserTest extends TestCase {
++    protected void setUp() throws Exception {
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvtVO.");
++    }
+ 
+     /** 用于被FastJson序列和反序列化的对象 */
+     private static Map<OptionKey, OptionValue<?>> options;
+diff --git a/src/test/java/com/alibaba/json/bvt/bug/TestJSONMap.java b/src/test/java/com/alibaba/json/bvt/bug/TestJSONMap.java
+index e351deb427..66da40520c 100755
+--- a/src/test/java/com/alibaba/json/bvt/bug/TestJSONMap.java
++++ b/src/test/java/com/alibaba/json/bvt/bug/TestJSONMap.java
+@@ -9,6 +9,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class TestJSONMap extends TestCase {
++    protected void setUp() throws Exception {
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.TestJSONMap.");
++    }
+ 
+     public void test_0() throws Exception {
+         Record record = new Record();
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/AbstractSerializeTest.java b/src/test/java/com/alibaba/json/bvt/parser/deser/AbstractSerializeTest.java
+index d6938d92f5..4db79090fe 100644
+--- a/src/test/java/com/alibaba/json/bvt/parser/deser/AbstractSerializeTest.java
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/AbstractSerializeTest.java
+@@ -9,8 +9,9 @@
+ import com.alibaba.fastjson.parser.deserializer.ObjectDeserializer;
+ 
+ public class AbstractSerializeTest extends TestCase {
+-
+     protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.AbstractSerializeTest");
++
+         ObjectDeserializer serializerB = ParserConfig.getGlobalInstance().getDeserializer(B.class);
+         ParserConfig.getGlobalInstance().putDeserializer(A.class, serializerB);
+     }
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/AbstractSerializeTest2.java b/src/test/java/com/alibaba/json/bvt/parser/deser/AbstractSerializeTest2.java
+index 6e325a9f8d..3ed5cdebb3 100644
+--- a/src/test/java/com/alibaba/json/bvt/parser/deser/AbstractSerializeTest2.java
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/AbstractSerializeTest2.java
+@@ -11,6 +11,8 @@
+ public class AbstractSerializeTest2 extends TestCase {
+ 
+     protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.AbstractSerializeTest2");
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.parser.deser.AbstractSerializeTest2");
+     }
+ 
+     protected void tearDown() throws Exception {
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/DefaultObjectDeserializerTest3.java b/src/test/java/com/alibaba/json/bvt/parser/deser/DefaultObjectDeserializerTest3.java
+index e840e5a7e6..cdb98f37da 100644
+--- a/src/test/java/com/alibaba/json/bvt/parser/deser/DefaultObjectDeserializerTest3.java
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/DefaultObjectDeserializerTest3.java
+@@ -2,6 +2,7 @@
+ 
+ import java.util.HashMap;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import junit.framework.TestCase;
+ 
+ import org.junit.Assert;
+@@ -10,6 +11,9 @@
+ 
+ @SuppressWarnings("rawtypes")
+ public class DefaultObjectDeserializerTest3 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.bug.AbstractSerializeTest2");
++    }
+ 
+     public void test_0() throws Exception {
+         HashMap o = (HashMap) JSON.parse("{\"@type\":\"java.lang.Cloneable\"}");
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/MapDeserializerTest.java b/src/test/java/com/alibaba/json/bvt/parser/deser/MapDeserializerTest.java
+index 78aefce80f..79b5ca40ee 100644
+--- a/src/test/java/com/alibaba/json/bvt/parser/deser/MapDeserializerTest.java
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/MapDeserializerTest.java
+@@ -8,6 +8,9 @@
+ import com.alibaba.fastjson.JSON;
+ 
+ public class MapDeserializerTest extends TestCase {
++    protected void setUp() throws Exception {
++        com.alibaba.fastjson.parser.ParserConfig.global.addAccept("com.alibaba.json.bvt.parser.deser.MapDeserializerTest.");
++    }
+ 
+     public void test_0() throws Exception {
+         JSON.parseObject("{\"@type\":\"com.alibaba.json.bvt.parser.deser.MapDeserializerTest$MyMap\"}", Map.class);
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/DenyTest.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest.java
+similarity index 81%
+rename from src/test/java/com/alibaba/json/bvt/parser/deser/DenyTest.java
+rename to src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest.java
+index b1576d1c8e..3a52c33d40 100644
+--- a/src/test/java/com/alibaba/json/bvt/parser/deser/DenyTest.java
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest.java
+@@ -1,4 +1,4 @@
+-package com.alibaba.json.bvt.parser.deser;
++package com.alibaba.json.bvt.parser.deser.deny;
+ 
+ import org.junit.Assert;
+ 
+@@ -21,7 +21,7 @@ public void test_0() throws Exception {
+ 
+         Exception error = null;
+         try {
+-            JSON.parseObject(text, A.class, config, JSON.DEFAULT_PARSER_FEATURE);
++            JSON.parseObject("{\"@type\":\"com.alibaba.json.bvtVO.deny$A\"}", Object.class, config, JSON.DEFAULT_PARSER_FEATURE);
+         } catch (JSONException ex) {
+             error = ex;
+         }
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest10.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest10.java
+new file mode 100644
+index 0000000000..4fe8bc8337
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest10.java
+@@ -0,0 +1,45 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.parser.ParserConfig;
++import junit.framework.TestCase;
++
++import java.util.HashMap;
++import java.util.Properties;
++import java.util.UUID;
++import java.util.WeakHashMap;
++import java.util.concurrent.ConcurrentHashMap;
++
++public class DenyTest10 extends TestCase {
++    ParserConfig config = new ParserConfig();
++
++    protected void setUp() throws Exception {
++        assertFalse(config.isAutoTypeSupport());
++
++        Properties properties = new Properties();
++        properties.put(ParserConfig.AUTOTYPE_SUPPORT_PROPERTY, "false");
++        // -ea -Dfastjson.parser.autoTypeAccept=com.alibaba.json.bvt.parser.deser.DenyTest9
++        config.configFromPropety(properties);
++    }
++
++    public void test_hashMap() throws Exception {
++        Object obj = JSON.parseObject("{\"@type\":\"java.util.HashMap\"}", Object.class, config);
++        assertEquals(HashMap.class, obj.getClass());
++    }
++
++    public void test_hashMap_weekHashMap() throws Exception {
++        Object obj = JSON.parseObject("{\"@type\":\"java.util.WeakHashMap\"}", Object.class, config);
++        assertEquals(WeakHashMap.class, obj.getClass());
++    }
++
++    public void test_hashMap_concurrentHashMap() throws Exception {
++        Object obj = JSON.parseObject("{\"@type\":\"java.util.concurrent.ConcurrentHashMap\"}", Object.class, config);
++        assertEquals(ConcurrentHashMap.class, obj.getClass());
++    }
++
++    public void test_uuid() throws Exception {
++        System.out.println(UUID.randomUUID());
++        Object obj = JSON.parseObject("{\"@type\":\"java.util.UUID\",\"val\":\"290c580d-efa3-432b-8475-2655e336232a\"}", Object.class, config);
++        assertEquals(UUID.class, obj.getClass());
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest11.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest11.java
+new file mode 100644
+index 0000000000..e07ab6a939
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest11.java
+@@ -0,0 +1,50 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.parser.ParserConfig;
++import com.alibaba.fastjson.serializer.SerializerFeature;
++import junit.framework.TestCase;
++
++import java.util.Properties;
++
++public class DenyTest11 extends TestCase {
++    ParserConfig config = new ParserConfig();
++
++    protected void setUp() throws Exception {
++        assertFalse(config.isAutoTypeSupport());
++
++        Properties properties = new Properties();
++        properties.put(ParserConfig.AUTOTYPE_SUPPORT_PROPERTY, "false");
++        config.addAccept("com.alibaba.json.bvt.parser.deser.deny.DenyTest11.Model");
++        // -ea -Dfastjson.parser.autoTypeAccept=com.alibaba.json.bvt.parser.deser.deny.DenyTest9
++        config.configFromPropety(properties);
++
++        assertFalse(config.isAutoTypeSupport());
++    }
++
++    public void test_autoTypeDeny() throws Exception {
++        Model model = new Model();
++        model.a = new B();
++        String text = JSON.toJSONString(model, SerializerFeature.WriteClassName);
++        System.out.println(text);
++
++        Object obj = JSON.parseObject(text, Object.class, config);
++        assertEquals(Model.class, obj.getClass());
++    }
++    
++    public static class Model {
++        public A a;
++    }
++
++    public static class Model2 {
++        public A a;
++    }
++
++    public static class A {
++
++    }
++
++    public static class B extends A {
++
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/DenyTest2.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest2.java
+similarity index 83%
+rename from src/test/java/com/alibaba/json/bvt/parser/deser/DenyTest2.java
+rename to src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest2.java
+index 2229b910d5..10de00adab 100644
+--- a/src/test/java/com/alibaba/json/bvt/parser/deser/DenyTest2.java
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest2.java
+@@ -1,4 +1,4 @@
+-package com.alibaba.json.bvt.parser.deser;
++package com.alibaba.json.bvt.parser.deser.deny;
+ 
+ import java.util.Properties;
+ 
+@@ -24,7 +24,7 @@ public void test_0() throws Exception {
+         
+         Exception error = null;
+         try {
+-            JSON.parseObject(text, A.class, config, JSON.DEFAULT_PARSER_FEATURE);
++            JSON.parseObject("{\"@type\":\"com.alibaba.json.bvtVO.deny$A\"}", Object.class, config, JSON.DEFAULT_PARSER_FEATURE);
+         } catch (JSONException ex) {
+             error = ex;
+         }
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/DenyTest3.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest3.java
+similarity index 83%
+rename from src/test/java/com/alibaba/json/bvt/parser/deser/DenyTest3.java
+rename to src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest3.java
+index a02a46fdd4..e190c99a5f 100644
+--- a/src/test/java/com/alibaba/json/bvt/parser/deser/DenyTest3.java
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest3.java
+@@ -1,4 +1,4 @@
+-package com.alibaba.json.bvt.parser.deser;
++package com.alibaba.json.bvt.parser.deser.deny;
+ 
+ import java.util.Properties;
+ 
+@@ -24,7 +24,7 @@ public void test_0() throws Exception {
+         
+         Exception error = null;
+         try {
+-            JSON.parseObject(text, A.class, config, JSON.DEFAULT_PARSER_FEATURE);
++            JSON.parseObject("{\"@type\":\"com.alibaba.json.bvtVO.deny$A\"}", Object.class, config, JSON.DEFAULT_PARSER_FEATURE);
+         } catch (JSONException ex) {
+             error = ex;
+         }
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest4.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest4.java
+new file mode 100644
+index 0000000000..77ad671388
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest4.java
+@@ -0,0 +1,28 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.JSONException;
++import com.alibaba.fastjson.parser.ParserConfig;
++import com.alibaba.json.bvtVO.deny.A;
++import junit.framework.TestCase;
++import org.junit.Assert;
++
++import java.util.Properties;
++
++public class DenyTest4 extends TestCase {
++
++    public void test_0() throws Exception {
++        Exception error = null;
++        try {
++            JSON.parseObject("{\"@type\":\"com.alibaba.json.bvt.parser.deser.deny.DenyTest4$MyClassLoader\"}", Object.class);
++        } catch (JSONException ex) {
++            error = ex;
++        }
++        assertNotNull(error);
++    }
++    
++    public static class MyClassLoader extends ClassLoader {
++
++    }
++
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest5.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest5.java
+new file mode 100644
+index 0000000000..a4da73a0fd
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest5.java
+@@ -0,0 +1,24 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.JSONException;
++import junit.framework.TestCase;
++
++public class DenyTest5 extends TestCase {
++
++    public void test_c3p0() throws Exception {
++        Exception error = null;
++        try {
++            Object obj = JSON.parseObject("{\"@type\":\"com.mchange.v2.c3p0.impl.PoolBackedDataSourceBase\"}", Object.class);
++            System.out.println(obj.getClass());
++        } catch (JSONException ex) {
++            error = ex;
++        }
++        assertNotNull(error);
++    }
++    
++    public static class MyClassLoader extends ClassLoader {
++
++    }
++
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest6.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest6.java
+new file mode 100644
+index 0000000000..1c35e98664
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest6.java
+@@ -0,0 +1,32 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.JSONException;
++import com.alibaba.fastjson.parser.ParserConfig;
++import junit.framework.TestCase;
++
++public class DenyTest6 extends TestCase {
++
++    public void test_autoTypeDeny() throws Exception {
++        ParserConfig config = new ParserConfig();
++        assertFalse(config.isAutoTypeSupport());
++        config.setAutoTypeSupport(true);
++        assertTrue(config.isAutoTypeSupport());
++        config.addDeny("com.alibaba.json.bvt.parser.deser.deny.DenyTest6");
++        config.setAutoTypeSupport(false);
++
++        Exception error = null;
++        try {
++            Object obj = JSON.parseObject("{\"@type\":\"com.alibaba.json.bvt.parser.deser.deny.DenyTest6$Model\"}", Object.class, config);
++            System.out.println(obj.getClass());
++        } catch (JSONException ex) {
++            error = ex;
++        }
++        assertNotNull(error);
++    }
++    
++    public static class Model {
++
++    }
++
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest7.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest7.java
+new file mode 100644
+index 0000000000..7e0c548d7c
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest7.java
+@@ -0,0 +1,40 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.JSONException;
++import com.alibaba.fastjson.parser.ParserConfig;
++import junit.framework.TestCase;
++
++import java.util.Properties;
++
++public class DenyTest7 extends TestCase {
++
++    public void test_autoTypeDeny() throws Exception {
++        ParserConfig config = new ParserConfig();
++
++        assertFalse(config.isAutoTypeSupport());
++        config.setAutoTypeSupport(true);
++        assertTrue(config.isAutoTypeSupport());
++
++        Properties properties = new Properties();
++        properties.put(ParserConfig.AUTOTYPE_SUPPORT_PROPERTY, "false");
++
++        config.configFromPropety(properties);
++
++        assertFalse(config.isAutoTypeSupport());
++
++        Exception error = null;
++        try {
++            Object obj = JSON.parseObject("{\"@type\":\"com.alibaba.json.bvt.parser.deser.deny.DenyTest7$Model\"}", Object.class, config);
++            System.out.println(obj.getClass());
++        } catch (JSONException ex) {
++            error = ex;
++        }
++        assertNotNull(error);
++    }
++    
++    public static class Model {
++
++    }
++
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest8.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest8.java
+new file mode 100644
+index 0000000000..dd38408f7b
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest8.java
+@@ -0,0 +1,36 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.JSONException;
++import com.alibaba.fastjson.parser.ParserConfig;
++import junit.framework.TestCase;
++
++import java.util.Properties;
++
++public class DenyTest8 extends TestCase {
++
++    public void test_autoTypeDeny() throws Exception {
++        ParserConfig config = new ParserConfig();
++
++        assertFalse(config.isAutoTypeSupport());
++        config.setAutoTypeSupport(true);
++        assertTrue(config.isAutoTypeSupport());
++
++        Properties properties = new Properties();
++        properties.put(ParserConfig.AUTOTYPE_SUPPORT_PROPERTY, "false");
++        config.configFromPropety(properties);
++
++        assertFalse(config.isAutoTypeSupport());
++
++        config.addAccept("com.alibaba.json.bvt.parser.deser.deny.DenyTest8");
++
++
++        Object obj = JSON.parseObject("{\"@type\":\"com.alibaba.json.bvt.parser.deser.deny.DenyTest8$Model\"}", Object.class, config);
++        assertEquals(Model.class, obj.getClass());
++    }
++    
++    public static class Model {
++
++    }
++
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest9.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest9.java
+new file mode 100644
+index 0000000000..88a551c31b
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest9.java
+@@ -0,0 +1,35 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.parser.ParserConfig;
++import junit.framework.TestCase;
++
++import java.util.Properties;
++
++public class DenyTest9 extends TestCase {
++
++    public void test_autoTypeDeny() throws Exception {
++        ParserConfig config = new ParserConfig();
++
++        assertFalse(config.isAutoTypeSupport());
++        config.setAutoTypeSupport(true);
++        assertTrue(config.isAutoTypeSupport());
++
++        Properties properties = new Properties();
++        properties.put(ParserConfig.AUTOTYPE_SUPPORT_PROPERTY, "false");
++        properties.put(ParserConfig.AUTOTYPE_ACCEPT, "com.alibaba.json.bvt.parser.deser.deny.DenyTest9");
++        // -ea -Dfastjson.parser.autoTypeAccept=com.alibaba.json.bvt.parser.deser.deny.DenyTest9
++        config.configFromPropety(properties);
++
++        assertFalse(config.isAutoTypeSupport());
++
++
++        Object obj = JSON.parseObject("{\"@type\":\"com.alibaba.json.bvt.parser.deser.deny.DenyTest9$Model\"}", Object.class, config);
++        assertEquals(Model.class, obj.getClass());
++    }
++    
++    public static class Model {
++
++    }
++
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/InitJavaBeanDeserializerTest.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/InitJavaBeanDeserializerTest.java
+new file mode 100644
+index 0000000000..042186a398
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/InitJavaBeanDeserializerTest.java
+@@ -0,0 +1,51 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.JSONException;
++import com.alibaba.fastjson.parser.ParserConfig;
++import junit.framework.TestCase;
++
++import java.util.Properties;
++
++/**
++ * Created by wenshao on 28/01/2017.
++ */
++public class InitJavaBeanDeserializerTest extends TestCase {
++    ParserConfig config = new ParserConfig();
++
++    protected void setUp() throws Exception {
++        assertFalse(config.isAutoTypeSupport());
++
++        Properties properties = new Properties();
++        properties.put(ParserConfig.AUTOTYPE_SUPPORT_PROPERTY, "false");
++        // config.addAccept("com.alibaba.json.bvt.parser.deser.deny.DenyTest11.Model");
++        // -ea -Dfastjson.parser.autoTypeAccept=com.alibaba.json.bvt.parser.deser.deny.DenyTest9
++        config.configFromPropety(properties);
++
++        assertFalse(config.isAutoTypeSupport());
++    }
++
++    public void test_desktop() throws Exception {
++        DenyTest11.Model model = new DenyTest11.Model();
++        model.a = new DenyTest11.B();
++        String text = "{\"@type\":\"com.alibaba.json.bvt.parser.deser.deny.InitJavaBeanDeserializerTest$Model\"}";
++
++        Exception error = null;
++        try {
++            Object obj = JSON.parseObject(text, Object.class, config);
++            System.out.println(obj.getClass());
++        } catch (JSONException ex) {
++            error = ex;
++        }
++        assertNotNull(error);
++
++        config.initJavaBeanDeserializers(Model.class);
++
++        Object obj = JSON.parseObject(text, Object.class, config);
++        assertEquals(Model.class, obj.getClass());
++    }
++
++    public static class Model {
++
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/generic/ByteListTest.java b/src/test/java/com/alibaba/json/bvt/parser/deser/generic/ByteListTest.java
+new file mode 100644
+index 0000000000..8ad4b25624
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/generic/ByteListTest.java
+@@ -0,0 +1,40 @@
++package com.alibaba.json.bvt.parser.deser.generic;
++
++import com.alibaba.fastjson.JSON;
++import junit.framework.TestCase;
++
++import java.util.List;
++
++/**
++ * Created by wenshao on 20/01/2017.
++ */
++public class ByteListTest extends TestCase {
++    public void test_for_issue() throws Exception {
++        Model model = JSON.parseObject("{\"values\":[[1,2,3]]}", Model.class);
++
++        assertNotNull(model.values);
++        assertEquals(3, model.values[0].size());
++        assertEquals(Byte.class, model.values[0].get(0).getClass());
++        assertEquals(Byte.class, model.values[0].get(1).getClass());
++        assertEquals(Byte.class, model.values[0].get(2).getClass());
++    }
++
++    public void test_for_List() throws Exception {
++        Model2 model = JSON.parseObject("{\"values\":[1,2,3]}", Model2.class);
++
++        assertNotNull(model.values);
++        assertEquals(3, model.values.size());
++        assertEquals(Byte.class, model.values.get(0).getClass());
++        assertEquals(Byte.class, model.values.get(1).getClass());
++        assertEquals(Byte.class, model.values.get(2).getClass());
++    }
++
++    public static class Model {
++        public List<Byte>[] values;
++    }
++
++    public static class Model2 {
++        public List<Byte> values;
++    }
++
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/generic/GenericMap.java b/src/test/java/com/alibaba/json/bvt/parser/deser/generic/GenericMap.java
+new file mode 100644
+index 0000000000..ce46061a07
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/generic/GenericMap.java
+@@ -0,0 +1,27 @@
++package com.alibaba.json.bvt.parser.deser.generic;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.TypeReference;
++import junit.framework.TestCase;
++
++import java.util.Map;
++
++/**
++ * Created by wenshao on 20/01/2017.
++ */
++public class GenericMap extends TestCase {
++    public void test_generic() throws Exception {
++        Model<User> model = JSON.parseObject("{\"values\":{\"1001\":{\"id\":1001}}}", new TypeReference<Model<User>>() {});
++        User user = model.values.get("1001");
++        assertNotNull(user);
++        assertEquals(1001, user.id);
++    }
++
++    public static class Model<T> {
++        public Map<String, T> values;
++    }
++
++    public static class User {
++        public int id;
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/var/TwoTypeTest.java b/src/test/java/com/alibaba/json/bvt/parser/deser/var/TwoTypeTest.java
+new file mode 100644
+index 0000000000..5df77b141a
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/var/TwoTypeTest.java
+@@ -0,0 +1,20 @@
++package com.alibaba.json.bvt.parser.deser.var;
++
++import junit.framework.TestCase;
++
++/**
++ * Created by wenshao on 23/01/2017.
++ */
++public class TwoTypeTest extends TestCase {
++    public void test_two() throws Exception {
++
++    }
++
++    public static class ModelA {
++        public int id;
++    }
++
++    public static class ModelB {
++        public int value;
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/serializer/exception/ExceptionTest.java b/src/test/java/com/alibaba/json/bvt/serializer/exception/ExceptionTest.java
+new file mode 100644
+index 0000000000..350347e883
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/serializer/exception/ExceptionTest.java
+@@ -0,0 +1,16 @@
++package com.alibaba.json.bvt.serializer.exception;
++
++import com.alibaba.fastjson.JSON;
++import junit.framework.TestCase;
++
++/**
++ * Created by wenshao on 29/01/2017.
++ */
++public class ExceptionTest extends TestCase {
++    public void test_exception() throws Exception {
++        IllegalAccessError ex = new IllegalAccessError();
++
++        String text = JSON.toJSONString(ex);
++        assertTrue(JSON.parse(text) instanceof IllegalAccessError);
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/writeClassName/MapTest.java b/src/test/java/com/alibaba/json/bvt/writeClassName/MapTest.java
+index de2d10bea7..541f3d352e 100755
+--- a/src/test/java/com/alibaba/json/bvt/writeClassName/MapTest.java
++++ b/src/test/java/com/alibaba/json/bvt/writeClassName/MapTest.java
+@@ -4,6 +4,7 @@
+ import java.util.Map;
+ import java.util.TreeMap;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -11,6 +12,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class MapTest extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.writeClassName.MapTest");
++    }
+ 
+     public void test_map() throws Exception {
+         VO vo = new VO();
+diff --git a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest.java b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest.java
+index 65b7dffe7f..2efc2654b9 100755
+--- a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest.java
++++ b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest.java
+@@ -1,5 +1,6 @@
+ package com.alibaba.json.bvt.writeClassName;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -8,6 +9,10 @@
+ 
+ public class WriteClassNameTest extends TestCase {
+ 
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.writeClassName.WriteClassNameTest");
++    }
++
+     public void test_list() throws Exception {
+         A a = new A();
+         a.setB(new B());
+diff --git a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest2.java b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest2.java
+index 21fe54757f..35e9ee6a7f 100755
+--- a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest2.java
++++ b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest2.java
+@@ -1,5 +1,6 @@
+ package com.alibaba.json.bvt.writeClassName;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -7,6 +8,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class WriteClassNameTest2 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.writeClassName.WriteClassNameTest2");
++    }
+ 
+     public void test_writeClassName() throws Exception {
+         A a = new A();
+diff --git a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Collection.java b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Collection.java
+index b67c81b2ef..5ef8536016 100755
+--- a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Collection.java
++++ b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Collection.java
+@@ -3,6 +3,7 @@
+ import java.util.Collection;
+ import java.util.Collections;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -10,6 +11,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class WriteClassNameTest_Collection extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.writeClassName.WriteClassNameTest_Collection");
++    }
+ 
+     public void test_list() throws Exception {
+         A a = new A();
+diff --git a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Collection2.java b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Collection2.java
+index a8f591f17b..39ed800cb2 100755
+--- a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Collection2.java
++++ b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Collection2.java
+@@ -3,6 +3,7 @@
+ import java.util.Collection;
+ import java.util.Collections;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -10,6 +11,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class WriteClassNameTest_Collection2 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.writeClassName.WriteClassNameTest_Collection2");
++    }
+ 
+     public void test_list() throws Exception {
+         A a = new A();
+diff --git a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_List.java b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_List.java
+index 97004b3859..d889aabfe2 100755
+--- a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_List.java
++++ b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_List.java
+@@ -3,6 +3,7 @@
+ import java.util.Collections;
+ import java.util.List;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -10,6 +11,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class WriteClassNameTest_List extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.writeClassName.WriteClassNameTest_List");
++    }
+ 
+     public void test_list() throws Exception {
+         A a = new A();
+diff --git a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_List2.java b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_List2.java
+index d6e18dd49e..9e37c1d041 100755
+--- a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_List2.java
++++ b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_List2.java
+@@ -3,6 +3,7 @@
+ import java.util.Collections;
+ import java.util.List;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -10,6 +11,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class WriteClassNameTest_List2 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.writeClassName.WriteClassNameTest_List2");
++    }
+ 
+     public void test_list() throws Exception {
+         A a = new A();
+diff --git a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set.java b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set.java
+index adb5c4c30b..32b9c42416 100755
+--- a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set.java
++++ b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set.java
+@@ -4,6 +4,7 @@
+ import java.util.LinkedHashSet;
+ import java.util.Set;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -11,6 +12,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class WriteClassNameTest_Set extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.writeClassName.WriteClassNameTest_Set");
++    }
+ 
+     public void test_list() throws Exception {
+         A a = new A();
+diff --git a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set2.java b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set2.java
+index 5ed5852f08..fbf6900dfc 100755
+--- a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set2.java
++++ b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set2.java
+@@ -4,6 +4,7 @@
+ import java.util.LinkedHashSet;
+ import java.util.Set;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -11,6 +12,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class WriteClassNameTest_Set2 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.writeClassName.WriteClassNameTest_Set2");
++    }
+ 
+     public void test_list() throws Exception {
+         A a = new A();
+@@ -23,7 +27,9 @@ public void test_list() throws Exception {
+         Assert.assertEquals("{\"@type\":\"com.alibaba.json.bvt.writeClassName.WriteClassNameTest_Set2$A\",\"list\":[{},{\"@type\":\"com.alibaba.json.bvt.writeClassName.WriteClassNameTest_Set2$B1\"}]}",
+                             text);
+ 
+-        A a1 = (A) JSON.parse(text);
++        ParserConfig parserConfig = new ParserConfig();
++        parserConfig.addAccept("com.alibaba.json.bvt");
++        A a1 = (A) JSON.parseObject(text, Object.class, parserConfig);
+ 
+         Assert.assertEquals(2, a1.getList().size());
+         Assert.assertTrue("B", new ArrayList<B>(a1.getList()).get(0) instanceof B || new ArrayList<B>(a1.getList()).get(0) instanceof B1);
+diff --git a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set3.java b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set3.java
+index 8fb03636ea..bf34d43f22 100755
+--- a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set3.java
++++ b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set3.java
+@@ -4,6 +4,7 @@
+ import java.util.LinkedHashSet;
+ import java.util.Set;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -11,6 +12,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class WriteClassNameTest_Set3 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.writeClassName.WriteClassNameTest_Set3");
++    }
+ 
+     public void test_list() throws Exception {
+         A a = new A();
+diff --git a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set4.java b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set4.java
+index 9ead8c39ae..9f66809a88 100755
+--- a/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set4.java
++++ b/src/test/java/com/alibaba/json/bvt/writeClassName/WriteClassNameTest_Set4.java
+@@ -4,6 +4,7 @@
+ import java.util.LinkedHashSet;
+ import java.util.Set;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ import junit.framework.TestCase;
+ 
+@@ -11,6 +12,9 @@
+ import com.alibaba.fastjson.serializer.SerializerFeature;
+ 
+ public class WriteClassNameTest_Set4 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.writeClassName.WriteClassNameTest_Set4");
++    }
+ 
+     public void test_list() throws Exception {
+         A a = new A();
+diff --git a/src/test/java/com/alibaba/json/test/FNV32_CollisionTest_2.java b/src/test/java/com/alibaba/json/test/FNV32_CollisionTest_2.java
+new file mode 100644
+index 0000000000..c5c06caf27
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/test/FNV32_CollisionTest_2.java
+@@ -0,0 +1,148 @@
++package com.alibaba.json.test;
++
++import junit.framework.TestCase;
++
++import java.text.NumberFormat;
++import java.util.Random;
++
++/**
++ * Created by wenshao on 08/01/2017.
++ */
++public class FNV32_CollisionTest_2 extends TestCase {
++    char[] digLetters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_".toCharArray();
++    //char[] digLetters = "0123456789".toCharArray();
++    Random r = new Random();
++    int[] powers = new int[10];
++
++    {
++        for (int i = 0; i < powers.length; ++i) {
++            powers[i] = (int) Math.pow(digLetters.length, i);
++        }
++    }
++
++
++    public void test_fnv_hash_7() throws Exception {
++        int COUNT = 1000 * 1000 * 1000;
++
++        long id_hash_64 = fnv_hash("name".toCharArray());
++        int id_hash_32 = (int) id_hash_64;
++        System.out.println("name : " + id_hash_32 + ", " + id_hash_64);
++
++        long v = 0;
++        long time = System.currentTimeMillis();
++        NumberFormat format = NumberFormat.getInstance();
++
++
++        final int len = 7;
++        char[] chars = new char[len];
++        for (int i0 = 0; i0 < digLetters.length; ++i0) {
++            long h0 = 0x811c9dc5;
++            char c0 = digLetters[i0];
++            h0 ^= c0;
++            h0 *= 0x1000193;
++
++            chars[0] = c0;
++            for (int i1 = 0; i1 < digLetters.length; ++i1) {
++                char c1 = digLetters[i1];
++                chars[1] = c1;
++
++                long h1 = h0;
++                h1 ^= c1;
++                h1 *= 0x1000193;
++
++                for (int i2 = 0; i2 < digLetters.length; ++i2) {
++                    char c2 = digLetters[i2];
++
++                    long h2 = h1;
++                    h2 ^= c2;
++                    h2 *= 0x1000193;
++
++                    chars[2] = c2;
++                    for (int i3 = 0; i3 < digLetters.length; ++i3) {
++                        char c3 = digLetters[i3];
++
++                        long h3 = h2;
++                        h3 ^= c3;
++                        h3 *= 0x1000193;
++
++                        chars[3] = c3;
++                        for (int i4 = 0; i4 < digLetters.length; ++i4) {
++                            char c4 = digLetters[i4];
++
++                            long h4 = h3;
++                            h4 ^= c4;
++                            h4 *= 0x1000193;
++
++                            chars[4] = c4;
++                            for (int i5 = 0; i5 < digLetters.length; ++i5) {
++                                char c5 = digLetters[i5];
++                                chars[5] = c5;
++
++                                long h5 = h4;
++                                h5 ^= c5;
++                                h5 *= 0x1000193;
++
++                                for (int i6 = 0; i6 < digLetters.length; ++i6) {
++                                    char c6 = digLetters[i6];
++
++                                    long h6 = h5;
++                                    h6 ^= c6;
++                                    h6 *= 0x1000193;
++
++                                    chars[6] = c6;
++
++                                    v++;
++                                    if (h6 == id_hash_64) {
++                                        int hash_32 = (int) h6;
++                                        System.out.println("collision : " + build(v, len) + "， hash64 : " + h6 + ", hash 32 " + hash_32);
++                                        break;
++                                    }
++
++                                    if (v != 0 && v % (1000 * 1000 * 1000) == 0) {
++                                        long now = System.currentTimeMillis();
++                                        long millis = now - time;
++                                        time = now;
++                                        System.out.println("millis : " + millis + ", " + format.format(v));
++                                    }
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++
++
++        System.out.println("end : " + len);
++
++    }
++
++    String build(long v, int len) {
++        char[] chars = new char[len];
++        for (int i = 0; i < chars.length; ++i) {
++            int power = powers[chars.length - i - 1];
++            int d = (int) ((v / power) % digLetters.length);
++            chars[i] = digLetters[d];
++        }
++
++        return new String(chars);
++    }
++
++    static long fnv_hash(char[] chars) {
++        long hash = 0x811c9dc5;
++        for (int i = 0; i < chars.length; ++i) {
++            char c = chars[i];
++            hash ^= c;
++            hash *= 0x1000193;
++        }
++        return hash;
++    }
++
++    static long hash(char[] chars) {
++        long hash = 0;
++        for (int i = 0; i < chars.length; ++i) {
++            hash = 31 * hash + chars[i];
++        }
++        return hash;
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/test/deny/NotExistsTest.java b/src/test/java/com/alibaba/json/test/deny/NotExistsTest.java
+new file mode 100644
+index 0000000000..edefa01550
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/test/deny/NotExistsTest.java
+@@ -0,0 +1,31 @@
++package com.alibaba.json.test.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.parser.ParserConfig;
++import junit.framework.TestCase;
++
++/**
++ * Created by wenshao on 28/01/2017.
++ */
++public class NotExistsTest extends TestCase {
++    public void test_0() throws Exception {
++//         ParserConfig.global.setAutoTypeSupport(true);
++        for (int i = 0; i < 10; ++i) {
++            long start = System.currentTimeMillis();
++            perf();
++            long millis = System.currentTimeMillis() - start;
++            System.out.println("millis : " + millis);
++        }
++    }
++
++    private void perf() {
++        for (int i = 0; i < 1000 * 10; ++i) {
++            String text = "[{\"@type\":\"x0\"},{\"@type\":\"x1\"},{\"@type\":\"x2\"},{\"@type\":\"x3\"},{\"@type\":\"x4\"}]";
++            try {
++                JSON.parseObject(text);
++            } catch (Exception ex) {
++                // skip
++            }
++        }
++    }
++}
+diff --git a/src/test/java/com/derbysoft/spitfire/fastjson/ABCTest.java b/src/test/java/com/derbysoft/spitfire/fastjson/ABCTest.java
+new file mode 100644
+index 0000000000..1173179924
+--- /dev/null
++++ b/src/test/java/com/derbysoft/spitfire/fastjson/ABCTest.java
+@@ -0,0 +1,36 @@
++package com.derbysoft.spitfire.fastjson;
++
++import com.alibaba.fastjson.parser.ParserConfig;
++import com.alibaba.json.test.Base64;
++import junit.framework.TestCase;
++
++import java.lang.reflect.Field;
++import java.util.Arrays;
++
++/**
++ * Created by wenshao on 27/01/2017.
++ */
++public class ABCTest extends TestCase {
++    public void test_abc() throws Exception {
++        Field field = ParserConfig.class.getDeclaredField("denyList");
++        field.setAccessible(true);
++
++        String[] denyList = (String[]) field.get(ParserConfig.getGlobalInstance());
++        Arrays.sort(denyList);
++
++        for (int i = 0; i < denyList.length; ++i) {
++            if (i != 0) {
++                System.out.print(",");
++            }
++            System.out.print(denyList[i]);
++        }
++
++        for (int i = 0; i < denyList.length; ++i) {
++            // System.out.println("\"" + denyList[i] + "\",");
++            System.out.println(denyList[i]);
++        }
++
++        System.out.println();
++        System.out.println(Base64.encodeToString("\"@type".getBytes(), true));
++    }
++}
+diff --git a/src/test/java/com/mchange/v2/c3p0/impl/PoolBackedDataSourceBase.java b/src/test/java/com/mchange/v2/c3p0/impl/PoolBackedDataSourceBase.java
+new file mode 100644
+index 0000000000..3303b25a54
+--- /dev/null
++++ b/src/test/java/com/mchange/v2/c3p0/impl/PoolBackedDataSourceBase.java
+@@ -0,0 +1,8 @@
++package com.mchange.v2.c3p0.impl;
++
++/**
++ * Created by wenshao on 27/01/2017.
++ */
++public class PoolBackedDataSourceBase {
++
++}
+From d7078548dc34c4f7645be9641490edac6f336ced Mon Sep 17 00:00:00 2001
+From: wenshao <szujobs@hotmail.com>
+Date: Sun, 29 Jan 2017 19:27:35 +0800
+Subject: [PATCH] 1.2.25.internal.v6
+
+---
+ src/main/java/com/alibaba/fastjson/JSON.java  |   2 +-
+ .../fastjson/parser/DefaultJSONParser.java    |   2 +-
+ .../alibaba/fastjson/parser/ParserConfig.java | 283 ++++++++++--------
+ .../AbstractDateDeserializer.java             |   2 +-
+ .../deserializer/JavaBeanDeserializer.java    |  10 +-
+ .../parser/deserializer/MapDeserializer.java  |   2 +-
+ .../deserializer/ThrowableDeserializer.java   |   6 +-
+ .../fastjson/serializer/SerializeWriter.java  |   7 +-
+ .../support/config/FastJsonConfig.java        |   2 +-
+ .../support/jaxrs/FastJsonProvider.java       |   3 +-
+ .../spring/FastJsonHttpMessageConverter.java  |   4 +-
+ .../support/spring/FastJsonJsonView.java      |   2 +-
+ .../FastJsonpHttpMessageConverter4.java       |   1 +
+ .../com/alibaba/fastjson/util/TypeUtils.java  |   9 +-
+ .../issues569/parser/ParserConfigBug569.java  |   2 +-
+ .../json/bvt/JSONObjectTest_get_2.java        |   4 +
+ .../parser/TypeUtilsTest_castToJavaBean.java  |   4 +
+ .../bvt/parser/deser/deny/DenyTest12.java     |  30 ++
+ .../bvt/parser/deser/deny/DenyTest13.java     |  25 ++
+ .../bvt/parser/deser/deny/DenyTest14.java     |  24 ++
+ .../bvt/parser/deser/deny/DenyTest15.java     |  24 ++
+ .../json/bvt/parser/deser/deny/DenyTest5.java |  10 +-
+ .../json/bvt/serializer/ParserConfigTest.java |   2 +-
+ .../alibaba/json/test/deny/NotExistsTest.java |  11 +-
+ 24 files changed, 310 insertions(+), 161 deletions(-)
+ create mode 100644 src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest12.java
+ create mode 100644 src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest13.java
+ create mode 100644 src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest14.java
+ create mode 100644 src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest15.java
+
+diff --git a/src/main/java/com/alibaba/fastjson/JSON.java b/src/main/java/com/alibaba/fastjson/JSON.java
+index 32b56f2b92..5a38210383 100755
+--- a/src/main/java/com/alibaba/fastjson/JSON.java
++++ b/src/main/java/com/alibaba/fastjson/JSON.java
+@@ -731,7 +731,7 @@ public static final int writeJSONString(OutputStream os, //
+                                             int defaultFeatures, //
+                                             SerializerFeature... features) throws IOException {
+        return writeJSONString(os,  //
+-                              IOUtils.UTF8, // 
++                              IOUtils.UTF8, //
+                               object, //
+                               SerializeConfig.globalInstance, //
+                               null, //
+diff --git a/src/main/java/com/alibaba/fastjson/parser/DefaultJSONParser.java b/src/main/java/com/alibaba/fastjson/parser/DefaultJSONParser.java
+index 090fad6060..1b98e0c740 100755
+--- a/src/main/java/com/alibaba/fastjson/parser/DefaultJSONParser.java
++++ b/src/main/java/com/alibaba/fastjson/parser/DefaultJSONParser.java
+@@ -319,7 +319,7 @@ public final Object parseObject(final Map object, Object fieldName) {
+ 
+                 if (key == JSON.DEFAULT_TYPE_KEY && !lexer.isEnabled(Feature.DisableSpecialKeyDetect)) {
+                     String typeName = lexer.scanSymbol(symbolTable, '"');
+-                    Class<?> clazz = config.checkAutoType(typeName);
++                    Class<?> clazz = config.checkAutoType(typeName, null);
+ 
+                     if (clazz == null) {
+                         object.put(JSON.DEFAULT_TYPE_KEY, typeName);
+diff --git a/src/main/java/com/alibaba/fastjson/parser/ParserConfig.java b/src/main/java/com/alibaba/fastjson/parser/ParserConfig.java
+index 4666556322..03846f6732 100644
+--- a/src/main/java/com/alibaba/fastjson/parser/ParserConfig.java
++++ b/src/main/java/com/alibaba/fastjson/parser/ParserConfig.java
+@@ -142,7 +142,7 @@ public static ParserConfig getGlobalInstance() {
+ 
+     public static ParserConfig                              global         = new ParserConfig();
+ 
+-    private final IdentityHashMap<Type, ObjectDeserializer> derializers    = new IdentityHashMap<Type, ObjectDeserializer>();
++    private final IdentityHashMap<Type, ObjectDeserializer> deserializers = new IdentityHashMap<Type, ObjectDeserializer>();
+ 
+     private boolean                                         asmEnable      = !ASMUtils.IS_ANDROID;
+ 
+@@ -196,84 +196,84 @@ private ParserConfig(ASMDeserializerFactory asmFactory, ClassLoader parentClassL
+             asmEnable = false;
+         }
+ 
+-        derializers.put(SimpleDateFormat.class, MiscCodec.instance);
+-        derializers.put(java.sql.Timestamp.class, SqlDateDeserializer.instance_timestamp);
+-        derializers.put(java.sql.Date.class, SqlDateDeserializer.instance);
+-        derializers.put(java.sql.Time.class, TimeDeserializer.instance);
+-        derializers.put(java.util.Date.class, DateCodec.instance);
+-        derializers.put(Calendar.class, CalendarCodec.instance);
+-        derializers.put(XMLGregorianCalendar.class, CalendarCodec.instance);
+-
+-        derializers.put(JSONObject.class, MapDeserializer.instance);
+-        derializers.put(JSONArray.class, CollectionCodec.instance);
+-
+-        derializers.put(Map.class, MapDeserializer.instance);
+-        derializers.put(HashMap.class, MapDeserializer.instance);
+-        derializers.put(LinkedHashMap.class, MapDeserializer.instance);
+-        derializers.put(TreeMap.class, MapDeserializer.instance);
+-        derializers.put(ConcurrentMap.class, MapDeserializer.instance);
+-        derializers.put(ConcurrentHashMap.class, MapDeserializer.instance);
+-
+-        derializers.put(Collection.class, CollectionCodec.instance);
+-        derializers.put(List.class, CollectionCodec.instance);
+-        derializers.put(ArrayList.class, CollectionCodec.instance);
+-
+-        derializers.put(Object.class, JavaObjectDeserializer.instance);
+-        derializers.put(String.class, StringCodec.instance);
+-        derializers.put(StringBuffer.class, StringCodec.instance);
+-        derializers.put(StringBuilder.class, StringCodec.instance);
+-        derializers.put(char.class, CharacterCodec.instance);
+-        derializers.put(Character.class, CharacterCodec.instance);
+-        derializers.put(byte.class, NumberDeserializer.instance);
+-        derializers.put(Byte.class, NumberDeserializer.instance);
+-        derializers.put(short.class, NumberDeserializer.instance);
+-        derializers.put(Short.class, NumberDeserializer.instance);
+-        derializers.put(int.class, IntegerCodec.instance);
+-        derializers.put(Integer.class, IntegerCodec.instance);
+-        derializers.put(long.class, LongCodec.instance);
+-        derializers.put(Long.class, LongCodec.instance);
+-        derializers.put(BigInteger.class, BigIntegerCodec.instance);
+-        derializers.put(BigDecimal.class, BigDecimalCodec.instance);
+-        derializers.put(float.class, FloatCodec.instance);
+-        derializers.put(Float.class, FloatCodec.instance);
+-        derializers.put(double.class, NumberDeserializer.instance);
+-        derializers.put(Double.class, NumberDeserializer.instance);
+-        derializers.put(boolean.class, BooleanCodec.instance);
+-        derializers.put(Boolean.class, BooleanCodec.instance);
+-        derializers.put(Class.class, MiscCodec.instance);
+-        derializers.put(char[].class, new CharArrayCodec());
+-
+-        derializers.put(AtomicBoolean.class, BooleanCodec.instance);
+-        derializers.put(AtomicInteger.class, IntegerCodec.instance);
+-        derializers.put(AtomicLong.class, LongCodec.instance);
+-        derializers.put(AtomicReference.class, ReferenceCodec.instance);
+-
+-        derializers.put(WeakReference.class, ReferenceCodec.instance);
+-        derializers.put(SoftReference.class, ReferenceCodec.instance);
+-
+-        derializers.put(UUID.class, MiscCodec.instance);
+-        derializers.put(TimeZone.class, MiscCodec.instance);
+-        derializers.put(Locale.class, MiscCodec.instance);
+-        derializers.put(Currency.class, MiscCodec.instance);
+-        derializers.put(InetAddress.class, MiscCodec.instance);
+-        derializers.put(Inet4Address.class, MiscCodec.instance);
+-        derializers.put(Inet6Address.class, MiscCodec.instance);
+-        derializers.put(InetSocketAddress.class, MiscCodec.instance);
+-        derializers.put(File.class, MiscCodec.instance);
+-        derializers.put(URI.class, MiscCodec.instance);
+-        derializers.put(URL.class, MiscCodec.instance);
+-        derializers.put(Pattern.class, MiscCodec.instance);
+-        derializers.put(Charset.class, MiscCodec.instance);
+-        derializers.put(JSONPath.class, MiscCodec.instance);
+-        derializers.put(Number.class, NumberDeserializer.instance);
+-        derializers.put(AtomicIntegerArray.class, AtomicCodec.instance);
+-        derializers.put(AtomicLongArray.class, AtomicCodec.instance);
+-        derializers.put(StackTraceElement.class, StackTraceElementDeserializer.instance);
+-
+-        derializers.put(Serializable.class, JavaObjectDeserializer.instance);
+-        derializers.put(Cloneable.class, JavaObjectDeserializer.instance);
+-        derializers.put(Comparable.class, JavaObjectDeserializer.instance);
+-        derializers.put(Closeable.class, JavaObjectDeserializer.instance);
++        deserializers.put(SimpleDateFormat.class, MiscCodec.instance);
++        deserializers.put(java.sql.Timestamp.class, SqlDateDeserializer.instance_timestamp);
++        deserializers.put(java.sql.Date.class, SqlDateDeserializer.instance);
++        deserializers.put(java.sql.Time.class, TimeDeserializer.instance);
++        deserializers.put(java.util.Date.class, DateCodec.instance);
++        deserializers.put(Calendar.class, CalendarCodec.instance);
++        deserializers.put(XMLGregorianCalendar.class, CalendarCodec.instance);
++
++        deserializers.put(JSONObject.class, MapDeserializer.instance);
++        deserializers.put(JSONArray.class, CollectionCodec.instance);
++
++        deserializers.put(Map.class, MapDeserializer.instance);
++        deserializers.put(HashMap.class, MapDeserializer.instance);
++        deserializers.put(LinkedHashMap.class, MapDeserializer.instance);
++        deserializers.put(TreeMap.class, MapDeserializer.instance);
++        deserializers.put(ConcurrentMap.class, MapDeserializer.instance);
++        deserializers.put(ConcurrentHashMap.class, MapDeserializer.instance);
++
++        deserializers.put(Collection.class, CollectionCodec.instance);
++        deserializers.put(List.class, CollectionCodec.instance);
++        deserializers.put(ArrayList.class, CollectionCodec.instance);
++
++        deserializers.put(Object.class, JavaObjectDeserializer.instance);
++        deserializers.put(String.class, StringCodec.instance);
++        deserializers.put(StringBuffer.class, StringCodec.instance);
++        deserializers.put(StringBuilder.class, StringCodec.instance);
++        deserializers.put(char.class, CharacterCodec.instance);
++        deserializers.put(Character.class, CharacterCodec.instance);
++        deserializers.put(byte.class, NumberDeserializer.instance);
++        deserializers.put(Byte.class, NumberDeserializer.instance);
++        deserializers.put(short.class, NumberDeserializer.instance);
++        deserializers.put(Short.class, NumberDeserializer.instance);
++        deserializers.put(int.class, IntegerCodec.instance);
++        deserializers.put(Integer.class, IntegerCodec.instance);
++        deserializers.put(long.class, LongCodec.instance);
++        deserializers.put(Long.class, LongCodec.instance);
++        deserializers.put(BigInteger.class, BigIntegerCodec.instance);
++        deserializers.put(BigDecimal.class, BigDecimalCodec.instance);
++        deserializers.put(float.class, FloatCodec.instance);
++        deserializers.put(Float.class, FloatCodec.instance);
++        deserializers.put(double.class, NumberDeserializer.instance);
++        deserializers.put(Double.class, NumberDeserializer.instance);
++        deserializers.put(boolean.class, BooleanCodec.instance);
++        deserializers.put(Boolean.class, BooleanCodec.instance);
++        deserializers.put(Class.class, MiscCodec.instance);
++        deserializers.put(char[].class, new CharArrayCodec());
++
++        deserializers.put(AtomicBoolean.class, BooleanCodec.instance);
++        deserializers.put(AtomicInteger.class, IntegerCodec.instance);
++        deserializers.put(AtomicLong.class, LongCodec.instance);
++        deserializers.put(AtomicReference.class, ReferenceCodec.instance);
++
++        deserializers.put(WeakReference.class, ReferenceCodec.instance);
++        deserializers.put(SoftReference.class, ReferenceCodec.instance);
++
++        deserializers.put(UUID.class, MiscCodec.instance);
++        deserializers.put(TimeZone.class, MiscCodec.instance);
++        deserializers.put(Locale.class, MiscCodec.instance);
++        deserializers.put(Currency.class, MiscCodec.instance);
++        deserializers.put(InetAddress.class, MiscCodec.instance);
++        deserializers.put(Inet4Address.class, MiscCodec.instance);
++        deserializers.put(Inet6Address.class, MiscCodec.instance);
++        deserializers.put(InetSocketAddress.class, MiscCodec.instance);
++        deserializers.put(File.class, MiscCodec.instance);
++        deserializers.put(URI.class, MiscCodec.instance);
++        deserializers.put(URL.class, MiscCodec.instance);
++        deserializers.put(Pattern.class, MiscCodec.instance);
++        deserializers.put(Charset.class, MiscCodec.instance);
++        deserializers.put(JSONPath.class, MiscCodec.instance);
++        deserializers.put(Number.class, NumberDeserializer.instance);
++        deserializers.put(AtomicIntegerArray.class, AtomicCodec.instance);
++        deserializers.put(AtomicLongArray.class, AtomicCodec.instance);
++        deserializers.put(StackTraceElement.class, StackTraceElementDeserializer.instance);
++
++        deserializers.put(Serializable.class, JavaObjectDeserializer.instance);
++        deserializers.put(Cloneable.class, JavaObjectDeserializer.instance);
++        deserializers.put(Comparable.class, JavaObjectDeserializer.instance);
++        deserializers.put(Closeable.class, JavaObjectDeserializer.instance);
+ 
+         addItemsToDeny(DENYS);
+         addItemsToAccept(AUTO_TYPE_ACCEPT_LIST);
+@@ -346,12 +346,12 @@ public void setAsmEnable(boolean asmEnable) {
+         this.asmEnable = asmEnable;
+     }
+ 
+-    public IdentityHashMap<Type, ObjectDeserializer> getDerializers() {
+-        return derializers;
++    public IdentityHashMap<Type, ObjectDeserializer> getDeserializers() {
++        return deserializers;
+     }
+ 
+     public ObjectDeserializer getDeserializer(Type type) {
+-        ObjectDeserializer derializer = this.derializers.get(type);
++        ObjectDeserializer derializer = this.deserializers.get(type);
+         if (derializer != null) {
+             return derializer;
+         }
+@@ -373,7 +373,7 @@ public ObjectDeserializer getDeserializer(Type type) {
+     }
+ 
+     public ObjectDeserializer getDeserializer(Class<?> clazz, Type type) {
+-        ObjectDeserializer derializer = derializers.get(type);
++        ObjectDeserializer derializer = deserializers.get(type);
+         if (derializer != null) {
+             return derializer;
+         }
+@@ -382,7 +382,7 @@ public ObjectDeserializer getDeserializer(Class<?> clazz, Type type) {
+             type = clazz;
+         }
+ 
+-        derializer = derializers.get(type);
++        derializer = deserializers.get(type);
+         if (derializer != null) {
+             return derializer;
+         }
+@@ -398,7 +398,7 @@ public ObjectDeserializer getDeserializer(Class<?> clazz, Type type) {
+         }
+ 
+         if (type instanceof WildcardType || type instanceof TypeVariable || type instanceof ParameterizedType) {
+-            derializer = derializers.get(clazz);
++            derializer = deserializers.get(clazz);
+         }
+ 
+         if (derializer != null) {
+@@ -412,10 +412,10 @@ public ObjectDeserializer getDeserializer(Class<?> clazz, Type type) {
+             && AwtCodec.support(clazz)) {
+             if (!awtError) {
+                 try {
+-                    derializers.put(Class.forName("java.awt.Point"), AwtCodec.instance);
+-                    derializers.put(Class.forName("java.awt.Font"), AwtCodec.instance);
+-                    derializers.put(Class.forName("java.awt.Rectangle"), AwtCodec.instance);
+-                    derializers.put(Class.forName("java.awt.Color"), AwtCodec.instance);
++                    deserializers.put(Class.forName("java.awt.Point"), AwtCodec.instance);
++                    deserializers.put(Class.forName("java.awt.Font"), AwtCodec.instance);
++                    deserializers.put(Class.forName("java.awt.Rectangle"), AwtCodec.instance);
++                    deserializers.put(Class.forName("java.awt.Color"), AwtCodec.instance);
+                 } catch (Throwable e) {
+                     // skip
+                     awtError = true;
+@@ -429,28 +429,28 @@ public ObjectDeserializer getDeserializer(Class<?> clazz, Type type) {
+             try {
+                 if (className.startsWith("java.time.")) {
+                     
+-                    derializers.put(Class.forName("java.time.LocalDateTime"), Jdk8DateCodec.instance);
+-                    derializers.put(Class.forName("java.time.LocalDate"), Jdk8DateCodec.instance);
+-                    derializers.put(Class.forName("java.time.LocalTime"), Jdk8DateCodec.instance);
+-                    derializers.put(Class.forName("java.time.ZonedDateTime"), Jdk8DateCodec.instance);
+-                    derializers.put(Class.forName("java.time.OffsetDateTime"), Jdk8DateCodec.instance);
+-                    derializers.put(Class.forName("java.time.OffsetTime"), Jdk8DateCodec.instance);
+-                    derializers.put(Class.forName("java.time.ZoneOffset"), Jdk8DateCodec.instance);
+-                    derializers.put(Class.forName("java.time.ZoneRegion"), Jdk8DateCodec.instance);
+-                    derializers.put(Class.forName("java.time.ZoneId"), Jdk8DateCodec.instance);
+-                    derializers.put(Class.forName("java.time.Period"), Jdk8DateCodec.instance);
+-                    derializers.put(Class.forName("java.time.Duration"), Jdk8DateCodec.instance);
+-                    derializers.put(Class.forName("java.time.Instant"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.LocalDateTime"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.LocalDate"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.LocalTime"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.ZonedDateTime"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.OffsetDateTime"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.OffsetTime"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.ZoneOffset"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.ZoneRegion"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.ZoneId"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.Period"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.Duration"), Jdk8DateCodec.instance);
++                    deserializers.put(Class.forName("java.time.Instant"), Jdk8DateCodec.instance);
+                     
+-                    derializer = derializers.get(clazz);
++                    derializer = deserializers.get(clazz);
+                 } else if (className.startsWith("java.util.Optional")) {
+                     
+-                    derializers.put(Class.forName("java.util.Optional"), OptionalCodec.instance);
+-                    derializers.put(Class.forName("java.util.OptionalDouble"), OptionalCodec.instance);
+-                    derializers.put(Class.forName("java.util.OptionalInt"), OptionalCodec.instance);
+-                    derializers.put(Class.forName("java.util.OptionalLong"), OptionalCodec.instance);
++                    deserializers.put(Class.forName("java.util.Optional"), OptionalCodec.instance);
++                    deserializers.put(Class.forName("java.util.OptionalDouble"), OptionalCodec.instance);
++                    deserializers.put(Class.forName("java.util.OptionalInt"), OptionalCodec.instance);
++                    deserializers.put(Class.forName("java.util.OptionalLong"), OptionalCodec.instance);
+                     
+-                    derializer = derializers.get(clazz);
++                    derializer = deserializers.get(clazz);
+                 }
+             } catch (Throwable e) {
+                 // skip
+@@ -459,11 +459,11 @@ public ObjectDeserializer getDeserializer(Class<?> clazz, Type type) {
+         }
+ 
+         if (className.equals("java.nio.file.Path")) {
+-            derializers.put(clazz, MiscCodec.instance);
++            deserializers.put(clazz, MiscCodec.instance);
+         }
+ 
+         if (clazz == Map.Entry.class) {
+-            derializers.put(clazz, MiscCodec.instance);
++            deserializers.put(clazz, MiscCodec.instance);
+         }
+ 
+         final ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+@@ -471,7 +471,7 @@ public ObjectDeserializer getDeserializer(Class<?> clazz, Type type) {
+             for (AutowiredObjectDeserializer autowired : ServiceLoader.load(AutowiredObjectDeserializer.class,
+                                                                             classLoader)) {
+                 for (Type forType : autowired.getAutowiredFor()) {
+-                    derializers.put(forType, autowired);
++                    deserializers.put(forType, autowired);
+                 }
+             }
+         } catch (Exception ex) {
+@@ -479,7 +479,7 @@ public ObjectDeserializer getDeserializer(Class<?> clazz, Type type) {
+         }
+ 
+         if (derializer == null) {
+-            derializer = derializers.get(type);
++            derializer = deserializers.get(type);
+         }
+ 
+         if (derializer != null) {
+@@ -684,7 +684,7 @@ public FieldDeserializer createFieldDeserializer(ParserConfig mapping, //
+     }
+ 
+     public void putDeserializer(Type type, ObjectDeserializer deserializer) {
+-        derializers.put(type, deserializer);
++        deserializers.put(type, deserializer);
+     }
+ 
+     public ObjectDeserializer getDeserializer(FieldInfo fieldInfo) {
+@@ -787,14 +787,21 @@ public void addAccept(String name) {
+         this.acceptList = acceptList;
+     }
+ 
+-    public Class<?> checkAutoType(String typeName) {
++    public Class<?> checkAutoType(String typeName, Class<?> expectClass) {
+         if (typeName == null) {
+             return null;
+         }
+ 
+         final String className = typeName.replace('$', '.');
+ 
+-        if (autoTypeSupport) {
++        if (autoTypeSupport || expectClass != null) {
++            for (int i = 0; i < acceptList.length; ++i) {
++                String accept = acceptList[i];
++                if (className.startsWith(accept)) {
++                    return TypeUtils.loadClass(typeName, defaultClassLoader);
++                }
++            }
++
+             for (int i = 0; i < denyList.length; ++i) {
+                 String deny = denyList[i];
+                 if (className.startsWith(deny)) {
+@@ -805,40 +812,58 @@ public Class<?> checkAutoType(String typeName) {
+ 
+         Class<?> clazz = TypeUtils.getClassFromMapping(typeName);
+         if (clazz == null) {
+-            clazz = derializers.findClass(typeName);
++            clazz = deserializers.findClass(typeName);
+         }
+ 
+         if (clazz != null) {
++            if (expectClass != null && !expectClass.isAssignableFrom(clazz)) {
++                throw new JSONException("type not match. " + typeName + " -> " + expectClass.getName());
++            }
++
+             return clazz;
+         }
+ 
+-        for (int i = 0; i < acceptList.length; ++i) {
+-            String accept = acceptList[i];
+-            if (className.startsWith(accept)) {
+-                return TypeUtils.loadClass(typeName, defaultClassLoader);
++        if (!autoTypeSupport) {
++            for (int i = 0; i < denyList.length; ++i) {
++                String deny = denyList[i];
++                if (className.startsWith(deny)) {
++                    throw new JSONException("autoType is not support. " + typeName);
++                }
++            }
++            for (int i = 0; i < acceptList.length; ++i) {
++                String accept = acceptList[i];
++                if (className.startsWith(accept)) {
++                    clazz = TypeUtils.loadClass(typeName, defaultClassLoader);
++
++                    if (expectClass != null && expectClass.isAssignableFrom(clazz)) {
++                        throw new JSONException("type not match. " + typeName + " -> " + expectClass.getName());
++                    }
++                    return clazz;
++                }
+             }
+         }
+ 
+-        if (autoTypeSupport) {
++        if (autoTypeSupport || expectClass != null) {
+             clazz = TypeUtils.loadClass(typeName, defaultClassLoader);
+         }
+ 
+         if (clazz != null) {
+-            if (ClassLoader.class.isAssignableFrom(clazz) || DataSource.class.isAssignableFrom(clazz)) {
+-                throw new JSONException("autoType is not support. " + typeName);
+-            }
+ 
+-            if (derializers.get(clazz) != null) {
+-                return clazz;
++            if (ClassLoader.class.isAssignableFrom(clazz) // classloader is danger
++                    || DataSource.class.isAssignableFrom(clazz) // dataSource can load jdbc driver
++                    ) {
++                throw new JSONException("autoType is not support. " + typeName);
+             }
+ 
+-            if (Throwable.class.isAssignableFrom(clazz)) {
+-                return clazz;
++            if (expectClass != null) {
++                if (expectClass.isAssignableFrom(clazz)) {
++                    return clazz;
++                } else {
++                    throw new JSONException("type not match. " + typeName + " -> " + expectClass.getName());
++                }
+             }
+         }
+ 
+-        // java.awt.Desktop
+-
+         if (!autoTypeSupport) {
+             throw new JSONException("autoType is not support. " + typeName);
+         }
+diff --git a/src/main/java/com/alibaba/fastjson/parser/deserializer/AbstractDateDeserializer.java b/src/main/java/com/alibaba/fastjson/parser/deserializer/AbstractDateDeserializer.java
+index 85a66e12df..4a6295b8ea 100755
+--- a/src/main/java/com/alibaba/fastjson/parser/deserializer/AbstractDateDeserializer.java
++++ b/src/main/java/com/alibaba/fastjson/parser/deserializer/AbstractDateDeserializer.java
+@@ -92,7 +92,7 @@ public <T> T deserialze(DefaultJSONParser parser, Type clazz, Object fieldName,
+                     parser.accept(JSONToken.COLON);
+                     
+                     String typeName = lexer.stringVal();
+-                    Class<?> type = TypeUtils.loadClass(typeName, parser.getConfig().getDefaultClassLoader());
++                    Class<?> type = parser.getConfig().checkAutoType(typeName, null);
+                     if (type != null) {
+                         clazz = type;
+                     }
+diff --git a/src/main/java/com/alibaba/fastjson/parser/deserializer/JavaBeanDeserializer.java b/src/main/java/com/alibaba/fastjson/parser/deserializer/JavaBeanDeserializer.java
+index b678169fdf..8edc0b9168 100755
+--- a/src/main/java/com/alibaba/fastjson/parser/deserializer/JavaBeanDeserializer.java
++++ b/src/main/java/com/alibaba/fastjson/parser/deserializer/JavaBeanDeserializer.java
+@@ -548,15 +548,9 @@ protected <T> T deserialze(DefaultJSONParser parser, //
+                             ObjectDeserializer deserizer = getSeeAlso(config, this.beanInfo, typeName);
+                             Class<?> userType = null;
+                             if (deserizer == null) {
+-                                userType = TypeUtils.loadClass(typeName, config.getDefaultClassLoader());
+-                                
+                                 Class<?> expectClass = TypeUtils.getClass(type);
+-                                if (expectClass == null || 
+-                                    (userType != null && expectClass.isAssignableFrom(userType))) {
+-                                    deserizer = parser.getConfig().getDeserializer(userType);                                        
+-                                } else {
+-                                    throw new JSONException("type not match");
+-                                }
++                                userType = config.checkAutoType(typeName, expectClass);
++                                deserizer = parser.getConfig().getDeserializer(userType);
+                             }
+                             
+                             return (T) deserizer.deserialze(parser, userType, fieldName);
+diff --git a/src/main/java/com/alibaba/fastjson/parser/deserializer/MapDeserializer.java b/src/main/java/com/alibaba/fastjson/parser/deserializer/MapDeserializer.java
+index efdd189514..0b2f4079e7 100644
+--- a/src/main/java/com/alibaba/fastjson/parser/deserializer/MapDeserializer.java
++++ b/src/main/java/com/alibaba/fastjson/parser/deserializer/MapDeserializer.java
+@@ -127,7 +127,7 @@ public static Map parseMap(DefaultJSONParser parser, Map<String, Object> map, Ty
+                     String typeName = lexer.scanSymbol(parser.getSymbolTable(), '"');
+                     final ParserConfig config = parser.getConfig();
+ 
+-                    Class<?> clazz = config.checkAutoType(typeName);
++                    Class<?> clazz = config.checkAutoType(typeName, null);
+ 
+                     if (Map.class.isAssignableFrom(clazz) ) {
+                         lexer.nextToken(JSONToken.COMMA);
+diff --git a/src/main/java/com/alibaba/fastjson/parser/deserializer/ThrowableDeserializer.java b/src/main/java/com/alibaba/fastjson/parser/deserializer/ThrowableDeserializer.java
+index ab3b3624e6..797c546989 100755
+--- a/src/main/java/com/alibaba/fastjson/parser/deserializer/ThrowableDeserializer.java
++++ b/src/main/java/com/alibaba/fastjson/parser/deserializer/ThrowableDeserializer.java
+@@ -72,7 +72,7 @@ public <T> T deserialze(DefaultJSONParser parser, Type type, Object fieldName) {
+             if (JSON.DEFAULT_TYPE_KEY.equals(key)) {
+                 if (lexer.token() == JSONToken.LITERAL_STRING) {
+                     String exClassName = lexer.stringVal();
+-                    exClass = TypeUtils.loadClass(exClassName, parser.getConfig().getDefaultClassLoader());
++                    exClass = parser.getConfig().checkAutoType(exClassName, Throwable.class);
+                 } else {
+                     throw new JSONException("syntax error");
+                 }
+@@ -105,6 +105,10 @@ public <T> T deserialze(DefaultJSONParser parser, Type type, Object fieldName) {
+         if (exClass == null) {
+             ex = new Exception(message, cause);
+         } else {
++            if (!Throwable.class.isAssignableFrom(exClass)) {
++                throw new JSONException("type not match, not Throwable. " + exClass.getName());
++            }
++
+             try {
+                 ex = createException(message, cause, exClass);
+                 if (ex == null) {
+diff --git a/src/main/java/com/alibaba/fastjson/serializer/SerializeWriter.java b/src/main/java/com/alibaba/fastjson/serializer/SerializeWriter.java
+index 3a233bdf15..6d73fe4147 100755
+--- a/src/main/java/com/alibaba/fastjson/serializer/SerializeWriter.java
++++ b/src/main/java/com/alibaba/fastjson/serializer/SerializeWriter.java
+@@ -32,6 +32,7 @@
+  * @author wenshao[szujobs@hotmail.com]
+  */
+ public final class SerializeWriter extends Writer {
++    private final static Charset   UTF8                            = Charset.forName("UTF-8");
+ 
+     private final static ThreadLocal<char[]>         bufLocal      = new ThreadLocal<char[]>();
+     private final static ThreadLocal<byte[]>         bytesBufLocal = new ThreadLocal<byte[]>();
+@@ -322,7 +323,7 @@ public int writeToEx(OutputStream out, Charset charset) throws IOException {
+             throw new UnsupportedOperationException("writer not null");
+         }
+         
+-        if (charset == IOUtils.UTF8) {
++        if (charset == UTF8) {
+             return encodeToUTF8(out);
+         } else {
+             byte[] bytes = new String(buf, 0, count).getBytes(charset);
+@@ -362,7 +363,7 @@ public char[] toCharArrayForSpringWebSocket() {
+ 
+     public byte[] toBytes(String charsetName) {
+         return toBytes(charsetName == null || "UTF-8".equals(charsetName) //
+-            ? IOUtils.UTF8 //
++            ? UTF8 //
+             : Charset.forName(charsetName));
+     }
+ 
+@@ -371,7 +372,7 @@ public byte[] toBytes(Charset charset) {
+             throw new UnsupportedOperationException("writer not null");
+         }
+         
+-        if (charset == IOUtils.UTF8) {
++        if (charset == UTF8) {
+             return encodeToUTF8Bytes();
+         } else {
+             return new String(buf, 0, count).getBytes(charset);
+diff --git a/src/main/java/com/alibaba/fastjson/support/config/FastJsonConfig.java b/src/main/java/com/alibaba/fastjson/support/config/FastJsonConfig.java
+index b0926bf704..b63ee6aa40 100644
+--- a/src/main/java/com/alibaba/fastjson/support/config/FastJsonConfig.java
++++ b/src/main/java/com/alibaba/fastjson/support/config/FastJsonConfig.java
+@@ -71,7 +71,7 @@ public class FastJsonConfig {
+      */
+     public FastJsonConfig() {
+ 
+-        this.charset = IOUtils.UTF8;
++        this.charset = Charset.forName("UTF-8");
+ 
+         this.serializeConfig = SerializeConfig.getGlobalInstance();
+         this.parserConfig = new ParserConfig();
+diff --git a/src/main/java/com/alibaba/fastjson/support/jaxrs/FastJsonProvider.java b/src/main/java/com/alibaba/fastjson/support/jaxrs/FastJsonProvider.java
+index f3343e6059..2de36db67f 100644
+--- a/src/main/java/com/alibaba/fastjson/support/jaxrs/FastJsonProvider.java
++++ b/src/main/java/com/alibaba/fastjson/support/jaxrs/FastJsonProvider.java
+@@ -39,9 +39,8 @@
+ @Produces({MediaType.WILDCARD})
+ public class FastJsonProvider //
+         implements MessageBodyReader<Object>, MessageBodyWriter<Object> {
+-
+     @Deprecated
+-    protected Charset charset = IOUtils.UTF8;
++    protected Charset charset = Charset.forName("UTF-8");
+ 
+     @Deprecated
+     protected SerializerFeature[] features = new SerializerFeature[0];
+diff --git a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonHttpMessageConverter.java b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonHttpMessageConverter.java
+index 5aa1950d40..e5e841c097 100755
+--- a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonHttpMessageConverter.java
++++ b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonHttpMessageConverter.java
+@@ -35,9 +35,7 @@
+ public class FastJsonHttpMessageConverter //
+         extends AbstractHttpMessageConverter<Object> //
+         implements GenericHttpMessageConverter<Object> {
+-
+-    @Deprecated
+-    protected Charset charset = IOUtils.UTF8;
++    private Charset             charset    = Charset.forName("UTF-8");
+ 
+     @Deprecated
+     protected SerializerFeature[] features = new SerializerFeature[0];
+diff --git a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonJsonView.java b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonJsonView.java
+index 4323e8a49d..3bb072be8c 100755
+--- a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonJsonView.java
++++ b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonJsonView.java
+@@ -35,7 +35,7 @@ public class FastJsonJsonView extends AbstractView {
+     public static final String DEFAULT_CONTENT_TYPE = "application/json;charset=UTF-8";
+ 
+     @Deprecated
+-    protected Charset charset = IOUtils.UTF8;
++    protected Charset charset = Charset.forName("UTF-8");
+ 
+     @Deprecated
+     protected SerializerFeature[] features = new SerializerFeature[0];
+diff --git a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpHttpMessageConverter4.java b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpHttpMessageConverter4.java
+index 113a69f526..16862f59dd 100644
+--- a/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpHttpMessageConverter4.java
++++ b/src/main/java/com/alibaba/fastjson/support/spring/FastJsonpHttpMessageConverter4.java
+@@ -5,6 +5,7 @@
+ import java.io.InputStream;
+ import java.io.OutputStream;
+ import java.lang.reflect.Type;
++import java.nio.charset.Charset;
+ 
+ import org.springframework.http.HttpHeaders;
+ import org.springframework.http.HttpInputMessage;
+diff --git a/src/main/java/com/alibaba/fastjson/util/TypeUtils.java b/src/main/java/com/alibaba/fastjson/util/TypeUtils.java
+index e461fee50e..eb68b90f07 100755
+--- a/src/main/java/com/alibaba/fastjson/util/TypeUtils.java
++++ b/src/main/java/com/alibaba/fastjson/util/TypeUtils.java
+@@ -883,7 +883,11 @@ public static <T> T castToJavaBean(Map<String, Object> map, Class<T> clazz, Pars
+                 if (iClassObject instanceof String) {
+                     String className = (String) iClassObject;
+ 
+-                    Class<?> loadClazz = (Class<T>) loadClass(className);
++                    Class<?> loadClazz;
++                    if (config == null) {
++                        config = ParserConfig.global;
++                    }
++                    loadClazz = config.checkAutoType(className, null);
+ 
+                     if (loadClazz == null) {
+                         throw new ClassNotFoundException(className + " not found");
+@@ -1019,6 +1023,7 @@ private static void addBaseClassMappings() {
+                 java.sql.Time.class,
+                 java.sql.Date.class,
+                 java.sql.Timestamp.class,
++                java.text.SimpleDateFormat.class,
+                 loadClass("java.awt.Rectangle"),
+                 loadClass("java.awt.Point"),
+                 loadClass("java.awt.Font"),
+@@ -1100,7 +1105,7 @@ public static Class<?> loadClass(String className, ClassLoader classLoader) {
+         try {
+             ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+ 
+-            if (contextClassLoader != null) {
++            if (contextClassLoader != null && contextClassLoader != classLoader) {
+                 clazz = contextClassLoader.loadClass(className);
+                 mappings.put(className, clazz);
+ 
+diff --git a/src/test/java/com/alibaba/fastjson/deserializer/issues569/parser/ParserConfigBug569.java b/src/test/java/com/alibaba/fastjson/deserializer/issues569/parser/ParserConfigBug569.java
+index d0cb146351..cd663cbb07 100644
+--- a/src/test/java/com/alibaba/fastjson/deserializer/issues569/parser/ParserConfigBug569.java
++++ b/src/test/java/com/alibaba/fastjson/deserializer/issues569/parser/ParserConfigBug569.java
+@@ -52,7 +52,7 @@ public FieldDeserializer createFieldDeserializer(ParserConfig mapping, //
+     }
+ 
+     public ObjectDeserializer getDeserializer(Class<?> clazz, Type type) {
+-        com.alibaba.fastjson.util.IdentityHashMap<Type, ObjectDeserializer> derializers = super.getDerializers();
++        com.alibaba.fastjson.util.IdentityHashMap<Type, ObjectDeserializer> derializers = super.getDeserializers();
+         ObjectDeserializer derializer = derializers.get(type);
+         if (derializer != null) {
+             return derializer;
+diff --git a/src/test/java/com/alibaba/json/bvt/JSONObjectTest_get_2.java b/src/test/java/com/alibaba/json/bvt/JSONObjectTest_get_2.java
+index 360abc873b..c5d8b18262 100644
+--- a/src/test/java/com/alibaba/json/bvt/JSONObjectTest_get_2.java
++++ b/src/test/java/com/alibaba/json/bvt/JSONObjectTest_get_2.java
+@@ -3,6 +3,7 @@
+ import java.util.HashMap;
+ import java.util.Map;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ 
+ import com.alibaba.fastjson.JSON;
+@@ -12,6 +13,9 @@
+ import junit.framework.TestCase;
+ 
+ public class JSONObjectTest_get_2 extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.JSONObjectTest_get_2.");
++    }
+ 
+     public void test_get() throws Exception {
+         JSONObject obj = JSON.parseObject("{\"value\":{}}");
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/TypeUtilsTest_castToJavaBean.java b/src/test/java/com/alibaba/json/bvt/parser/TypeUtilsTest_castToJavaBean.java
+index 67239848f7..80075d052b 100644
+--- a/src/test/java/com/alibaba/json/bvt/parser/TypeUtilsTest_castToJavaBean.java
++++ b/src/test/java/com/alibaba/json/bvt/parser/TypeUtilsTest_castToJavaBean.java
+@@ -7,6 +7,7 @@
+ import java.util.Map;
+ import java.util.concurrent.ConcurrentMap;
+ 
++import com.alibaba.fastjson.parser.ParserConfig;
+ import org.junit.Assert;
+ 
+ import com.alibaba.fastjson.JSON;
+@@ -19,6 +20,9 @@
+ import junit.framework.TestCase;
+ 
+ public class TypeUtilsTest_castToJavaBean extends TestCase {
++    protected void setUp() throws Exception {
++        ParserConfig.global.addAccept("com.alibaba.json.bvt.parser.TypeUtilsTest_castToJavaBean.");
++    }
+ 
+     public void test_castToJavaBean_StackTraceElement() throws Exception {
+         Map<String, Object> map = new HashMap<String, Object>();
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest12.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest12.java
+new file mode 100644
+index 0000000000..ed7809efc4
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest12.java
+@@ -0,0 +1,30 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.JSONException;
++import junit.framework.TestCase;
++
++/**
++ * Created by wenshao on 29/01/2017.
++ */
++public class DenyTest12 extends TestCase {
++    public void test_deny() throws Exception {
++        String text = "{\"value\":{\"@type\":\"java.lang.Thread\"}}";
++
++        Exception error = null;
++        try {
++            JSON.parseObject(text, Model.class);
++        } catch (JSONException ex) {
++            error = ex;
++        }
++        assertNotNull(error);
++    }
++
++    public static class Model {
++        public Value value;
++    }
++
++    public static class Value {
++
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest13.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest13.java
+new file mode 100644
+index 0000000000..ee709e9eab
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest13.java
+@@ -0,0 +1,25 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.JSONException;
++import junit.framework.TestCase;
++
++/**
++ * Created by wenshao on 29/01/2017.
++ */
++public class DenyTest13 extends TestCase {
++    public void test_deny() throws Exception {
++        String text = "{\"value\":{\"@type\":\"java.lang.Thread\"}}";
++        Exception error = null;
++        try {
++            JSON.parseObject(text, Model.class);
++        } catch (JSONException ex) {
++            error = ex;
++        }
++        assertNotNull(error);
++    }
++
++    public static class Model {
++        public Object value;
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest14.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest14.java
+new file mode 100644
+index 0000000000..a4bee0a272
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest14.java
+@@ -0,0 +1,24 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import com.alibaba.fastjson.JSONException;
++import junit.framework.TestCase;
++
++/**
++ * Created by wenshao on 29/01/2017.
++ */
++public class DenyTest14 extends TestCase {
++    public void test_deny() throws Exception {
++        String text = "{\"value\":{\"@type\":\"com.alibaba.json.bvt.parser.deser.deny.DenyTest14$MyException\"}}";
++        Model model = JSON.parseObject(text, Model.class);
++        assertTrue(model.value instanceof MyException);
++    }
++
++    public static class Model {
++        public Throwable value;
++    }
++
++    public static class MyException extends Exception {
++
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest15.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest15.java
+new file mode 100644
+index 0000000000..0a53796460
+--- /dev/null
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest15.java
+@@ -0,0 +1,24 @@
++package com.alibaba.json.bvt.parser.deser.deny;
++
++import com.alibaba.fastjson.JSON;
++import junit.framework.TestCase;
++
++/**
++ * Created by wenshao on 29/01/2017.
++ */
++public class DenyTest15 extends TestCase {
++    public void test_deny() throws Exception {
++        String text = "{\"value\":{\"@type\":\"com.mchange.v2.c3p0.impl.PoolBackedDataSourceBase\"}}";
++        Exception error = null;
++        try {
++            Model model = JSON.parseObject(text, Model.class);
++        } catch (Exception ex) {
++            error = ex;
++        }
++        assertNotNull(error);
++    }
++
++    public static class Model {
++        public Throwable value;
++    }
++}
+diff --git a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest5.java b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest5.java
+index a4da73a0fd..4a72976f05 100644
+--- a/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest5.java
++++ b/src/test/java/com/alibaba/json/bvt/parser/deser/deny/DenyTest5.java
+@@ -2,23 +2,25 @@
+ 
+ import com.alibaba.fastjson.JSON;
+ import com.alibaba.fastjson.JSONException;
++import com.alibaba.fastjson.parser.ParserConfig;
+ import junit.framework.TestCase;
+ 
+ public class DenyTest5 extends TestCase {
+ 
+     public void test_c3p0() throws Exception {
++        ParserConfig config = new ParserConfig();
++        config.setAutoTypeSupport(true);
++
++        Object obj = null;
+         Exception error = null;
+         try {
+-            Object obj = JSON.parseObject("{\"@type\":\"com.mchange.v2.c3p0.impl.PoolBackedDataSourceBase\"}", Object.class);
++            obj = JSON.parseObject("{\"@type\":\"com.mchange.v2.c3p0.impl.PoolBackedDataSourceBase\"}", Object.class, config);
+             System.out.println(obj.getClass());
+         } catch (JSONException ex) {
+             error = ex;
+         }
+         assertNotNull(error);
+     }
+-    
+-    public static class MyClassLoader extends ClassLoader {
+ 
+-    }
+ 
+ }
+diff --git a/src/test/java/com/alibaba/json/bvt/serializer/ParserConfigTest.java b/src/test/java/com/alibaba/json/bvt/serializer/ParserConfigTest.java
+index 73db810ff6..f9b472e97d 100755
+--- a/src/test/java/com/alibaba/json/bvt/serializer/ParserConfigTest.java
++++ b/src/test/java/com/alibaba/json/bvt/serializer/ParserConfigTest.java
+@@ -11,7 +11,7 @@ public class ParserConfigTest extends TestCase {
+ 
+     public void test_0() throws Exception {
+         ParserConfig config = new ParserConfig();
+-        config.getDerializers();
++        config.getDeserializers();
+     }
+     
+     
+diff --git a/src/test/java/com/alibaba/json/test/deny/NotExistsTest.java b/src/test/java/com/alibaba/json/test/deny/NotExistsTest.java
+index edefa01550..16fabdb2f0 100644
+--- a/src/test/java/com/alibaba/json/test/deny/NotExistsTest.java
++++ b/src/test/java/com/alibaba/json/test/deny/NotExistsTest.java
+@@ -2,13 +2,22 @@
+ 
+ import com.alibaba.fastjson.JSON;
+ import com.alibaba.fastjson.parser.ParserConfig;
++import com.alibaba.fastjson.util.TypeUtils;
+ import junit.framework.TestCase;
+ 
++import java.lang.reflect.Field;
++import java.util.concurrent.ConcurrentMap;
++
+ /**
+  * Created by wenshao on 28/01/2017.
+  */
+ public class NotExistsTest extends TestCase {
+     public void test_0() throws Exception {
++        Field field = TypeUtils.class.getDeclaredField("mappings");
++        field.setAccessible(true);
++
++        ConcurrentMap<String, Class<?>> mappings = (ConcurrentMap<String, Class<?>>) field.get(null);
++        System.out.println(mappings.size());
+ //         ParserConfig.global.setAutoTypeSupport(true);
+         for (int i = 0; i < 10; ++i) {
+             long start = System.currentTimeMillis();
+@@ -19,7 +28,7 @@ public void test_0() throws Exception {
+     }
+ 
+     private void perf() {
+-        for (int i = 0; i < 1000 * 10; ++i) {
++        for (int i = 0; i < 1000 * 1; ++i) {
+             String text = "[{\"@type\":\"x0\"},{\"@type\":\"x1\"},{\"@type\":\"x2\"},{\"@type\":\"x3\"},{\"@type\":\"x4\"}]";
+             try {
+                 JSON.parseObject(text);

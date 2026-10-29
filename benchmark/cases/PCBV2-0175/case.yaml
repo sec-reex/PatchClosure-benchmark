@@ -1,0 +1,24 @@
+case_id: PCBV2-0175
+public_name: pp2-deep-get-set
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: npm
+  repo: https://github.com/acstll/deep-get-set.git
+  v0: 1.1.0
+  v1: 1.1.1
+service:
+  # Compose publishes ${PORT_V0_0}/${PORT_V1_0} -> 8080; platform remaps this URL to the host port.
+  readiness: http://127.0.0.1:8080/
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

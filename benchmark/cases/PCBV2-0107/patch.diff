@@ -1,0 +1,65 @@
+PCBV2-0107 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: v2.14.0..v2.14.1  lib/faraday/connection.rb
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0107/
+
+diff --git a/lib/faraday/connection.rb b/lib/faraday/connection.rb
+index 543cd4b..b58b617 100644
+--- a/lib/faraday/connection.rb
++++ b/lib/faraday/connection.rb
+@@ -481,8 +481,9 @@ module Faraday
+       if url && !base.path.end_with?('/')
+         base.path = "#{base.path}/" # ensure trailing slash
+       end
+-      # Ensure relative url will be parsed correctly (such as `service:search` )
+-      url = "./#{url}" if url.respond_to?(:start_with?) && !url.start_with?('http://', 'https://', '/', './', '../')
++      # Ensure relative url will be parsed correctly (such as `service:search` or `//evil.com`)
++      url = "./#{url}" if url.respond_to?(:start_with?) &&
++                          (!url.start_with?('http://', 'https://', '/', './', '../') || url.start_with?('//'))
+       uri = url ? base + url : base
+       if params
+         uri.query = params.to_query(params_encoder || options.params_encoder)
+diff --git a/spec/faraday/connection_spec.rb b/spec/faraday/connection_spec.rb
+index 7fa726a..f87c965 100644
+--- a/spec/faraday/connection_spec.rb
++++ b/spec/faraday/connection_spec.rb
+@@ -311,6 +311,39 @@ RSpec.describe Faraday::Connection do
+       end
+     end
+ 
++    context 'with protocol-relative URL (GHSA-33mh-2634-fwr2)' do
++      it 'does not allow host override with //evil.com/path' do
++        conn.url_prefix = 'http://httpbingo.org/api'
++        uri = conn.build_exclusive_url('//evil.com/path')
++        expect(uri.host).to eq('httpbingo.org')
++      end
++
++      it 'does not allow host override with //evil.com:8080/path' do
++        conn.url_prefix = 'http://httpbingo.org/api'
++        uri = conn.build_exclusive_url('//evil.com:8080/path')
++        expect(uri.host).to eq('httpbingo.org')
++      end
++
++      it 'does not allow host override with //user:pass@evil.com/path' do
++        conn.url_prefix = 'http://httpbingo.org/api'
++        uri = conn.build_exclusive_url('//user:pass@evil.com/path')
++        expect(uri.host).to eq('httpbingo.org')
++      end
++
++      it 'does not allow host override with ///evil.com' do
++        conn.url_prefix = 'http://httpbingo.org/api'
++        uri = conn.build_exclusive_url('///evil.com')
++        expect(uri.host).to eq('httpbingo.org')
++      end
++
++      it 'still allows single-slash absolute paths' do
++        conn.url_prefix = 'http://httpbingo.org/api'
++        uri = conn.build_exclusive_url('/safe/path')
++        expect(uri.host).to eq('httpbingo.org')
++        expect(uri.path).to eq('/safe/path')
++      end
++    end
++
+     context 'with a custom `default_uri_parser`' do
+       let(:url) { 'http://httpbingo.org' }
+       let(:parser) { Addressable::URI }

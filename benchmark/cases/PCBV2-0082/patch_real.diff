@@ -1,0 +1,20 @@
+# CVE: CVE-2026-27568
+# Upstream: https://github.com/WWBN/AVideo.git
+# Fix: ade348ed6d28b3797162c3d9e98054fb09ec51d7
+
+diff --git a/objects/functionsSecurity.php b/objects/functionsSecurity.php
+index c4e689de6..ab7d30b10 100644
+--- a/objects/functionsSecurity.php
++++ b/objects/functionsSecurity.php
+@@ -349,6 +349,11 @@ function isBot($returnTrueIfNoUserAgent=true)
+ function markDownToHTML($text) {
+     $parsedown = new Parsedown();
+ 
++    // Enable safe mode to prevent XSS via raw HTML in markdown input
++    $parsedown->setSafeMode(true);
++    // Also escape any markup that bypasses safe mode
++    $parsedown->setMarkupEscaped(true);
++
+     // Convert Markdown to HTML
+     $html = $parsedown->text($text);
+ 

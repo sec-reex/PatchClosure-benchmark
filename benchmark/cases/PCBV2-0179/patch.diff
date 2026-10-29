@@ -1,0 +1,286 @@
+PCBV2-0179 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 5f4f0fa5fed3520e57f2cb5a1053e3654c082eea
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0179/
+
+diff --git a/src/pyload/core/utils/fs.py b/src/pyload/core/utils/fs.py
+index 2f478a7..27b850c 100644
+--- a/src/pyload/core/utils/fs.py
++++ b/src/pyload/core/utils/fs.py
+@@ -381,6 +381,16 @@ def which(filename):
+             return filename
+ 
+ 
++def is_within_directory(base_dir, target_dir):
++    """
++    Check if target_dir is within base_dir
++    """
++    # Use realpath for normalization to handle symlinks and traversal sequences
++    real_base = os.path.realpath(base_dir)
++    real_target = os.path.realpath(target_dir)
++    return os.path.commonpath([real_base, real_target]) == real_base
++
++
+ def safepath(value):
+     """
+     Remove invalid characters and truncate the path if needed.
+@@ -411,9 +421,19 @@ def safepath(value):
+ 
+ def safejoin(*args):
+     """
+-    os.path.join + safepath.
++    os.path.join + safepath, with path traversal protection.
++    Assumes the first argument is the base directory.
+     """
+-    return safepath(os.path.join(*args))
++    if len(args) < 1:
++        raise ValueError("At least one argument required (base directory)")
++
++    base = args[0]
++    safe_joined = safepath(os.path.join(*args))
++
++    if not is_within_directory(base, safe_joined):
++        raise ValueError("Path traversal attempt detected")
++
++    return safe_joined
+ 
+ 
+ def safename(value):
+diff --git a/src/pyload/plugins/extractors/HjSplit.py b/src/pyload/plugins/extractors/HjSplit.py
+index f2a97b1..a43692b 100644
+--- a/src/pyload/plugins/extractors/HjSplit.py
++++ b/src/pyload/plugins/extractors/HjSplit.py
+@@ -1,13 +1,14 @@
+ import os
+ import re
+ 
++from pyload.core.utils.fs import safejoin
+ from pyload.plugins.base.extractor import ArchiveError, BaseExtractor
+ 
+ 
+ class HjSplit(BaseExtractor):
+     __name__ = "HjSplit"
+     __type__ = "extractor"
+-    __version__ = "0.02"
++    __version__ = "0.03"
+     __status__ = "testing"
+ 
+     __description__ = """HJSPLIT extractor plugin"""
+@@ -36,7 +37,7 @@ class HjSplit(BaseExtractor):
+ 
+         #: eventually Multipart Files
+         files.extend(
+-            os.path.join(dir, os.path.basename(_f))
++            safejoin(dir, os.path.basename(_f))
+             for _f in filter(self.ismultipart, [_x[1]['name'] for _x in self.pyfile.package().get_children().items()])
+             if self._RE_PART.sub("", name) == self._RE_PART.sub("", _f)
+         )
+@@ -83,7 +84,7 @@ class HjSplit(BaseExtractor):
+                     size_total += os.path.getsize(chunks[i])
+ 
+         #: Now do the actual merge
+-        with open(os.path.join(self.dest, name), "wb") as output_file:
++        with open(safejoin(self.dest, name), "wb") as output_file:
+             size_written = 0
+             for part_filename in chunks:
+                 self.log_debug("Merging part", part_filename)
+diff --git a/src/pyload/plugins/extractors/SevenZip.py b/src/pyload/plugins/extractors/SevenZip.py
+index 8b28082..33123cc 100644
+--- a/src/pyload/plugins/extractors/SevenZip.py
++++ b/src/pyload/plugins/extractors/SevenZip.py
+@@ -4,6 +4,7 @@ import subprocess
+ 
+ from pyload import PKGDIR
+ from pyload.core.utils.convert import to_str
++from pyload.core.utils.fs import safejoin
+ from pyload.plugins.base.extractor import ArchiveError, BaseExtractor, CRCError, PasswordError
+ from pyload.plugins.helpers import renice
+ 
+@@ -11,7 +12,7 @@ from pyload.plugins.helpers import renice
+ class SevenZip(BaseExtractor):
+     __name__ = "SevenZip"
+     __type__ = "extractor"
+-    __version__ = "0.39"
++    __version__ = "0.40"
+     __status__ = "testing"
+ 
+     __description__ = """7-Zip extractor plugin"""
+@@ -84,7 +85,7 @@ class SevenZip(BaseExtractor):
+     def find(cls):
+         try:
+             if os.name == "nt":
+-                cls.CMD = os.path.join(PKGDIR, "lib", "7z.exe")
++                cls.CMD = safejoin(PKGDIR, "lib", "7z.exe")
+ 
+             p = subprocess.Popen(
+                 [cls.CMD], stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8"
+@@ -133,7 +134,7 @@ class SevenZip(BaseExtractor):
+                 raise ArchiveError("Cannot find smallest file")
+ 
+             try:
+-                extracted = os.path.join(self.dest, smallest if self.fullpath else os.path.basename(smallest))
++                extracted = safejoin(self.dest, smallest if self.fullpath else os.path.basename(smallest))
+                 try:
+                     os.remove(extracted)
+                 except OSError as exc:
+@@ -198,7 +199,7 @@ class SevenZip(BaseExtractor):
+ 
+         #: eventually multi-part files
+         files.extend(
+-            os.path.join(dir, os.path.basename(_f))
++            safejoin(dir, os.path.basename(_f))
+             for _f in filter(self.ismultipart, os.listdir(dir))
+             if self._RE_PART.sub("", name) == self._RE_PART.sub("", _f)
+         )
+@@ -296,7 +297,7 @@ class SevenZip(BaseExtractor):
+ 
+                 if not self.fullpath:
+                     f = os.path.basename(f)
+-                f = os.path.join(self.dest, f)
++                f = safejoin(self.dest, f)
+                 files.add(f)
+ 
+             self.smallest = smallest
+diff --git a/src/pyload/plugins/extractors/UnRar.py b/src/pyload/plugins/extractors/UnRar.py
+index 45f58de..49dda23 100644
+--- a/src/pyload/plugins/extractors/UnRar.py
++++ b/src/pyload/plugins/extractors/UnRar.py
+@@ -4,6 +4,7 @@ import subprocess
+ 
+ from pyload import PKGDIR
+ from pyload.core.utils.convert import to_str
++from pyload.core.utils.fs import safejoin
+ from pyload.plugins.base.extractor import ArchiveError, BaseExtractor, CRCError, PasswordError
+ from pyload.plugins.helpers import renice
+ 
+@@ -11,7 +12,7 @@ from pyload.plugins.helpers import renice
+ class UnRar(BaseExtractor):
+     __name__ = "UnRar"
+     __type__ = "extractor"
+-    __version__ = "1.48"
++    __version__ = "1.49"
+     __status__ = "testing"
+ 
+     __config__ = [
+@@ -66,7 +67,7 @@ class UnRar(BaseExtractor):
+     def find(cls):
+         try:
+             if os.name == "nt":
+-                cls.CMD = os.path.join(PKGDIR, "lib", "RAR.exe")
++                cls.CMD = safejoin(PKGDIR, "lib", "RAR.exe")
+             else:
+                 cls.CMD = "rar"
+ 
+@@ -79,7 +80,7 @@ class UnRar(BaseExtractor):
+         except OSError:
+             try:
+                 if os.name == "nt":
+-                    cls.CMD = os.path.join(PKGDIR, "lib", "UnRAR.exe")
++                    cls.CMD = safejoin(PKGDIR, "lib", "UnRAR.exe")
+                 else:
+                     cls.CMD = "unrar"
+ 
+@@ -127,7 +128,7 @@ class UnRar(BaseExtractor):
+                 raise ArchiveError("Cannot find smallest file")
+ 
+             try:
+-                extracted = os.path.join(self.dest, smallest if self.fullpath else os.path.basename(smallest))
++                extracted = safejoin(self.dest, smallest if self.fullpath else os.path.basename(smallest))
+                 try:
+                     os.remove(extracted)
+                 except OSError:
+@@ -167,7 +168,7 @@ class UnRar(BaseExtractor):
+                 dir = os.path.dirname(self.filename)
+                 name = self._RE_FIXNAME.search(out).group(1)
+ 
+-                self.filename = os.path.join(dir, name)
++                self.filename = safejoin(dir, name)
+ 
+         return True
+ 
+@@ -224,7 +225,7 @@ class UnRar(BaseExtractor):
+ 
+         #: eventually multi-part files
+         files.extend(
+-            os.path.join(dir, os.path.basename(_f))
++            safejoin(dir, os.path.basename(_f))
+             for _f in filter(self.ismultipart, os.listdir(dir))
+             if self._RE_PART.sub("", name) == self._RE_PART.sub("", _f)
+         )
+@@ -325,7 +326,7 @@ class UnRar(BaseExtractor):
+ 
+                 if not self.fullpath:
+                     f = os.path.basename(f)
+-                f = os.path.join(self.dest, f)
++                f = safejoin(self.dest, f)
+                 files.add(f)
+ 
+             self.smallest = smallest
+diff --git a/src/pyload/plugins/extractors/UnTar.py b/src/pyload/plugins/extractors/UnTar.py
+index 2431154..426a819 100644
+--- a/src/pyload/plugins/extractors/UnTar.py
++++ b/src/pyload/plugins/extractors/UnTar.py
+@@ -2,6 +2,7 @@ import os
+ import sys
+ import tarfile
+ 
++from pyload.core.utils.fs import safejoin
+ from pyload.plugins.base.extractor import ArchiveError, BaseExtractor, CRCError
+ 
+ 
+@@ -24,7 +25,7 @@ def _safe_extractall(tar, path=".", members=None, *, numeric_owner=False):
+ class UnTar(BaseExtractor):
+     __name__ = "UnTar"
+     __type__ = "extractor"
+-    __version__ = "0.07"
++    __version__ = "0.08"
+     __status__ = "stable"
+ 
+     __description__ = """TAR extractor plugin"""
+@@ -56,7 +57,7 @@ class UnTar(BaseExtractor):
+ 
+     def list(self, password=None):
+         with tarfile.open(self.filename) as t:
+-            self.files = [os.path.join(self.dest, _f) for _f in t.getnames()]
++            self.files = [safejoin(self.dest, _f) for _f in t.getnames()]
+         return self.files
+ 
+     def verify(self, password=None):
+diff --git a/src/pyload/plugins/extractors/UnZip.py b/src/pyload/plugins/extractors/UnZip.py
+index af4bb24..5b39d01 100644
+--- a/src/pyload/plugins/extractors/UnZip.py
++++ b/src/pyload/plugins/extractors/UnZip.py
+@@ -3,13 +3,14 @@ import sys
+ import zipfile
+ import fnmatch
+ 
++from pyload.core.utils.fs import safejoin
+ from pyload.plugins.base.extractor import ArchiveError, BaseExtractor, CRCError, PasswordError
+ 
+ 
+ class UnZip(BaseExtractor):
+     __name__ = "UnZip"
+     __type__ = "extractor"
+-    __version__ = "1.28"
++    __version__ = "1.29"
+     __status__ = "stable"
+ 
+     __description__ = """ZIP extractor plugin"""
+@@ -53,7 +54,7 @@ class UnZip(BaseExtractor):
+     def list(self, password=None):
+         with zipfile.ZipFile(self.filename, "r") as z:
+             z.setpassword(password)
+-            self.files = [os.path.join(self.dest, _f)
++            self.files = [safejoin(self.dest, _f)
+                           for _f in z.namelist()
+                           if _f[-1] != os.path.sep]
+ 
+@@ -86,7 +87,7 @@ class UnZip(BaseExtractor):
+                            if not any(fnmatch.fnmatch(member, exclusion)
+                            for exclusion in self.excludefiles))
+                 z.extractall(self.dest, members = members)
+-                self.files = [os.path.join(self.dest, _f)
++                self.files = [safejoin(self.dest, _f)
+                               for _f in z.namelist()
+                               if _f[-1] != os.path.sep and _f in members]
+ 

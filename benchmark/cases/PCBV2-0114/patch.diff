@@ -1,0 +1,18 @@
+PCBV2-0114 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: e136660e8dbc220454b8d3f646dd1b144e49e9ed (1.8.179)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0114/
+
+diff --git a/app/Misc/Helper.php b/app/Misc/Helper.php
+index 214cfd4530..be0fdb87ba 100644
+--- a/app/Misc/Helper.php
++++ b/app/Misc/Helper.php
+@@ -63,6 +63,8 @@ class Helper
+         'php.*',
+         'sh',
+         'pl',
++        'phtml',
++        'phar',
+     ];
+ 
+     /**

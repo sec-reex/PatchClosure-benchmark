@@ -1,0 +1,89 @@
+CVE: CVE-UNKNOWN
+upstream: https://github.com/mafintosh/tar-fs.git
+fix: v3.0.6..v3.0.7
+
+diff --git a/SECURITY.md b/SECURITY.md
+new file mode 100644
+index 0000000..da9c516
+--- /dev/null
++++ b/SECURITY.md
+@@ -0,0 +1,5 @@
++## Security contact information
++
++To report a security vulnerability, please use the
++[Tidelift security contact](https://tidelift.com/security).
++Tidelift will coordinate the fix and disclosure.
+diff --git a/index.js b/index.js
+index b59d19b..f1e1a6a 100644
+--- a/index.js
++++ b/index.js
+@@ -120,6 +120,8 @@ exports.extract = function extract (cwd, opts) {
+   if (!cwd) cwd = '.'
+   if (!opts) opts = {}
+ 
++  cwd = path.resolve(cwd)
++
+   const xfs = opts.fs || fs
+   const ignore = opts.ignore || opts.filter || noop
+   const mapStream = opts.mapStream || echo
+@@ -216,6 +218,9 @@ exports.extract = function extract (cwd, opts) {
+     function onsymlink () {
+       if (win32) return next() // skip symlinks on win for now before it can be tested
+       xfs.unlink(name, function () {
++        const dst = path.resolve(path.dirname(name), header.linkname)
++        if (!inCwd(dst)) return next(new Error(name + ' is not a valid symlink'))
++
+         xfs.symlink(header.linkname, name, stat)
+       })
+     }
+@@ -223,11 +228,11 @@ exports.extract = function extract (cwd, opts) {
+     function onlink () {
+       if (win32) return next() // skip links on win for now before it can be tested
+       xfs.unlink(name, function () {
+-        const srcpath = path.join(cwd, path.join('/', header.linkname))
++        const dst = path.join(cwd, path.join('/', header.linkname))
+ 
+-        xfs.link(srcpath, name, function (err) {
++        xfs.link(dst, name, function (err) {
+           if (err && err.code === 'EPERM' && opts.hardlinkAsFilesFallback) {
+-            stream = xfs.createReadStream(srcpath)
++            stream = xfs.createReadStream(dst)
+             return onfile()
+           }
+ 
+@@ -236,6 +241,10 @@ exports.extract = function extract (cwd, opts) {
+       })
+     }
+ 
++    function inCwd (dst) {
++      return dst.startsWith(cwd)
++    }
++
+     function onfile () {
+       const ws = xfs.createWriteStream(name)
+       const rs = mapStream(stream, header)
+diff --git a/package.json b/package.json
+index 0a9d02d..9e4d38e 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "tar-fs",
+-  "version": "3.0.6",
++  "version": "3.0.7",
+   "description": "filesystem bindings for tar-stream",
+   "dependencies": {
+     "pump": "^3.0.0",
+diff --git a/test/index.js b/test/index.js
+index 727c378..eb6af1a 100644
+--- a/test/index.js
++++ b/test/index.js
+@@ -311,7 +311,7 @@ test('do not extract invalid tar', function (t) {
+   fs.createReadStream(a)
+     .pipe(tar.extract(out))
+     .on('error', function (err) {
+-      t.ok(/is not a valid path/i.test(err.message))
++      t.ok(/is not a valid symlink/i.test(err.message))
+       fs.stat(path.join(out, '../bar'), function (err) {
+         t.ok(err)
+       })

@@ -1,0 +1,25 @@
+case_id: PCBV2-0106
+public_name: eazydocs-wordpress-plugin-cve-2024-0248
+run_mode: real-app-http
+oracle_family: state_auth_mutation
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: wordpress_plugin_zip
+  repo: https://downloads.wordpress.org/plugin/eazydocs
+  v0: "2.3.5"
+  v1: "2.3.9"
+service:
+  # Host publishes ${PORT_WP_V*_0}:80 — not host :80. Platform HTTP/TCP
+  # readiness on :80 times out. start.sh waits for wp-login + /flag/pcb_flag.txt.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

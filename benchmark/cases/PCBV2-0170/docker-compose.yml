@@ -1,0 +1,75 @@
+# phpmyfaq-cve-2026-56396 - IDOR / missing-authorization incomplete-fix differential
+# CVE-2026-35671 (overwritePassword IDOR, fixed 4.1.3) -> CVE-2026-56396 (sibling endpoints
+# editUser/updateUserRights still unguarded in 4.1.3, fixed 4.1.4).
+#
+# REAL phpMyFAQ: each app service builds phpMyFAQ from its git tag (PHP 8.3 + Apache/mod_php),
+# installs it against a real MariaDB via the REAL web installer, and serves phpMyFAQ's own admin
+# API over external HTTP. NO source lift, NO shim. The benign canary ${PCB_FLAG} is phpMyFAQ's
+# real REST-API client token (config item api.apiClientToken); only a SuperAdmin / editconfig
+# holder may read it via GET admin/api/configuration/list/api. A low-privilege user-administrator
+# 'editor' reaching it proves privilege escalation across the CVE-2026-35671 boundary.
+#   v0 = 4.1.2 (pre-35671):            overwritePassword unguarded -> escalation reaches flag -> :40560
+#   v1 = 4.1.3 (35671-patched, TARGET): overwritePassword guarded; editUser still open        -> :40561
+#   v2 = 4.1.4 (56396-patched):         editUser/updateUserRights guarded too                 -> :40562
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpass
+    volumes:
+      - ./pcb/db-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  v0:
+    profiles: ["v0"]
+    build: { context: ., dockerfile: Dockerfile, args: { PMF_TAG: "4.1.2" } }
+    image: phpmyfaq-pcb-v0:latest
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      PMF_DB_HOST: db
+      PMF_DB_NAME: pmf_v0
+      PMF_DB_USER: pmf
+      PMF_DB_PASS: pmfpass
+      PMF_ADMIN_PW: AdminPass12345
+      PMF_EDITOR_PW: EditorPass12345
+    ports: ["${PORT_V0_0:-40560}:80"]
+
+  v1:
+    profiles: ["v1"]
+    build: { context: ., dockerfile: Dockerfile, args: { PMF_TAG: "4.1.3" } }
+    image: phpmyfaq-pcb-v1:latest
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      PMF_DB_HOST: db
+      PMF_DB_NAME: pmf_v1
+      PMF_DB_USER: pmf
+      PMF_DB_PASS: pmfpass
+      PMF_ADMIN_PW: AdminPass12345
+      PMF_EDITOR_PW: EditorPass12345
+    ports: ["${PORT_V1_0:-40561}:80"]
+
+  v2:
+    profiles: ["v2"]
+    build: { context: ., dockerfile: Dockerfile, args: { PMF_TAG: "4.1.4" } }
+    image: phpmyfaq-pcb-v2:latest
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      PMF_DB_HOST: db
+      PMF_DB_NAME: pmf_v2
+      PMF_DB_USER: pmf
+      PMF_DB_PASS: pmfpass
+      PMF_ADMIN_PW: AdminPass12345
+      PMF_EDITOR_PW: EditorPass12345
+    ports: ["${PORT_V2_0:-40562}:80"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.171.0/24

@@ -1,0 +1,25 @@
+case_id: PCBV2-0059
+public_name: hapi-fhir-org-hl7-fhir-core-cve-2026-55470
+run_mode: real-app-http
+oracle_family: dos_threshold
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: maven
+  repo: ca.uhn.hapi.fhir:org.hl7.fhir.dstu2
+  v0: "6.9.6"
+  v1: "6.9.7"
+service:
+  # Compose publishes ${PORT_V*_0}:8080. Platform HTTP on container :8080 would miss
+  # the randomized host port; start.sh / reset.sh wait until GET /health answers.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

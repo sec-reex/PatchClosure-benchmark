@@ -1,0 +1,24 @@
+PCBV2-0199 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: v1.0.0..v1.0.1  lib/parse.js — 1.0.1 replaced the parser; security addition is ASTCompiler.hasOwnProperty_
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0199/
+
+diff --git a/lib/parse.js b/lib/parse.js
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@
+ 	or_: function(expr1, expr2) {
+ 		return "(" + expr1 + ") || (" + expr2 + ")";
+ 	},
++	hasOwnProperty_: function(obj, prop, computed) {
++		if (computed) {
++			return "(Object.prototype.hasOwnProperty.call(" + obj + "," + prop + "))";
++		} else {
++			return (
++				"(Object.prototype.hasOwnProperty.call(" + obj + ",'" + prop + "'))"
++			);
++		}
++	},
+ 	and_: function(expr1, expr2) {
+ 		return "(" + expr1 + ") && (" + expr2 + ")";
+ 	},

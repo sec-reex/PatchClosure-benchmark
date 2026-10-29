@@ -1,0 +1,30 @@
+PCBV2-0086 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: Fix: db3a0445d95cb0eb878785ddbd1fbb42d097631b
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0086/
+
+diff --git a/packages/server/src/middleware/utils.ts b/packages/server/src/middleware/utils.ts
+index 3711704..2a880be 100644
+--- a/packages/server/src/middleware/utils.ts
++++ b/packages/server/src/middleware/utils.ts
+@@ -1,17 +1,12 @@
+ import { LoginMethod, UserCtx } from "@budibase/types"
+ 
+ const WEBHOOK_ENDPOINTS = new RegExp(
+-  [
+-    "webhooks/trigger",
+-    "webhooks/schema",
+-    "webhooks/discord",
+-    "webhooks/ms-teams",
+-    "webhooks/slack",
+-  ].join("|")
++  "^/api/webhooks/(trigger|schema|discord|ms-teams|slack)(/|$)"
+ )
+ 
+ export function isWebhookEndpoint(ctx: UserCtx) {
+-  return WEBHOOK_ENDPOINTS.test(ctx.request.url)
++  const path = ctx.path || ctx.request.url.split("?")[0]
++  return WEBHOOK_ENDPOINTS.test(path)
+ }
+ 
+ export function isBrowser(ctx: UserCtx) {

@@ -1,0 +1,129 @@
+{
+  "eval_id": "PCBV2-0211",
+  "case_id": "urllib3-redirect-header-strip",
+  "run_mode": "real-app-http",
+  "external_http_trigger": true,
+  "external_trigger_note": "SUT is the urllib3 HTTP client library, exercised by invoking probe.py (docker compose run) inside the client container; the real urllib3 then performs a genuine cross-ORIGIN HTTP 302 to distinct redirector/attacker sidecar hosts. Trigger to the SUT is CLI, but the security-relevant behavior is real HTTP redirect header handling.",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "lift_kind": "real-library-wrap",
+    "evidence": "REAL PyPI urllib3 wheels 1.26.16/1.26.17/1.26.19 installed per client profile; probe drives genuine cross-origin 302, attacker sidecar echoes received headers. Live gate: Cookie leaks flag@v0, blocked@v1; Proxy-Authorization leaks flag@v1 (blocked@v2 per repro). passed=true."
+  },
+  "product": "urllib3 (PyPI)",
+  "app_purpose": "HTTP client library for Python (used by requests, pip, and much of the Python ecosystem)",
+  "language": "Python",
+  "root_cause": "CWE-200 Exposure of Sensitive Information: incomplete sensitive-header strip on cross-origin redirect (credential leak)",
+  "mechanism_family": "credential-leak/redirect",
+  "cve_pair": {
+    "original_cve": "CVE-2023-43804",
+    "bypass_cve": "CVE-2024-37891",
+    "original_published": "2023-10-04",
+    "bypass_published": "2024-06-17",
+    "advisory_url": "https://github.com/urllib3/urllib3/security/advisories/GHSA-v845-jxx5-vc9f"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "1.26.16",
+      "ref": "pypi:urllib3==1.26.16 (tag 1.26.16)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "1.26.17",
+      "ref": "pypi:urllib3==1.26.17 (tag 1.26.17)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v2": {
+      "identifier": "1.26.19",
+      "ref": "pypi:urllib3==1.26.19 (tag 1.26.19)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "flag": {
+    "resource": "sensitive request headers (Cookie / Proxy-Authorization) that urllib3 is supposed to strip when a redirect crosses origin",
+    "placement": "per-run random ${PCB_FLAG} token injected into the CLIENT's outgoing sensitive header at request time (seed: Cookie; residual: Proxy-Authorization); never in library source",
+    "detect": "flag token substring appears in the attacker collector sidecar's echo of the headers it actually received after the cross-origin 302 (== header was NOT stripped)",
+    "class_kind": "redirect-canary"
+  },
+  "given_to_method": [
+    "docker-compose.yml",
+    "client/",
+    "servers/",
+    "original_poc.py",
+    "patch.diff",
+    "oracle.py"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/urllib3/urllib3/security/advisories/GHSA-v845-jxx5-vc9f",
+    "fix_reference": "pypi:urllib3==1.26.17 (tag 1.26.17); pypi:urllib3==1.26.19 (tag 1.26.19)",
+    "incomplete_fix_quote": "CVE-2023-43804 (fixed 1.26.17): the Cookie request header was not stripped during cross-origin redirects, so Cookie was added to Retry.DEFAULT_REMOVE_HEADERS_ON_REDIRECT (frozenset(['Authorization']) -> frozenset(['Cookie', 'Authorization'])). CVE-2024-37891 (GHSA-34jh-p97f-mpxf, fixed 1.26.19): the Proxy-Authorization header is still not stripped during cross-origin redirects by the SAME remove_headers_on_redirect mechanism, so it was added too (-> frozenset(['Cookie', 'Authorization', 'Proxy-Authorization'])). Two sequential residual-header bypasses of the same cross-origin redirect header-strip allowlist.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "a38d8a49afdb02e87b90c22d1e82b6b47fc9da3601e42bee959b7e570c8b3984",
+      "repro.log": "bddbf9f190fdc25ed20e77e231c2b5659a0858cb8913d9b967765afd77b31fa2",
+      "docker-compose.yml": "fc1324f66f0b68eb49e64d7e01f607bc1a3c53c9c3c538d9c35a9593404d125c",
+      "oracle.py": "eb5919832eb0e2c9f2db8808d8e20e5fd7a56673c6bd0435737772606398feab",
+      "patch.diff": "60448d73c457aca954a8579ddc8c14c2d5e60f0e997c793c6da33cac4631320a"
+    }
+  },
+  "labels": {
+    "quality_tier": "REAL",
+    "tier": "library",
+    "is_dos": false
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "external_http_trigger is not true (may be real TCP/CLI; review run_mode); Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "PyPI wheels urllib3=={1.26.16,1.26.17,1.26.19}; util/retry.py DEFAULT_REMOVE_HEADERS_ON_REDIRECT and poolmanager.py cross-origin strip loop read verbatim from the matching git tags",
+    "verified": "2026-07-14 on real Docker; flag_oracle.validate_case passed=true; residual (Proxy-Authorization) leaks on V0 and V1, blocked on V2; seed (Cookie) leaks on V0, blocked on V1/V2",
+    "notes": "Variant A (same sink = remove_headers_on_redirect drop loop in PoolManager.urlopen). Seed = CVE-2023-43804 Cookie leak; residual = CVE-2024-37891 Proxy-Authorization leak; only the header-name allowlist evolved across versions. GENUINE (not reject): distinct fixed versions (1.26.17 vs 1.26.19), V1!=V0 on seed, original(Cookie)!=residual(Proxy-Authorization) on V1, V1 leaks the residual, V2 blocks it, redirect genuinely cross-origin (redirector host -> attacker host, verified via Host: attacker in the echoed headers)."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "sensitive request headers (Cookie / Proxy-Authorization) that urllib3 is supposed to strip when a redirect crosses origin",
+    "detector": "flag token substring appears in the attacker collector sidecar's echo of the headers it actually received after the cross-origin 302 (== header was NOT stripped)"
+  },
+  "ports": {
+    "v0": {"host_default": 39509, "container": 8080},
+    "v1": {"host_default": 39510, "container": 8080},
+    "v2": {"host_default": 39511, "container": 8080}
+  },
+  "class_kind": "redirect-canary",
+  "effect_type": "exfiltration",
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

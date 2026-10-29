@@ -1,0 +1,25 @@
+case_id: PCBV2-0151
+public_name: new-api-cve-2025-62155
+run_mode: real-app-http
+oracle_family: ssrf_sidecar
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: calciumion/new-api
+  v0: v0.9.0.4
+  v1: v0.9.0.5
+service:
+  # Compose publishes ${PORT_V*_0}:3000. Platform HTTP on :3000 would miss the
+  # randomized host port; start.sh / reset.sh wait on /api/status there.
+  readiness: none
+  exposed_ports: [3000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

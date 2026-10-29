@@ -1,0 +1,68 @@
+# Real npm @astrojs/cloudflare + astro, served with wrangler/workerd.
+# One profile at a time. No fixed project name (platform COMPOSE_PROJECT_NAME).
+# No pinned subnet (avoid IPAM collisions).
+services:
+  # INTERNAL canary — no published host port; not on image.domains.
+  # Reachable only via /_image SSRF. Records PCB_FLAG hits for the oracle.
+  canary:
+    build:
+      context: .
+      dockerfile: Dockerfile.sidecar
+    environment:
+      ROLE: canary
+      PCB_FLAG: ${PCB_FLAG:-PCB_FLAG_UNSET}
+    volumes:
+      - hits:/hits
+    expose:
+      - "80"
+
+  # ALLOWED domain (on the allowlist). Open redirect at /redirect?to=...
+  allowed:
+    build:
+      context: .
+      dockerfile: Dockerfile.sidecar
+    environment:
+      ROLE: allowed
+    expose:
+      - "80"
+
+  app-v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile.appv0
+      args:
+        ADAPTER_VER: "12.6.5"
+        ASTRO_VER: "5.18.2"
+    ports:
+      - "${PORT_APP_V0_0:-4310}:4321"
+    depends_on: [canary, allowed]
+
+  app-v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+      args:
+        ADAPTER_VER: "13.1.9"
+        ASTRO_VER: "6.4.8"
+        EXTRA_PKGS: "wrangler@^4.61.1"
+    ports:
+      - "${PORT_APP_V1_0:-4311}:4321"
+    depends_on: [canary, allowed]
+
+  app-v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+      args:
+        ADAPTER_VER: "13.1.10"
+        ASTRO_VER: "6.4.8"
+        EXTRA_PKGS: "wrangler@^4.61.1"
+    ports:
+      - "${PORT_APP_V2_0:-4312}:4321"
+    depends_on: [canary, allowed]
+
+volumes:
+  hits:

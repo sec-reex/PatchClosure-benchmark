@@ -1,0 +1,26 @@
+case_id: PCBV2-0189
+public_name: ruby_sanitize_foreign_then_noscript
+run_mode: real-app-http
+oracle_family: browser_xss
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  # Runtime gem-installs the published sanitize gem (5.2.0 / 5.2.1). No git clone.
+  type: url_tgz
+  repo: https://rubygems.org/gems/sanitize
+  v0: "5.2.0"
+  v1: "5.2.1"
+service:
+  # Compose publishes ${PORT_*_0}:80/8070/9000. Platform HTTP on :80 would miss.
+  # start.sh / reset.sh wait until app :80, victim :8070, callback :9000, grid answer.
+  readiness: none
+  exposed_ports: [80, 8070, 9000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

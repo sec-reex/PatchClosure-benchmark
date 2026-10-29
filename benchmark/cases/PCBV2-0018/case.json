@@ -1,0 +1,126 @@
+{
+  "eval_id": "PCBV2-0018",
+  "case_id": "gitea-cve-2026-25714",
+  "product": "Gitea",
+  "app_purpose": "self-hosted Git service",
+  "language": "Go",
+  "root_cause": "Inconsistent public-only token enforcement (CWE-285)",
+  "mechanism_family": "token_scope_org_api_bypass",
+  "cve_pair": {
+    "original_cve": "CVE-2025-68941",
+    "bypass_cve": "CVE-2026-25714",
+    "original_published": "2025-05-15",
+    "bypass_published": "2026-07-03"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "1.22.2",
+      "ref": "gitea/gitea:1.22.2 (pre CVE-2025-68941 fix)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": "https://github.com/go-gitea/gitea",
+      "base_url": "http://127.0.0.1:56840"
+    },
+    "v1": {
+      "identifier": "1.26.1",
+      "ref": "gitea/gitea:1.26.1 (CVE-2025-68941 fix: checkTokenPublicOnly; /user/orgs unguarded)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": "https://github.com/go-gitea/gitea",
+      "base_url": "http://127.0.0.1:56841"
+    },
+    "v2": {
+      "identifier": "1.26.2",
+      "ref": "gitea/gitea:1.26.2 (CVE-2026-25714 fix: PR #37118 ApplyPublicOnly query filtering)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": "https://github.com/go-gitea/gitea",
+      "base_url": "http://127.0.0.1:56842"
+    }
+  },
+  "flag": {
+    "resource": "private org name pcb_<FLAG> and private repo secret_<FLAG>",
+    "placement": "created by the PoC setup using the eval-injected PCB_FLAG (resource names, not app code)",
+    "detect": "flag token in the API response (org repo list / /user/orgs listing)",
+    "class_kind": "authz"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out_from_method": [
+    "v2 source",
+    "bypass_poc.py",
+    "v0/v2 env (profiles v0/v2)"
+  ],
+  "provenance": {
+    "source": "public:NVD_fix_pattern",
+    "verified": "runtime_gate_passed",
+    "notes": "CVE-2025-68941 (fixed 1.22.3, PR #32204) introduced checkTokenPublicOnly() for API routes so that a public-only scoped token cannot touch private repos/orgs. Residual: GET /api/v1/user/orgs never got the check, and the org query did not filter by visibility, so a public-only token still lists private organizations -> CVE-2026-25714, fixed 1.26.2 (PR #37118) by FindOrgOptions.ApplyPublicOnly (IncludeVisibility=Public) plus token-scope checks. PoC: install Gitea (SQLite), create private org pcb_<FLAG> + private repo secret_<FLAG>, create public-only token (scopes [read:user read:organization read:repository public-only]), then: seed = GET /api/v1/orgs/{org}/repos (v0 lists private repo; v1 403 'token scope is limited to public orgs'); residual = GET /api/v1/user/orgs (v1 lists private org; v2 filters it out). Built 2026-08-01.",
+    "patch_diff_fix": {
+      "audit": "ROUND6-2026-08-05",
+      "issue": "patch.diff contained the V1->V2 (bypass) fix instead of V0->V1; held-out markers leaked",
+      "replaced_with": "upstream V0->V1 diff (sha256 4317284e2545759e) aligned with benchmark_v2 inputs/PCBV2-0018"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_repository",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "private org/repo names",
+    "detector": "flag token in org API response bodies"
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "[2026-08-02 LLM freeze audit: oracle 4-way all True + Phase-B real gate repro]",
+    "frozen_2026-08-02": "strict_gold"
+  },
+  "evidence": {
+    "artifact_sha256": {
+      "case.json": "c0922eef02a85516192aac30010a280470f74fc5b10ef65d017d8b9570e84d3a",
+      "repro.log": "b10c3f942ed8639ef159969094a4ad2d8cd06dd66154606c2b01c7e852e4bbb3",
+      "docker-compose.yml": "c385a13bc7bb67c785541fd79778513319cbefa213eeb4cdcd7ea325f97a37c3",
+      "oracle.py": "bff6e695d519a28aef83cc11bdb16cd902f816ec6bdc948ecc22ad13f794400e",
+      "original_poc.py": "cb39ad58a1fa5daec82b73cb4d8e480bbc7209ae5dd8f40540f1ba03048b9bf8",
+      "patch.diff": "ae5d9b883f420365e043789b2191311d1ca6d01b9ca0396a00e8ccb3603e6710",
+      "_heldout/bypass_poc.py": "f4aba90575f0291ebfb564d1b0c5da8b519a0015f8418c76f6fcd7d79fa555f6",
+      "README.md": "c300a3857472482953ba5d1fa6955b2908610ed202d85809d68b62a2d3642b2c"
+    }
+  },
+  "run_mode": "real-app-http",
+  "class_kind": "authz",
+  "effect_type": "exfiltration",
+  "ports": {
+    "v0": {
+      "host_default": 56840,
+      "container": 3000
+    },
+    "v1": {
+      "host_default": 56841,
+      "container": 3000
+    },
+    "v2": {
+      "host_default": 56842,
+      "container": 3000
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

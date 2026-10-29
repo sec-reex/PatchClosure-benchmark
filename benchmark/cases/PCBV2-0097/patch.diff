@@ -1,0 +1,35 @@
+PCBV2-0097 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 167f16e4805d8ab546d2997c753ac21bf4854920 + 5b9deadb391bf95d514ee44799d642cc0a0c5c73 (PR #12826 / 9.4.8)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0097/
+
+diff --git a/concrete/blocks/express_entry_list/controller.php b/concrete/blocks/express_entry_list/controller.php
+index 710a3319efd..e96d863897b 100644
+--- a/concrete/blocks/express_entry_list/controller.php
++++ b/concrete/blocks/express_entry_list/controller.php
+@@ -478,6 +478,8 @@ public function save($data)
+     {
+         $this->on_start();
+         $fromCIF = ($data['_fromCIF'] ?? null) === true;
++        $data['columns'] = '';
++        $data['filterFields'] = '';
+ 
+         if (isset($data['enableSearch']) && $data['enableSearch']) {
+             if (isset($data['searchProperties']) && is_array($data['searchProperties'])) {
+diff --git a/concrete/blocks/express_entry_list/controller.php b/concrete/blocks/express_entry_list/controller.php
+index e96d863897b..a2a3171f45f 100644
+--- a/concrete/blocks/express_entry_list/controller.php
++++ b/concrete/blocks/express_entry_list/controller.php
+@@ -478,8 +478,10 @@ public function save($data)
+     {
+         $this->on_start();
+         $fromCIF = ($data['_fromCIF'] ?? null) === true;
+-        $data['columns'] = '';
+-        $data['filterFields'] = '';
++        if (!$fromCIF) {
++            $data['columns'] = '';
++            $data['filterFields'] = '';
++        }
+ 
+         if (isset($data['enableSearch']) && $data['enableSearch']) {
+             if (isset($data['searchProperties']) && is_array($data['searchProperties'])) {

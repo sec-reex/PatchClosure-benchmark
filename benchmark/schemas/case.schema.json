@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://patchclosure-bench/schemas/case.schema.json",
+  "title": "PatchClosure-Bench frozen case.json schema (v2, 2026-10-12)",
+  "description": "Authoritative, frozen schema for benchmark/cases/<id>/case.json. Replaces the drifted root case_schema*.json and the former case.yaml-oriented case.schema.json (preserved as case_yaml.platform.schema.json). Validation is enforced by benchmark/ci/validate.py (hand-rolled, stdlib-only; jsonschema is NOT a runtime dependency). This document is the normative spec. HARD-REQUIRED fields (listed in `required`) are FAIL if absent; RECOMMENDED fields (cve_pair.advisory_url, ports, provenance) are WARN-only historical/heterogeneous debt and are tracked in the exceptions report, not FAIL. additionalProperties is true everywhere so the ~70 historical sibling fields remain readable. freeze_schema_v2.py normalizes/derives the hard-required fields from their authoritative historical locations (see comments) while preserving every original value.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "eval_id",
+    "case_id",
+    "product",
+    "language",
+    "run_mode",
+    "root_cause",
+    "mechanism_family",
+    "class_kind",
+    "cve_pair",
+    "versions",
+    "given_to_method",
+    "effect_type",
+    "execution",
+    "evidence",
+    "flag",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Preserved from the original manifest (e.g. 'strict-1'); NOT changed by migration. Migration marks itself via the added `schema_frozen` field instead."
+    },
+    "schema_frozen": {
+      "type": "string",
+      "description": "Added by freeze_schema_v2.py to mark a case as migrated to the frozen v2 schema, e.g. 'case-schema-v2-2026-10-12'."
+    },
+    "eval_id": {"type": "string", "pattern": "^PCBV2-[0-9]{4}$"},
+    "case_id": {"type": "string", "minLength": 1},
+    "product": {"type": "string", "minLength": 1},
+    "language": {"type": "string", "minLength": 1},
+    "run_mode": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Top-level run mode. Authoritative source: execution.run_mode (213/213). Migration backfills top-level from execution.run_mode when the historical top-level field was absent (25 cases)."
+    },
+    "root_cause": {"type": "string", "minLength": 1},
+    "mechanism_family": {"type": "string", "minLength": 1},
+    "class_kind": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Top-level class kind. Authoritative source: flag.class_kind (212/213). Migration backfills top-level from flag.class_kind when the historical top-level field was absent."
+    },
+    "effect_type": {
+      "enum": ["exfiltration", "effect"],
+      "description": "NEW. exfiltration = attacker can read the canary from the instance response. effect = pure-effect (e.g. ReDoS/DoS) where the canary is not retrievable from the response. Confirmed effect: PCBV2-0015. All others default exfiltration; the 7 other is_dos cases (0008,0059,0105,0110,0183,0184,0188) default exfiltration pending manual review (see exceptions report)."
+    },
+    "cve_pair": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["original_cve", "bypass_cve"],
+      "properties": {
+        "original_cve": {
+          "type": "string",
+          "description": "CVE id or mechanism tag. Authoritative source: cve_pair.original_cve; PCBV2-0205 derives it from cve_pair.cve1."
+        },
+        "bypass_cve": {
+          "type": "string",
+          "description": "CVE id or mechanism tag. Authoritative source: cve_pair.bypass_cve; PCBV2-0205 derives it from cve_pair.cve2."
+        },
+        "advisory_url": {
+          "type": "string",
+          "description": "RECOMMENDED (WARN-only). Backfilled from evidence.advisory_url / evidence.nvd_url / evidence.original_advisory_url when cve_pair.advisory_url was absent. Cases with no advisory source anywhere are listed in the exceptions report and emit WARN, not FAIL."
+        }
+      }
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["v0", "v1", "v2"],
+      "description": "Each of v0/v1/v2 is an object. Sub-structure is heterogeneous across the corpus (rich cases carry identifier/ref/compose_profile; others carry label/<product>_version/port). The schema requires only that v0/v1/v2 exist and are objects; identifier/ref are recommended, not enforced.",
+      "properties": {
+        "v0": {"type": "object"},
+        "v1": {"type": "object"},
+        "v2": {"type": "object"}
+      }
+    },
+    "ports": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "RECOMMENDED (WARN-only). Derived from docker-compose.yml by freeze_schema_v2.py: per profile vN, {host_default: <int|null>, container: <int>} parsed from the first published port of the service whose PORT_*V<n>* variable / profile matches. 202/213 yield a full v0/v1/v2 triple; 11 publish no host ports (internal/sidecar-reached) and get a partial or empty ports object + WARN. CI check #2 verifies, when present, that these are consistent with the compose file.",
+      "properties": {
+        "v0": {"type": "object"},
+        "v1": {"type": "object"},
+        "v2": {"type": "object"}
+      }
+    },
+    "given_to_method": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string"},
+      "description": "The protocol-invariant contestant input set (v1 source, patch.diff, original_poc.py, v1 env). Present in 211/213; migration backfills the canonical default for the 2 missing (0081, 0205), logged in the exceptions report."
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "RECOMMENDED (WARN-only). Present in 212/213; PCBV2-0205 lacks it and emits WARN (not backfilled with fabricated content)."
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["run_mode"],
+      "properties": {
+        "run_mode": {"type": "string", "minLength": 1}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["artifact_sha256"],
+      "properties": {
+        "advisory_url": {"type": "string"},
+        "artifact_sha256": {"type": "object"}
+      }
+    },
+    "flag": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["detect"],
+      "properties": {
+        "detect": {"type": "string", "minLength": 1},
+        "class_kind": {"type": "string"}
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["classification"],
+      "properties": {
+        "classification": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+# Minimal override dir required by DataEase image (spring.config.additional-location).
+# Per-profile datasource + redis host are injected via SPRING_APPLICATION_JSON in
+# docker-compose.yml (higher precedence than this file), so nothing host-specific here.
+dataease:
+  origin-list: http://localhost:8100

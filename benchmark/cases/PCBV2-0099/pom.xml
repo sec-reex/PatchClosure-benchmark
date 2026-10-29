@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- REAL-SERVER-TCP recipe: pull the EXACT published org.apache.mina:mina-core:${mina.version}
+     (V0=2.2.3 / V1=2.2.6 / V2=2.2.7) + transitive deps from Maven Central at build time.
+     No vendored jars. A REAL MINA NioSocketAcceptor TCP server (Server.java) exercises the REAL,
+     unmodified ObjectSerializationDecoder / AbstractIoBuffer#getObject sink; an external TCP client
+     (Client.java) triggers it over the network. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>mina-objser</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <properties>
+    <mina.version>2.2.6</mina.version>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.mina</groupId>
+      <artifactId>mina-core</artifactId>
+      <version>${mina.version}</version>
+    </dependency>
+  </dependencies>
+</project>

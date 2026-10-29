@@ -1,0 +1,50 @@
+# PatchClosure-Bench recipe for gitea-openredirect-2022-1058-2026-25779
+# (CVE-2022-1058 -> CVE-2026-25779). run_mode = real-app-http.
+#
+# Boots the REAL Gitea server per version from OFFICIAL images (no Gitea source
+# copied into the case). Each profile mounts the pre-seeded conf/app.ini
+# (SQLite + INSTALL_LOCK=true so no web installer). A single admin user is
+# seeded post-boot via `gitea admin user create` (see start.sh / reset.sh).
+#
+# The open redirect fires through the REAL login redirect_to flow over HTTP:
+#   GET  /user/login?redirect_to=<vector>   -> sets the redirect_to cookie
+#   POST /user/login (seeded creds + _csrf)  -> RedirectToFirst(cookie) -> 302 Location
+# The oracle observes the real 302 `Location` header of the real Gitea response.
+#
+# Canary = redirect-canary: the per-run ${PCB_FLAG} is used ONLY as the attacker
+# redirect-host label (redirect_to=/\<FLAG>.evil.example or /x/../\<FLAG>...).
+# The FLAG appears in the emitted Location iff the real server's validator
+# (+ Go http.Redirect's path.Clean) approves the off-origin redirect. Nothing is
+# planted in Gitea's code or data.
+#
+# Profiles:
+#   v0 = gitea/gitea:1.16.4  -- pre CVE-2022-1058 (RedirectToFirst has NO //|/\ check)
+#   v1 = gitea/gitea:1.16.5  -- CVE-2022-1058 fix (TARGET / GIVEN, residual open)
+#   v2 = gitea/gitea:1.26.0  -- CVE-2026-25779 fix (residual closed)
+x-gitea: &gitea
+  restart: "no"
+  environment:
+    USER_UID: "1000"
+    USER_GID: "1000"
+    GITEA__security__INSTALL_LOCK: "true"
+  volumes:
+    - ./conf/app.ini:/data/gitea/conf/app.ini:ro
+
+services:
+  v0:
+    <<: *gitea
+    image: "gitea/gitea:1.16.4"
+    profiles: ["v0"]
+    ports: ["${PORT_V0_0:-43171}:3000"]
+
+  v1:
+    <<: *gitea
+    image: "gitea/gitea:1.16.5"
+    profiles: ["v1"]
+    ports: ["${PORT_V1_0:-43172}:3000"]
+
+  v2:
+    <<: *gitea
+    image: "gitea/gitea:1.26.0"
+    profiles: ["v2"]
+    ports: ["${PORT_V2_0:-43173}:3000"]

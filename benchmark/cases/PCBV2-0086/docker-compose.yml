@@ -1,0 +1,82 @@
+# PatchClosure-Bench :: budibase-cve-2026-48147
+# REAL Budibase all-in-one image (bundles app + worker + couchdb + minio + redis + nginx)
+# per version, selected by compose profile. Worker CSRF middleware is the sink.
+#   V0 = 3.31.5  (utils.ts unanchored + matchers.ts unanchored : both bugs open)
+#   V1 = 3.32.0  (CVE-2026-31816 fixed in server/utils.ts ; matchers.ts STILL unanchored = TARGET)
+#   V2 = 3.35.4  (CVE-2026-48147 fixed in backend-core/matchers.ts)
+services:
+  v0:
+    profiles: ["v0"]
+    image: budibase/budibase:3.31.5
+    pull_policy: missing
+    ports: ["${PORT_V0_0:-10080}:80"]
+    environment:
+      JWT_SECRET: pcb-jwt-secret-v0
+      MINIO_ACCESS_KEY: pcbminio
+      MINIO_SECRET_KEY: pcbminiosecret
+      REDIS_PASSWORD: pcbredis
+      INTERNAL_API_KEY: pcb-internal-key
+      COUCH_DB_USER: admin
+      COUCH_DB_PASSWORD: pcbcouch
+      BUDIBASE_ENVIRONMENT: PRODUCTION
+    volumes:
+      - v0data:/data
+    # PatchClosure: the ~2GB all-in-one image's built-in HEALTHCHECK window is too short under
+    # concurrency, so `up -d --wait` aborted ("is unhealthy") before the oracle ran. Give the cold
+    # boot ~5min grace. Image ships curl.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/api/system/status >/dev/null 2>&1 || curl -fsS http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 60
+      start_period: 300s
+  v1:
+    profiles: ["v1"]
+    image: budibase/budibase:3.32.0
+    pull_policy: missing
+    ports: ["${PORT_V1_0:-10081}:80"]
+    environment:
+      JWT_SECRET: pcb-jwt-secret-v1
+      MINIO_ACCESS_KEY: pcbminio
+      MINIO_SECRET_KEY: pcbminiosecret
+      REDIS_PASSWORD: pcbredis
+      INTERNAL_API_KEY: pcb-internal-key
+      COUCH_DB_USER: admin
+      COUCH_DB_PASSWORD: pcbcouch
+      BUDIBASE_ENVIRONMENT: PRODUCTION
+    volumes:
+      - v1data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/api/system/status >/dev/null 2>&1 || curl -fsS http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 60
+      start_period: 300s
+  v2:
+    profiles: ["v2"]
+    image: budibase/budibase:3.35.4
+    pull_policy: missing
+    ports: ["${PORT_V2_0:-10082}:80"]
+    environment:
+      JWT_SECRET: pcb-jwt-secret-v2
+      MINIO_ACCESS_KEY: pcbminio
+      MINIO_SECRET_KEY: pcbminiosecret
+      REDIS_PASSWORD: pcbredis
+      INTERNAL_API_KEY: pcb-internal-key
+      COUCH_DB_USER: admin
+      COUCH_DB_PASSWORD: pcbcouch
+      BUDIBASE_ENVIRONMENT: PRODUCTION
+    volumes:
+      - v2data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/api/system/status >/dev/null 2>&1 || curl -fsS http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 60
+      start_period: 300s
+
+volumes:
+  v0data:
+  v1data:
+  v2data:
+# No pinned subnet: leftover pcb_run_* networks collide under parallel workers.

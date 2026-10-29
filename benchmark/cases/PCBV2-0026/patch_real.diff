@@ -1,0 +1,94 @@
+CVE: CVE-2024-28116 first-fix (Security::cleanDangerousTwig + Twig hook)
+upstream: https://github.com/getgrav/grav
+fix: 1.7.44..1.7.45  Security.php + Twig.php
+
+diff --git a/system/src/Grav/Common/Security.php b/system/src/Grav/Common/Security.php
+index 55bcde5..8b47830 100644
+--- a/system/src/Grav/Common/Security.php
++++ b/system/src/Grav/Common/Security.php
+@@ -263,4 +263,24 @@ class Security
+             'invalid_protocols' => array_map('trim', $config->get('security.xss_invalid_protocols')),
+         ];
+     }
++
++    public static function cleanDangerousTwig(string $string): string
++    {
++        if ($string === '') {
++            return $string;
++        }
++
++        $bad_twig = [
++            'twig_array_map',
++            'twig_array_filter',
++            'call_user_func',
++            'registerUndefinedFunctionCallback',
++            'undefined_functions',
++            'twig.getFunction',
++            'core.setEscaper',
++            'twig.safe_functions',
++        ];
++        $string = preg_replace('/(({{\s*|{%\s*)[^}]*?(' . implode('|', $bad_twig) . ')[^}]*?(\s*}}|\s*%}))/i', '{# $1 #}', $string);
++        return $string;
++    }
+ }
+diff --git a/system/src/Grav/Common/Twig/Twig.php b/system/src/Grav/Common/Twig/Twig.php
+index 14f33f0..6e50916 100644
+--- a/system/src/Grav/Common/Twig/Twig.php
++++ b/system/src/Grav/Common/Twig/Twig.php
+@@ -16,6 +16,7 @@ use Grav\Common\Language\Language;
+ use Grav\Common\Language\LanguageCodes;
+ use Grav\Common\Page\Interfaces\PageInterface;
+ use Grav\Common\Page\Pages;
++use Grav\Common\Security;
+ use Grav\Common\Twig\Exception\TwigException;
+ use Grav\Common\Twig\Extension\FilesystemExtension;
+ use Grav\Common\Twig\Extension\GravExtension;
+@@ -319,6 +320,7 @@ class Twig
+     public function processPage(PageInterface $item, $content = null)
+     {
+         $content = $content ?? $item->content();
++        $content = Security::cleanDangerousTwig($content);
+ 
+         // override the twig header vars for local resolution
+         $this->grav->fireEvent('onTwigPageVariables', new Event(['page' => $item]));
+@@ -392,6 +394,8 @@ class Twig
+         $this->grav->fireEvent('onTwigStringVariables');
+         $vars += $this->twig_vars;
+ 
++        $string = Security::cleanDangerousTwig($string);
++
+         $name = '@Var:' . $string;
+         $this->setTemplate($name, $string);
+ 
+@@ -418,7 +422,7 @@ class Twig
+         try {
+             $grav = $this->grav;
+ 
+-            // set the page now its been processed
++            // set the page now it's been processed
+             $grav->fireEvent('onTwigSiteVariables');
+ 
+             /** @var Pages $pages */
+@@ -427,13 +431,15 @@ class Twig
+             /** @var PageInterface $page */
+             $page = $grav['page'];
+ 
++            $content = Security::cleanDangerousTwig($page->content());
++
+             $twig_vars = $this->twig_vars;
+             $twig_vars['theme'] = $grav['config']->get('theme');
+             $twig_vars['pages'] = $pages->root();
+             $twig_vars['page'] = $page;
+             $twig_vars['header'] = $page->header();
+             $twig_vars['media'] = $page->media();
+-            $twig_vars['content'] = $page->content();
++            $twig_vars['content'] = $content;
+ 
+             // determine if params are set, if so disable twig cache
+             $params = $grav['uri']->params(null, true);
+@@ -568,4 +574,5 @@ class Twig
+ 
+         $this->autoescape = (bool) $state;
+     }
++
+ }

@@ -1,0 +1,36 @@
+# PatchClosure-Bench recipe for daptin-cve-2026-44349.
+# Daptin headless CMS -- SQLi incomplete-fix pair:
+#   CVE-2026-41422 (aggregate column injection, fixed@0.11.4)
+#   CVE-2026-44349 (fuzzy-search column injection, fixed@0.11.5)
+#
+# Profiles:
+#   v0 = daptin/daptin:v0.9.82  (both aggregate + fuzzy-search SQLi open)
+#   v1 = daptin/daptin:v0.11.4  (aggregate fixed; fuzzy-search still injectable)
+#   v2 = daptin/daptin:v0.11.5  (both fixed)
+#
+# Canary seeding is done from the HOST after Daptin starts (the container has
+# no curl/python3). start.sh / reset.sh register an admin user, create a
+# pcb_canary entity with permission=0, restart so Daptin materializes the
+# table, and insert ${PCB_FLAG}. Effect = flag in HTTP response.
+
+services:
+  v0:
+    profiles: ["v0"]
+    image: "daptin/daptin:v0.9.82"
+    ports: ["${PORT_V0_0:-39082}:8080"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+
+  v1:
+    profiles: ["v1"]
+    image: "daptin/daptin:v0.11.4"
+    ports: ["${PORT_V1_0:-39114}:8080"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+
+  v2:
+    profiles: ["v2"]
+    image: "daptin/daptin:v0.11.5"
+    ports: ["${PORT_V2_0:-39115}:8080"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"

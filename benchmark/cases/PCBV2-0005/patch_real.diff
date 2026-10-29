@@ -1,0 +1,75 @@
+CVE: CVE-2013-7285 first-fix as shipped in 1.4.13 (default deny EventHandler)
+upstream: https://github.com/x-stream/xstream
+fix: XSTREAM_1_4_10..XSTREAM_1_4_13  XStream.java denyTypes EventHandler
+
+diff --git a/xstream/src/java/com/thoughtworks/xstream/XStream.java b/xstream/src/java/com/thoughtworks/xstream/XStream.java
+index 0c9c5b96..93901026 100644
+--- a/xstream/src/java/com/thoughtworks/xstream/XStream.java
++++ b/xstream/src/java/com/thoughtworks/xstream/XStream.java
+@@ -680,23 +629,23 @@ public class XStream {
+             .lookupMapperOfType(ImplicitCollectionMapper.class);
+         defaultImplementationsMapper = (DefaultImplementationsMapper)this.mapper
+             .lookupMapperOfType(DefaultImplementationsMapper.class);
+-        immutableTypesMapper = (ImmutableTypesMapper)this.mapper
+-            .lookupMapperOfType(ImmutableTypesMapper.class);
+-        localConversionMapper = (LocalConversionMapper)this.mapper
+-            .lookupMapperOfType(LocalConversionMapper.class);
+-        securityMapper = (SecurityMapper)this.mapper
+-            .lookupMapperOfType(SecurityMapper.class);
++        immutableTypesMapper = (ImmutableTypesMapper)this.mapper.lookupMapperOfType(ImmutableTypesMapper.class);
++        localConversionMapper = (LocalConversionMapper)this.mapper.lookupMapperOfType(LocalConversionMapper.class);
++        securityMapper = (SecurityMapper)this.mapper.lookupMapperOfType(SecurityMapper.class);
+         annotationConfiguration = (AnnotationConfiguration)this.mapper
+             .lookupMapperOfType(AnnotationConfiguration.class);
+     }
+-    
++
+     protected void setupSecurity() {
+         if (securityMapper == null) {
+             return;
+         }
+-        
++
+         addPermission(AnyTypePermission.ANY);
+-        insecureWarning = true;
++        denyTypes(new String[]{"java.beans.EventHandler"});
++        denyTypesByRegExp(new Pattern[]{LAZY_ITERATORS, JAVAX_CRYPTO});
++        allowTypeHierarchy(Exception.class);
++        securityInitialized = false;
+     }
+ 
+     /**
+@@ -2526,32 +2405,10 @@ public class XStream {
+ 
+         /**
+          * @deprecated As of 1.3, use
+-         *             {@link com.thoughtworks.xstream.InitializationException#InitializationException(String)}
+-         *             instead
++         *             {@link com.thoughtworks.xstream.InitializationException#InitializationException(String)} instead
+          */
+         public InitializationException(String message) {
+             super(message);
+         }
+     }
+-
+-    private class InternalBlackList implements Converter {
+-
+-        public boolean canConvert(final Class type) {
+-            return (type == void.class || type == Void.class)
+-                || (insecureWarning
+-                    && type != null
+-                    && (type.getName().equals("java.beans.EventHandler")
+-                        || type.getName().endsWith("$LazyIterator")
+-                        || type.getName().startsWith("javax.crypto.")));
+-        }
+-
+-        public void marshal(final Object source, final HierarchicalStreamWriter writer,
+-                final MarshallingContext context) {
+-            throw new ConversionException("Security alert. Marshalling rejected.");
+-        }
+-
+-        public Object unmarshal(final HierarchicalStreamReader reader, final UnmarshallingContext context) {
+-            throw new ConversionException("Security alert. Unmarshalling rejected.");
+-        }
+-    }
+ }

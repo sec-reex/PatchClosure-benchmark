@@ -1,0 +1,575 @@
+# CVE-2026-41422
+# upstream: https://github.com/daptin/daptin
+# fix: 7212c3ac6a1de8c13473d583d670fe02b969a426 (v0.11.4 / GHSA-rw2c-8rfq-gwfv)
+diff --git a/server/resource/resource_aggregate.go b/server/resource/resource_aggregate.go
+index 764cbfc7..e3dcd3fa 100644
+--- a/server/resource/resource_aggregate.go
++++ b/server/resource/resource_aggregate.go
+@@ -74,12 +74,15 @@ func ToInterfaceArray(s []string) []interface{} {
+ }
+ 
+ func ToOrderedExpressionArray(s []string) []exp.OrderedExpression {
+-	r := make([]exp.OrderedExpression, len(s))
+-	for i, e := range s {
++	r := make([]exp.OrderedExpression, 0, len(s))
++	for _, e := range s {
++		if e == "" {
++			continue
++		}
+ 		if e[0] == '-' {
+-			r[i] = goqu.C(e[1:]).Desc()
++			r = append(r, goqu.C(e[1:]).Desc())
+ 		} else {
+-			r[i] = goqu.C(e).Asc()
++			r = append(r, goqu.C(e).Asc())
+ 		}
+ 	}
+ 	return r
+@@ -109,14 +112,261 @@ func ColumnToInterfaceArray(s []column) []interface{} {
+ 	return r
+ }
+ 
++// aggregateFuncs maps aggregate function names to their safe goqu typed constructors.
++// Exact map key lookup — no pattern matching.
++var aggregateFuncs = map[string]func(interface{}) exp.SQLFunctionExpression{
++	"count": func(col interface{}) exp.SQLFunctionExpression { return goqu.COUNT(col) },
++	"sum":   func(col interface{}) exp.SQLFunctionExpression { return goqu.SUM(col) },
++	"min":   func(col interface{}) exp.SQLFunctionExpression { return goqu.MIN(col) },
++	"max":   func(col interface{}) exp.SQLFunctionExpression { return goqu.MAX(col) },
++	"avg":   func(col interface{}) exp.SQLFunctionExpression { return goqu.AVG(col) },
++	"first": func(col interface{}) exp.SQLFunctionExpression { return goqu.FIRST(col) },
++	"last":  func(col interface{}) exp.SQLFunctionExpression { return goqu.LAST(col) },
++}
++
++// scalarFuncs is the allowlist of safe data-transformation SQL functions.
++// System functions, I/O functions, and anything that can read from other sources are excluded.
++// Exact map key lookup — no pattern matching.
++var scalarFuncs = map[string]bool{
++	"date": true, "time": true, "datetime": true, "strftime": true, "julianday": true,
++	"month": true, "year": true, "day": true,
++	"upper": true, "lower": true, "length": true, "substr": true, "trim": true,
++	"ltrim": true, "rtrim": true, "replace": true, "hex": true,
++	"abs": true, "round": true,
++	"coalesce": true, "ifnull": true, "nullif": true,
++}
++
++// isSimpleIdentifier returns true if s is a valid SQL identifier:
++// only letters, digits, underscores; first character not a digit.
++// Used to validate alias names. Character loop — no regex.
++func isSimpleIdentifier(s string) bool {
++	if s == "" {
++		return false
++	}
++	for i, c := range s {
++		if i == 0 && c >= '0' && c <= '9' {
++			return false
++		}
++		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
++			return false
++		}
++	}
++	return true
++}
++
++// splitFuncArgs splits a comma-separated argument string while respecting single-quoted strings.
++// E.g.: "'%Y-%m', created_at" → ["'%Y-%m'", "created_at"]
++func splitFuncArgs(argsStr string) []string {
++	var args []string
++	depth, start := 0, 0
++	inQuote := false
++	for i, c := range argsStr {
++		switch {
++		case c == '\'' && depth == 0:
++			inQuote = !inQuote
++		case !inQuote && c == '(':
++			depth++
++		case !inQuote && c == ')':
++			depth--
++		case !inQuote && c == ',' && depth == 0:
++			args = append(args, strings.TrimSpace(argsStr[start:i]))
++			start = i + 1
++		}
++	}
++	return append(args, strings.TrimSpace(argsStr[start:]))
++}
++
++// validateColumnRef checks that col (a simple identifier or "table.col") exists in the schema
++// of one of the listed tables. It accepts only plain identifiers — no expressions, no operators.
++// For qualified names (table.col), the table must be in the tables allowlist (root entity or
++// an explicitly joined table) — not just any entity in the system.
++func (dbResource *DbResource) validateColumnRef(col string, tables []string) error {
++	if strings.Contains(col, ".") {
++		parts := strings.SplitN(col, ".", 2)
++		tbl, field := parts[0], parts[1]
++		inScope := false
++		for _, t := range tables {
++			if t == tbl {
++				inScope = true
++				break
++			}
++		}
++		if !inScope {
++			return fmt.Errorf("table %q is not in scope (must be the root entity or a joined table)", tbl)
++		}
++		crud := dbResource.Cruds[tbl]
++		if crud == nil {
++			return fmt.Errorf("unknown table %q", tbl)
++		}
++		if _, ok := crud.TableInfo().GetColumnByName(field); !ok {
++			return fmt.Errorf("unknown column %q in table %q", field, tbl)
++		}
++		return nil
++	}
++	for _, tbl := range tables {
++		if crud := dbResource.Cruds[tbl]; crud != nil {
++			if _, ok := crud.TableInfo().GetColumnByName(col); ok {
++				return nil
++			}
++		}
++	}
++	return fmt.Errorf("unknown column: %q", col)
++}
++
++// buildFuncArgs converts raw argument strings into safe goqu expressions.
++// Each argument is classified as: "*" (star, count only), 'quoted string' (passed as Go value,
++// parameterized by goqu), or a column reference (schema-validated, wrapped in goqu.I).
++func (dbResource *DbResource) buildFuncArgs(funcName string, rawArgs []string, tables []string) ([]interface{}, error) {
++	built := make([]interface{}, 0, len(rawArgs))
++	for _, arg := range rawArgs {
++		arg = strings.TrimSpace(arg)
++		if arg == "*" {
++			if funcName != "count" {
++				return nil, fmt.Errorf("'*' only valid in count()")
++			}
++			built = append(built, goqu.Star())
++			continue
++		}
++		if strings.HasPrefix(arg, "'") && strings.HasSuffix(arg, "'") && len(arg) >= 2 {
++			// Quoted string literal: strip quotes, pass as Go string.
++			// goqu will parameterize it in prepared-statement mode — no injection possible.
++			literal := arg[1 : len(arg)-1]
++			if strings.Contains(literal, "'") {
++				return nil, fmt.Errorf("invalid string literal in %s()", funcName)
++			}
++			built = append(built, literal)
++			continue
++		}
++		// Column reference: must exist in schema.
++		if err := dbResource.validateColumnRef(arg, tables); err != nil {
++			return nil, fmt.Errorf("arg %q in %s(): %w", arg, funcName, err)
++		}
++		built = append(built, goqu.I(arg))
++	}
++	return built, nil
++}
++
++// parseAggExpr converts a user-supplied aggregation expression string into a safe goqu expression.
++// Supported forms:
++//   - "count"                          → COUNT(*)
++//   - "col" / "table.col"              → identifier (schema-validated)
++//   - "agg_func(col)"                  → aggregate function (allowlist + schema)
++//   - "scalar_func(col)"               → scalar function (allowlist + schema)
++//   - "scalar_func('lit', col)"        → scalar with string literal + column
++//   - any of the above + " as alias"   → with alias (simple identifier check)
++//
++// allowAggregate controls whether aggregate functions are permitted (false for GROUP BY).
++// goqu.L() is never used — all output uses goqu's typed safe constructors.
++func (dbResource *DbResource) parseAggExpr(expr string, tables []string, allowAggregate bool) (interface{}, error) {
++	expr = strings.TrimSpace(expr)
++
++	// Special shorthand: bare "count" → COUNT(*)
++	if expr == "count" && allowAggregate {
++		return goqu.COUNT(goqu.Star()).As("count"), nil
++	}
++
++	// Peel off trailing " as alias" if present
++	var alias string
++	if idx := strings.LastIndex(expr, " as "); idx > 0 {
++		maybeAlias := strings.TrimSpace(expr[idx+4:])
++		if !isSimpleIdentifier(maybeAlias) {
++			return nil, fmt.Errorf("invalid alias: %q", maybeAlias)
++		}
++		alias = maybeAlias
++		expr = strings.TrimSpace(expr[:idx])
++	}
++
++	// Function call: funcname(args...)
++	if openParen := strings.Index(expr, "("); openParen > 0 {
++		if expr[len(expr)-1] != ')' {
++			return nil, fmt.Errorf("malformed function call: %q", expr)
++		}
++		funcName := strings.TrimSpace(expr[:openParen])
++		argsStr := expr[openParen+1 : len(expr)-1]
++		rawArgs := splitFuncArgs(argsStr)
++
++		// Aggregate function path
++		if aggBuilder, ok := aggregateFuncs[funcName]; ok {
++			if !allowAggregate {
++				return nil, fmt.Errorf("aggregate function %q not allowed in group-by", funcName)
++			}
++			if len(rawArgs) != 1 {
++				return nil, fmt.Errorf("%s() takes exactly one argument", funcName)
++			}
++			builtArgs, err := dbResource.buildFuncArgs(funcName, rawArgs, tables)
++			if err != nil {
++				return nil, err
++			}
++			result := aggBuilder(builtArgs[0])
++			if alias != "" {
++				return result.As(alias), nil
++			}
++			return result, nil
++		}
++
++		// Scalar function path
++		if !scalarFuncs[funcName] {
++			return nil, fmt.Errorf("unsupported function: %q", funcName)
++		}
++		// Scalar functions must reference at least one schema column.
++		// This blocks zero-argument system functions (e.g. sqlite_version()).
++		hasColumnArg := false
++		for _, raw := range rawArgs {
++			raw = strings.TrimSpace(raw)
++			if raw != "*" && !(strings.HasPrefix(raw, "'") && strings.HasSuffix(raw, "'")) {
++				hasColumnArg = true
++				break
++			}
++		}
++		if !hasColumnArg {
++			return nil, fmt.Errorf("scalar function %q requires at least one column argument", funcName)
++		}
++		builtArgs, err := dbResource.buildFuncArgs(funcName, rawArgs, tables)
++		if err != nil {
++			return nil, err
++		}
++		result := goqu.Func(funcName, builtArgs...)
++		if alias != "" {
++			return result.As(alias), nil
++		}
++		return result, nil
++	}
++
++	// Plain column reference — no parentheses permitted
++	if strings.ContainsAny(expr, "(),") {
++		return nil, fmt.Errorf("invalid expression: %q", expr)
++	}
++	if err := dbResource.validateColumnRef(expr, tables); err != nil {
++		return nil, err
++	}
++	col := goqu.I(expr)
++	if alias != "" {
++		return col.As(alias), nil
++	}
++	return col, nil
++}
++
+ func (dbResource *DbResource) DataStats(req AggregationRequest, transaction *sqlx.Tx) (*AggregateData, error) {
+ 
+ 	requestedGroupBys := req.GroupBy
+-
+ 	projections := req.ProjectColumn
+-
+ 	joinedTables := make([]string, 0)
+ 
++	// Pre-pass: validate join table names and build allowedTables.
++	// Projections and group-by are validated against this set so cross-table
++	// column references (e.g. "customer.name") can be schema-checked.
++	allowedTables := []string{req.RootEntity}
++	for _, join := range req.Join {
++		joinParts := strings.Split(join, "@")
++		joinTable := joinParts[0]
++		if dbResource.Cruds[joinTable] == nil {
++			return nil, fmt.Errorf("unknown join table: %q", joinTable)
++		}
++		allowedTables = append(allowedTables, joinTable)
++	}
++
++	// Parse and validate projections (column param).
++	// Top-level comma-splitting is preserved for the "column=a,b,c" shorthand.
+ 	projectionsAdded := make([]interface{}, 0)
+ 	updatedProjections := make([]string, 0)
+ 	for _, project := range projections {
+@@ -129,29 +379,29 @@ func (dbResource *DbResource) DataStats(req AggregationRequest, transaction *sql
+ 	}
+ 	projections = updatedProjections
+ 
+-	for i, project := range projections {
+-		if project == "count" {
+-			projections[i] = "count(*) as count"
+-			projectionsAdded = append(projectionsAdded, goqu.L("count(*)").As("count"))
+-		} else {
+-			if strings.Index(project, " as ") > -1 {
+-				parts := strings.Split(project, " as ")
+-				projectionsAdded = append(projectionsAdded, goqu.L(parts[0]).As(parts[1]))
+-			} else {
+-				projectionsAdded = append(projectionsAdded, goqu.L(project))
+-			}
++	for _, project := range projections {
++		project = strings.TrimSpace(project)
++		expr, err := dbResource.parseAggExpr(project, allowedTables, true)
++		if err != nil {
++			return nil, fmt.Errorf("invalid column %q: %w", project, err)
+ 		}
++		projectionsAdded = append(projectionsAdded, expr)
+ 	}
+ 
++	// Parse and validate group-by expressions.
++	// Aggregate functions are not permitted in GROUP BY (allowAggregate=false).
+ 	groupBysAdded := make([]interface{}, 0)
+ 	for _, group := range requestedGroupBys {
+-		projections = append(projections, group)
+-		projectionsAdded = append(projectionsAdded, goqu.L(group))
+-		groupBysAdded = append(groupBysAdded, goqu.L(group))
++		expr, err := dbResource.parseAggExpr(group, allowedTables, false)
++		if err != nil {
++			return nil, fmt.Errorf("invalid group-by %q: %w", group, err)
++		}
++		projectionsAdded = append(projectionsAdded, expr)
++		groupBysAdded = append(groupBysAdded, expr)
+ 	}
+ 
+-	if len(projections) == 0 {
+-		projectionsAdded = append(projectionsAdded, goqu.L("count(*)").As("count"))
++	if len(projectionsAdded) == 0 {
++		projectionsAdded = append(projectionsAdded, goqu.COUNT(goqu.Star()).As("count"))
+ 	}
+ 
+ 	selectBuilder := statementbuilder.Squirrel.Select(projectionsAdded...).Prepared(true)
+@@ -181,7 +431,10 @@ func (dbResource *DbResource) DataStats(req AggregationRequest, transaction *sql
+ 			if strings.Index(rightVal.(string), "@") > -1 {
+ 				rightValParts := strings.Split(rightVal.(string), "@")
+ 				entityName := rightValParts[0]
+-				entityReferenceId := uuid.MustParse(rightValParts[1])
++				entityReferenceId, err := uuid.Parse(rightValParts[1])
++				if err != nil {
++					return nil, fmt.Errorf("invalid reference id in where clause - [%v][%v]: %v", entityName, rightValParts[1], err)
++				}
+ 				entityId, err := GetReferenceIdToIdWithTransaction(entityName, daptinid.DaptinReferenceId(entityReferenceId), transaction)
+ 				if err != nil {
+ 					return nil, fmt.Errorf("referenced entity in where clause not found - [%v][%v] -%v", entityName, entityReferenceId, err)
+@@ -320,7 +573,10 @@ func (dbResource *DbResource) DataStats(req AggregationRequest, transaction *sql
+ 					if strings.Index(parts[3], "@") > -1 {
+ 						rightValParts := strings.Split(parts[3], "@")
+ 						entityName := rightValParts[0]
+-						entityReferenceId := uuid.MustParse(rightValParts[1])
++						entityReferenceId, err := uuid.Parse(rightValParts[1])
++						if err != nil {
++							return nil, fmt.Errorf("invalid reference id in join clause - [%v][%v]: %v", entityName, rightValParts[1], err)
++						}
+ 						entityId, err := GetReferenceIdToIdWithTransaction(entityName, daptinid.DaptinReferenceId(entityReferenceId), transaction)
+ 						if err != nil {
+ 							return nil, fmt.Errorf("referenced entity in join clause not found - [%v][%v] -%v", entityName, entityReferenceId, err)
+diff --git a/wiki/Aggregation-API.md b/wiki/Aggregation-API.md
+index 452a99cb..2838a05f 100644
+--- a/wiki/Aggregation-API.md
++++ b/wiki/Aggregation-API.md
+@@ -1,6 +1,6 @@
+ # Aggregation API
+ 
+-**Tested ✓** 2026-01-27 (POST method and HAVING clause fixed ✅)
++**Tested ✓** 2026-04-16
+ 
+ SQL-like aggregation queries via REST API.
+ 
+@@ -11,6 +11,7 @@ SQL-like aggregation queries via REST API.
+ - ✅ ORDER BY - Working
+ - ✅ POST method - Fixed in commit 9e3b5650 ([Issue #174](https://github.com/daptin/daptin/issues/174))
+ - ✅ HAVING clause - Fixed in commit e1c3017c ([Issue #173](https://github.com/daptin/daptin/issues/173))
++- ✅ Security: column/group expressions validated against schema (CWE-89 fix, v0.11.4)
+ 
+ ## Endpoint
+ 
+@@ -105,11 +106,33 @@ column=category,count,avg(price)" \
+ }
+ ```
+ 
++## Allowed Expression Forms
++
++The `column` and `group` parameters accept a strict, validated set of expression forms. Arbitrary SQL expressions are rejected — column names are validated against the entity schema and function names are checked against an explicit allowlist.
++
++### column parameter
++
++| Form | Example | Notes |
++|------|---------|-------|
++| `count` | `count` | Shorthand for COUNT(*) |
++| Column name | `status` | Must exist in entity schema |
++| Aggregate function | `sum(price)` | Column schema-validated |
++| Aggregate with alias | `sum(price) as total` | Alias: letters/digits/underscore only |
++| Scalar function | `date(created_at)` | Column schema-validated |
++| Scalar with alias | `date(created_at) as day` | |
++| Scalar with literal | `strftime('%Y-%m', created_at) as month` | String literals must be single-quoted |
++| Joined column | `customer.name` | Table must be in `join=` list |
++
++### group parameter
++
++Same forms as `column`, except aggregate functions (`sum`, `avg`, etc.) are not permitted in GROUP BY.
++
+ ## Aggregate Functions
+ 
+ | Function | Syntax | Description |
+ |----------|--------|-------------|
+-| Count | `count` | Count records |
++| Count | `count` | Count all rows (shorthand) |
++| Count | `count(column)` | Count non-null values |
+ | Sum | `sum(column)` | Sum of values |
+ | Average | `avg(column)` | Average value |
+ | Minimum | `min(column)` | Minimum value |
+@@ -117,6 +140,19 @@ column=category,count,avg(price)" \
+ | First | `first(column)` | First value |
+ | Last | `last(column)` | Last value |
+ 
++## Scalar Functions (allowed in column and group)
++
++These safe data-transformation functions are permitted. System functions, I/O functions, and anything not in this list is rejected.
++
++| Category | Functions |
++|----------|-----------|
++| Date/time | `date`, `time`, `datetime`, `strftime`, `julianday`, `month`, `year`, `day` |
++| String | `upper`, `lower`, `length`, `substr`, `trim`, `ltrim`, `rtrim`, `replace`, `hex` |
++| Math | `abs`, `round` |
++| Null handling | `coalesce`, `ifnull`, `nullif` |
++
++Scalar functions require at least one schema column argument. Zero-argument calls (e.g. `random()`, `sqlite_version()`) are rejected.
++
+ ### Examples
+ 
+ ```bash
+diff --git a/wiki/WebSocket-API.md b/wiki/WebSocket-API.md
+index 3cc851e9..03041f6d 100644
+--- a/wiki/WebSocket-API.md
++++ b/wiki/WebSocket-API.md
+@@ -40,26 +40,29 @@ All server messages have a `type` field that distinguishes the message category.
+ 
+ **Session** — sent once on connection:
+ ```json
+-{ "type": "session", "status": "open", "data": { "user": "uuid-string", "groups": ["group-ref-1"], "sessionId": 42 } }
++{ "type": "session", "status": "open", "data": "eyJ1c2VyIjoiMDE5Li4uIiwiZ3JvdXBzIjpbIjAxOS4uLiJdLCJzZXNzaW9uSWQiOjF9" }
+ ```
++Decoded `data`: `{"user": "uuid-string", "groups": ["group-ref-1"], "sessionId": 1}`
+ 
+ **Response** — reply to a client request:
+ ```json
+-{ "id": "req-1", "type": "response", "method": "subscribe", "ok": true, "data": { "topic": "user_account" } }
++{ "id": "req-1", "type": "response", "method": "subscribe", "ok": true, "data": "eyJ0b3BpYyI6InVzZXJfYWNjb3VudCJ9" }
+ { "id": "req-1", "type": "response", "method": "subscribe", "ok": false, "error": "permission denied" }
+ ```
++Decoded `data`: `{"topic": "user_account"}`
+ 
+ **Event** — push from a subscription:
+ ```json
+-{ "type": "event", "topic": "user_account", "event": "create", "data": { "id": 1, "name": "John", "__type": "user_account" }, "source": "database" }
++{ "type": "event", "topic": "user_account", "event": "create", "data": "eyJpZCI6MSwibmFtZSI6IkpvaG4iLCJfX3R5cGUiOiJ1c2VyX2FjY291bnQifQ==", "source": "database" }
+ ```
++Decoded `data`: `{"id": 1, "name": "John", "__type": "user_account"}`
+ 
+ **Pong** — reply to client ping:
+ ```json
+ { "type": "pong" }
+ ```
+ 
+-Key difference from earlier protocol versions: `data` is always a proper JSON object, never base64-encoded.
++**Note:** The `data` field is base64-encoded on the wire. The server stores `data` as `[]byte` internally, which Go's JSON encoder base64-encodes during serialization. Clients must base64-decode `data` and then JSON-parse the result to access the payload.
+ 
+ ## Connection Lifecycle
+ 
+@@ -134,6 +137,37 @@ Subscribers on that topic receive:
+ 
+ **Permission:** Requires CanExecute on user topics (GuestExecute bit for non-owners), CanCreate on system topics.
+ 
++### publish_to_topic (HTTP Action)
++
++Publish a message to a topic via HTTP without a WebSocket connection. This enables mobile apps, serverless functions, and CLI scripts to push real-time events to WebSocket subscribers.
++
++```
++POST /action/world/publish_to_topic
++Authorization: Bearer <token>
++Content-Type: application/json
++```
++
++```json
++{
++  "attributes": {
++    "topicName": "chat-room-1",
++    "message": { "command": "open_tab", "url": "https://example.com" }
++  }
++}
++```
++
++WebSocket subscribers on `chat-room-1` receive the same event as a WebSocket `new-message`:
++```json
++{ "type": "event", "topic": "chat-room-1", "event": "new-message", "data": "<base64>", "source": "user-uuid" }
++```
++
++**Using daptin-cli:**
++```bash
++daptin-cli execute world publish_to_topic topicName=chat-room-1 message='{"command":"open_tab","url":"https://example.com"}'
++```
++
++**Permission:** Same as WebSocket `new-message` — CanExecute on user topics, CanCreate on system topics.
++
+ ### create-topicName
+ 
+ Create a custom PubSub topic for application-specific messaging.
+@@ -263,6 +297,7 @@ User-created topics have a permission bitmask that controls access for non-owner
+ |--------|-------------------|-----------------|
+ | subscribe | CanPeek (table permission) | CanRead (GuestRead for non-owner) |
+ | new-message | CanCreate (table permission) | CanExecute (GuestExecute for non-owner) |
++| publish_to_topic (HTTP) | CanCreate (table permission) | CanExecute (GuestExecute for non-owner) |
+ | destroy-topicName | Always denied | CanDelete (GuestDelete for non-owner) |
+ | set-topic-permission | Always denied | Owner or admin only |
+ | get-topic-permission | CanPeek (table permission) | CanPeek (GuestPeek for non-owner) |
+@@ -311,7 +346,8 @@ ws.on('message', (raw) => {
+ 
+   switch (msg.type) {
+     case 'session':
+-      console.log(`Session opened: user=${msg.data.user} sessionId=${msg.data.sessionId}`);
++      const session = JSON.parse(atob(msg.data));
++      console.log(`Session opened: user=${session.user} sessionId=${session.sessionId}`);
+ 
+       // Subscribe to user_account changes
+       ws.send(JSON.stringify({
+@@ -349,8 +385,9 @@ ws.on('message', (raw) => {
+       break;
+ 
+     case 'event':
++      const eventData = JSON.parse(atob(msg.data));
+       console.log(`Event: ${msg.event} on ${msg.topic}`);
+-      console.log('  Data:', JSON.stringify(msg.data));
++      console.log('  Data:', JSON.stringify(eventData));
+       break;
+ 
+     case 'pong':
+@@ -388,6 +425,11 @@ class DaptinWebSocket {
+     this.ws.onmessage = (event) => {
+       const msg = JSON.parse(event.data);
+ 
++      // Decode base64 data field
++      if (msg.data) {
++        try { msg.data = JSON.parse(atob(msg.data)); } catch(e) {}
++      }
++
+       if (msg.type === 'session') {
+         console.log('Connected, session:', msg.data);
+         return;
+@@ -477,6 +519,11 @@ function useDaptinWebSocket(token) {
+     socket.onmessage = (e) => {
+       const msg = JSON.parse(e.data);
+ 
++      // Decode base64 data field
++      if (msg.data) {
++        try { msg.data = JSON.parse(atob(msg.data)); } catch(e) {}
++      }
++
+       if (msg.type === 'session') {
+         setSessionInfo(msg.data);
+         setConnected(true);
+@@ -524,7 +571,8 @@ WebSocket events are distributed across cluster nodes using Olric pub/sub:
+ | `unsubscribe` | Unsubscribe from topics | `{topicName: "topic1"}` |
+ | `create-topicName` | Create custom topic | `{name: "my-topic"}` |
+ | `destroy-topicName` | Delete custom topic | `{name: "my-topic"}` |
+-| `new-message` | Publish to topic | `{topicName: "my-topic", message: {...}}` |
++| `new-message` | Publish to topic (WebSocket) | `{topicName: "my-topic", message: {...}}` |
++| `publish_to_topic` | Publish to topic (HTTP) | `POST /action/world/publish_to_topic` |
+ | `set-topic-permission` | Set topic permissions | `{topicName: "my-topic", permission: 2097151}` |
+ | `get-topic-permission` | Get topic permissions | `{topicName: "my-topic"}` |
+ | `ping` | Connection health check | `{}` |

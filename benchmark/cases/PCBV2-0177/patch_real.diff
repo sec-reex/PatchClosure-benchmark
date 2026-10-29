@@ -1,0 +1,85 @@
+CVE: CVE-2020-28273 first-fix (prototype-key guard in set-in)
+upstream: https://github.com/ahdinosaur/set-in.git
+fix: v2.0.0..v2.0.1
+
+diff --git a/index.js b/index.js
+index 5516ec3..87a86e6 100644
+--- a/index.js
++++ b/index.js
+@@ -16,6 +16,18 @@ function recursivelySetIn (object, path, value, index) {
+ 
+   object = object || {}
+ 
++  // https://stackoverflow.com/a/60850027
++  assert.ok(
++    path[index] !== '__proto__',
++    'setIn: "__proto__" is disallowed in path due to possible prototype pollution attack.'
++  )
++  if (index < path.length - 1) {
++    assert.ok(
++      path[index] !== 'constructor' && path[index + 1] !== 'prototype',
++      'setIn: ["constructor", "prototype"] is disallowed in path due to possible prototype pollution attack.'
++    )
++  }
++
+   var key = path[index]
+ 
+   if (key === '-') {
+@@ -23,6 +35,12 @@ function recursivelySetIn (object, path, value, index) {
+     key = object.length
+   }
+ 
++  if (
++    key === '__proto__' ||
++    (key === 'constructor' && path[index + 1] === 'prototype')) {
++
++  }
++
+   var next = recursivelySetIn(object[key], path, value, ++index)
+ 
+   return set(object, key, next)
+diff --git a/package.json b/package.json
+index 3fe8415..c0bc28d 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "set-in",
+-  "version": "2.0.0",
++  "version": "2.0.1",
+   "description": "set value of nested associative structure given array of keys",
+   "main": "index.js",
+   "directories": {
+diff --git a/test/index.js b/test/index.js
+index a3dd5ee..34b8939 100644
+--- a/test/index.js
++++ b/test/index.js
+@@ -2,9 +2,9 @@ const test = require('tape')
+ const setIn = require('../')
+ 
+ test('non-Array path', function (t) {
+-  t.throws(() => setIn({ 'a': { 'b': 'c' }}, undefined))
+-  t.throws(() => setIn({ 'a': { 'b': 'c' }}, 'a.b'))
+-  t.throws(() => setIn({ 'a': { 'b': 'c' }}, { 'a': 'b'}))
++  t.throws(() => setIn({ 'a': { 'b': 'c' }}, undefined, 'x'))
++  t.throws(() => setIn({ 'a': { 'b': 'c' }}, 'a.b', 'x'))
++  t.throws(() => setIn({ 'a': { 'b': 'c' }}, { 'a': 'b'}, 'x'))
+   t.end()
+ })
+ 
+@@ -175,3 +175,15 @@ test('object with custom get function', function (t) {
+   t.end()
+ })
+ */
++
++test('prototype pollution', function (t) {
++  t.throws(() => setIn({ 'a': { 'b': 'c' }}, ['__proto__'], { a: 'x' }))
++  t.throws(() => setIn({ 'a': { 'b': 'c' }}, ['__proto__', 'a'], 'x'))
++  t.throws(() => setIn({ 'a': { 'b': 'c' }}, ['a', '__proto__'], 'x'))
++  t.throws(() => setIn({ 'a': { 'b': 'c' }}, ['constructor', 'prototype'], { a: 'x' }))
++  t.throws(() => setIn({ 'a': { 'b': 'c' }}, ['constructor', 'prototype', 'a'], 'x'))
++  setIn({ 'a': { 'b': 'c' }}, ['prototype', 'a'], 'x')
++  setIn({ 'a': { 'b': 'c' }}, ['constructor'], 'x')
++  t.end()
++})
++

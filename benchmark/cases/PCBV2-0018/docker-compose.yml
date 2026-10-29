@@ -1,0 +1,67 @@
+# Official gitea/gitea images. CVE-2025-68941 (v0 1.22.2) -> incomplete
+# CVE-2026-25714 (v1 1.26.1 /user/orgs). No pinned subnet (IPAM collisions).
+x-gitea: &gitea
+  restart: "no"
+  environment:
+    USER_UID: "1000"
+    USER_GID: "1000"
+    GITEA__security__INSTALL_LOCK: "false"
+    GITEA__database__DB_TYPE: sqlite3
+  healthcheck:
+    test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/ || exit 1"]
+    interval: 10s
+    timeout: 5s
+    start_period: 300s
+    retries: 60
+
+services:
+  v0:
+    <<: *gitea
+    profiles: ["v0"]
+    image: gitea/gitea:1.22.2
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__server__ROOT_URL: "http://127.0.0.1:${PORT_V0_0:-56840}/"
+    volumes: ["g0:/data"]
+    ports: ["${PORT_V0_0:-56840}:3000"]
+
+  v1:
+    <<: *gitea
+    profiles: ["v1"]
+    image: gitea/gitea:1.26.1
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__server__ROOT_URL: "http://127.0.0.1:${PORT_V1_0:-56841}/"
+    volumes: ["g1:/data"]
+    ports: ["${PORT_V1_0:-56841}:3000"]
+
+  v2:
+    <<: *gitea
+    profiles: ["v2"]
+    image: gitea/gitea:1.26.2
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__server__ROOT_URL: "http://127.0.0.1:${PORT_V2_0:-56842}/"
+    volumes: ["g2:/data"]
+    ports: ["${PORT_V2_0:-56842}:3000"]
+
+volumes:
+  g0:
+  g1:
+  g2:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.19.0/24

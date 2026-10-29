@@ -1,0 +1,21 @@
+PCBV2-0113 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 1.8.179..1.8.180  Helper::stripDangerousTags
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0113/
+
+diff --git a/app/Misc/Helper.php b/app/Misc/Helper.php
+index be0fdb87..1068b9bd 100644
+--- a/app/Misc/Helper.php
++++ b/app/Misc/Helper.php
+@@ -562,7 +562,10 @@ class Helper
+         $tags = ['script', 'form', 'iframe'];
+ 
+         foreach ($tags as $tag) {
+-            $html = preg_replace('#<'.$tag.'(.*?)>(.*?)</'.$tag.'>#is', '', $html ?? '');
++            $html = preg_replace('#<'.$tag.'(.*?)>(.*?)<\s*/\s*'.$tag.'\s*>#is', '', $html ?? '');
++
++            // Remove unclosed restricted tags.
++            $html = preg_replace('#<'.$tag.'(.*?)>#is', '', $html ?? '');
+         }
+ 
+         return $html;

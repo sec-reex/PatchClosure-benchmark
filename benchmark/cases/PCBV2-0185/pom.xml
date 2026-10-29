@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PatchClosure-Bench REAL RESTEasy JAX-RS web-app POM (recipe-only, no vendored jars).
+     Builds a WAR (app.war -> context /app) whose ONLY server dependencies are the PUBLISHED RESTEasy
+     artifacts org.jboss.resteasy:resteasy-jaxrs + resteasy-jaxb-provider at the pinned version. The
+     WAR is deployed to Tomcat; an EXTERNAL HTTP POST /app/xml (application/xml) is JAXB-unmarshalled
+     by the REAL, unmodified RESTEasy JAXB provider (AbstractJAXBProvider -> ExternalEntityUnmarshaller),
+     which is the exact class/path the CVE fixes touch. The JAX-RS API (jsr311 for 2.3.x, jaxrs-api for
+     3.0.x) and every transitive dep are pulled from Maven Central at build time by version. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>resteasy-xxe-webapp</artifactId>
+  <version>1.0</version>
+  <packaging>war</packaging>
+
+  <properties>
+    <!-- Overridden per profile with -Dresteasy.version=2.3.0.GA|3.0.8.Final|3.0.9.Final -->
+    <resteasy.version>3.0.8.Final</resteasy.version>
+    <maven.compiler.source>1.8</maven.compiler.source>
+    <maven.compiler.target>1.8</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <failOnMissingWebXml>false</failOnMissingWebXml>
+  </properties>
+
+  <dependencies>
+    <!-- REAL published RESTEasy JAX-RS runtime (carries the servlet dispatcher + JAX-RS API transitively). -->
+    <dependency>
+      <groupId>org.jboss.resteasy</groupId>
+      <artifactId>resteasy-jaxrs</artifactId>
+      <version>${resteasy.version}</version>
+    </dependency>
+    <!-- REAL published RESTEasy JAXB provider = the XXE sink (AbstractJAXBProvider / ExternalEntityUnmarshaller). -->
+    <dependency>
+      <groupId>org.jboss.resteasy</groupId>
+      <artifactId>resteasy-jaxb-provider</artifactId>
+      <version>${resteasy.version}</version>
+    </dependency>
+    <!-- Servlet API is provided by Tomcat at runtime; compile-time only. -->
+    <dependency>
+      <groupId>javax.servlet</groupId>
+      <artifactId>javax.servlet-api</artifactId>
+      <version>3.0.1</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>app</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-war-plugin</artifactId>
+        <version>3.4.0</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

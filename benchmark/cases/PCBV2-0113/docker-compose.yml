@@ -1,0 +1,139 @@
+# freescout-cve-2026-40497 (CVE-2025-48489 -> CVE-2026-40497, stored XSS / CSS injection).
+#
+# REAL APP, EXTERNAL HTTP TRIGGER. Each v0/v1/v2 service builds from the FULL
+# FreeScout tree (host-fetched git tag / GitHub tarball COPYed into the image —
+# not an in-container git clone, not a Helper.php harness). Laravel artisan
+# migrate + create-user + factories seed a mailbox/conversation; Apache serves
+# public/. The sink is the real Helper::stripDangerousTags + signature render.
+#
+# Victim is in-network headless chromium, so APP_URL is the compose service
+# origin (http://v0 / http://v1) — the URL victim.py actually opens. That is
+# the 0022 lesson applied to this topology (0022 verify hits 127.0.0.1:port
+# from the host; this case's browser lives on the compose network).
+#
+# Flag rides in the callback URL query (not users.last_name varchar(30)).
+services:
+  mysql:
+    image: "mariadb:10.6"
+    environment:
+      MYSQL_ROOT_PASSWORD: "root"
+      MYSQL_DATABASE: "freescout"
+      MYSQL_USER: "freescout"
+      MYSQL_PASSWORD: "freescout"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  callback:
+    image: "python:3.12-alpine"
+    volumes: ["./callback.py:/callback.py:ro"]
+    command: ["python3", "/callback.py"]
+    ports: ["${PORT_CALLBACK_0:-33690}:9000"]
+
+  victim:
+    image: "mcr.microsoft.com/playwright/python:v1.47.0-jammy"
+    environment:
+      FS_ADMIN_EMAIL: "admin@pcb.local"
+      FS_ADMIN_PASSWORD: "PcbAdminPass123"
+    volumes: ["./victim.py:/victim.py:ro"]
+    command: ["bash", "-lc", "python3 -m pip install --quiet playwright==1.47.0 requests beautifulsoup4 && exec python3 /victim.py"]
+    ports: ["${PORT_VICTIM_0:-33670}:8070"]
+    depends_on: ["callback"]
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ., args: {FS_REF: "1.8.179"}}
+    image: "pcb-0113-freescout:v0"
+    environment:
+      APP_URL: "http://v0"
+      APP_TRUSTED_HOSTS: "127.0.0.1,localhost,v0,v1,v2"
+      DB_HOST: "mysql"
+      DB_DATABASE: "freescout_v0"
+      DB_USERNAME: "freescout"
+      DB_PASSWORD: "freescout"
+      DB_ROOT_PASSWORD: "root"
+      SESSION_SAME_SITE: "lax"
+      SESSION_SECURE_COOKIE: "false"
+      APP_CSP_ENABLED: "false"
+      FS_ADMIN_EMAIL: "admin@pcb.local"
+      FS_ADMIN_PASSWORD: "PcbAdminPass123"
+    ports: ["${PORT_V0_0:-33680}:80"]
+    healthcheck:
+      # PatchClosure: app had NO healthcheck, so gate.sh `up -d --wait` returned before the entrypoint
+      # finished migrate+seed -> oracle --gate fetched /pcb_ids.txt and got ConnectionReset. Gate on the
+      # seeded marker (php wrapper; image has no curl) so up --wait blocks until truly ready.
+      test: ["CMD-SHELL", "php -r \"exit(@file_get_contents('http://127.0.0.1/pcb_ids.txt')!==false?0:1);\""]
+      interval: 5s
+      timeout: 5s
+      retries: 48
+      start_period: 30s
+    depends_on:
+      mysql: {condition: service_healthy}
+      callback: {condition: service_started}
+      victim: {condition: service_started}
+
+  v1:
+    profiles: ["v1"]
+    build: {context: ., args: {FS_REF: "1.8.212"}}
+    image: "pcb-0113-freescout:v1"
+    environment:
+      APP_URL: "http://v1"
+      APP_TRUSTED_HOSTS: "127.0.0.1,localhost,v0,v1,v2"
+      DB_HOST: "mysql"
+      DB_DATABASE: "freescout_v1"
+      DB_USERNAME: "freescout"
+      DB_PASSWORD: "freescout"
+      DB_ROOT_PASSWORD: "root"
+      SESSION_SAME_SITE: "lax"
+      SESSION_SECURE_COOKIE: "false"
+      APP_CSP_ENABLED: "false"
+      FS_ADMIN_EMAIL: "admin@pcb.local"
+      FS_ADMIN_PASSWORD: "PcbAdminPass123"
+    ports: ["${PORT_V1_0:-33681}:80"]
+    healthcheck:
+      # PatchClosure: app had NO healthcheck, so gate.sh `up -d --wait` returned before the entrypoint
+      # finished migrate+seed -> oracle --gate fetched /pcb_ids.txt and got ConnectionReset. Gate on the
+      # seeded marker (php wrapper; image has no curl) so up --wait blocks until truly ready.
+      test: ["CMD-SHELL", "php -r \"exit(@file_get_contents('http://127.0.0.1/pcb_ids.txt')!==false?0:1);\""]
+      interval: 5s
+      timeout: 5s
+      retries: 48
+      start_period: 30s
+    depends_on:
+      mysql: {condition: service_healthy}
+      callback: {condition: service_started}
+      victim: {condition: service_started}
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ., args: {FS_REF: "1.8.213"}}
+    image: "pcb-0113-freescout:v2"
+    environment:
+      APP_URL: "http://v2"
+      APP_TRUSTED_HOSTS: "127.0.0.1,localhost,v0,v1,v2"
+      DB_HOST: "mysql"
+      DB_DATABASE: "freescout_v2"
+      DB_USERNAME: "freescout"
+      DB_PASSWORD: "freescout"
+      DB_ROOT_PASSWORD: "root"
+      SESSION_SAME_SITE: "lax"
+      SESSION_SECURE_COOKIE: "false"
+      APP_CSP_ENABLED: "false"
+      FS_ADMIN_EMAIL: "admin@pcb.local"
+      FS_ADMIN_PASSWORD: "PcbAdminPass123"
+    ports: ["${PORT_V2_0:-33682}:80"]
+    healthcheck:
+      # PatchClosure: app had NO healthcheck, so gate.sh `up -d --wait` returned before the entrypoint
+      # finished migrate+seed -> oracle --gate fetched /pcb_ids.txt and got ConnectionReset. Gate on the
+      # seeded marker (php wrapper; image has no curl) so up --wait blocks until truly ready.
+      test: ["CMD-SHELL", "php -r \"exit(@file_get_contents('http://127.0.0.1/pcb_ids.txt')!==false?0:1);\""]
+      interval: 5s
+      timeout: 5s
+      retries: 48
+      start_period: 30s
+    depends_on:
+      mysql: {condition: service_healthy}
+      callback: {condition: service_started}
+      victim: {condition: service_started}

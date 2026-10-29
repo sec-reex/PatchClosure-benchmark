@@ -1,0 +1,43 @@
+# PatchClosure-Bench recipe for jenkins-cve-2025-31721 -- REAL booted Jenkins LTS controllers,
+# the auth-bypass triggered by an EXTERNAL HTTP request from a low-privilege user.
+#   CVE-2025-27622 (SECURITY-3495)  ->  CVE-2025-31721 (SECURITY-3513, incomplete fix).
+#   Jenkins CORE, Auth_Bypass (missing permission check on the agent-COPY endpoint).
+#
+# Each service boots the OFFICIAL, version-exact jenkins/jenkins:<tag>-lts image (see Dockerfile),
+# configured ONLY via init.groovy.d hooks + the matrix-auth plugin (no core source lifted). The
+# controller listens on 8080; each profile maps it to a distinct host port so the oracle drives it
+# over real external HTTP (basic auth + CSRF crumb) -- never `docker compose exec`.
+#
+#   V0 = 2.492.1  pre-CVE-2025-27622        read leaks the secret (unredacted)                 (gate positive)
+#   V1 = 2.492.2  CVE-2025-27622-patched    read REDACTED; agent-COPY residual still OPEN       (TARGET)
+#   V2 = 2.492.3  CVE-2025-31721-patched    copy REFUSES a secret-bearing agent w/o Configure   (negative)
+#
+# ${PCB_FLAG:?} is injected at run time; the controller encrypts it into agentA at boot (never on image).
+# No pinned subnet (IPAM collisions are not part of the vuln). No container_name.
+services:
+  v0:
+    profiles: ["v0"]
+    restart: unless-stopped
+    build: {context: ".", dockerfile: "Dockerfile", args: {JENKINS_TAG: "2.492.1-lts"}}
+    image: "pcb/jenkins-authbypass-http:2.492.1"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-18821}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    restart: unless-stopped
+    build: {context: ".", dockerfile: "Dockerfile", args: {JENKINS_TAG: "2.492.2-lts"}}
+    image: "pcb/jenkins-authbypass-http:2.492.2"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-18822}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    restart: unless-stopped
+    build: {context: ".", dockerfile: "Dockerfile", args: {JENKINS_TAG: "2.492.3-lts"}}
+    image: "pcb/jenkins-authbypass-http:2.492.3"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-18823}:8080"]

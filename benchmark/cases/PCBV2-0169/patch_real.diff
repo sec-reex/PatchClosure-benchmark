@@ -1,0 +1,167 @@
+CVE: CVE-2016-10033 first-fix (mail additional_parameters)
+upstream: https://github.com/PHPMailer/PHPMailer.git
+fix: v5.2.17..v5.2.18
+
+diff --git a/SECURITY.md b/SECURITY.md
+index f62b517..39b0671 100644
+--- a/SECURITY.md
++++ b/SECURITY.md
+@@ -2,7 +2,9 @@
+ 
+ Please disclose any vulnerabilities found responsibly - report any security problems found to the maintainers privately.
+ 
+-PHPMailer versions prior to 5.2.14 (released November 2015) are vulnerable to [CVE-2015-8476](https://web.nvd.nist.gov/view/vuln/detail?vulnId=) an SMTP CRLF injection bug permitting arbitrary message sending.
++PHPMailer versions prior to 5.2.18 (released December 2016) are vulnerable to [CVE-2016-10033](https://web.nvd.nist.gov/view/vuln/detail?vulnId=CVE-2016-10033) a remote code execution vulnerability, responsibly reported by [Dawid Golunski](https://legalhackers.com).
++
++PHPMailer versions prior to 5.2.14 (released November 2015) are vulnerable to [CVE-2015-8476](https://web.nvd.nist.gov/view/vuln/detail?vulnId=CVE-2015-8476) an SMTP CRLF injection bug permitting arbitrary message sending.
+ 
+ PHPMailer versions prior to 5.2.10 (released May 2015) are vulnerable to [CVE-2008-5619](https://web.nvd.nist.gov/view/vuln/detail?vulnId=CVE-2008-5619), a remote code execution vulnerability in the bundled html2text library. This file was removed in 5.2.10, so if you are using a version prior to that and make use of the html2text function, it's vitally important that you upgrade and remove this file.
+ 
+diff --git a/changelog.md b/changelog.md
+index 6e7095d..c207c74 100644
+--- a/changelog.md
++++ b/changelog.md
+@@ -1,8 +1,12 @@
+ # ChangeLog
+ 
++## Version 5.2.18 (December 24th 2016)
++* **SECURITY** Critical security update for CVE-2016-10033 please update now! Thanks to [Dawid Golunski](https://legalhackers.com).
++* Add ability to extract the SMTP transaction ID from some common SMTP success messages
++* Minor documentation tweaks
++
+ ## Version 5.2.17 (December 9th 2016)
+ * This is officially the last feature release of 5.2. Security fixes only from now on; use PHPMailer 6.0!
+-* Added ability to extract SMTP transaction ID from successful submissions
+ * Allow DKIM private key to be provided as a string
+ * Provide mechanism to allow overriding of boundary and message ID creation
+ * Improve Brazilian Portuguese, Spanish, Swedish, Romanian, and German translations
+diff --git a/class.phpmailer.php b/class.phpmailer.php
+index 2fab1ad..18db063 100644
+--- a/class.phpmailer.php
++++ b/class.phpmailer.php
+@@ -31,7 +31,7 @@ class PHPMailer
+      * The PHPMailer Version number.
+      * @var string
+      */
+-    public $Version = '5.2.17';
++    public $Version = '5.2.18';
+ 
+     /**
+      * Email priority.
+@@ -164,6 +164,7 @@ class PHPMailer
+ 
+     /**
+      * The path to the sendmail program.
++     * Must contain only a path to an executable, with no parameters or switches
+      * @var string
+      */
+     public $Sendmail = '/usr/sbin/sendmail';
+@@ -692,7 +693,7 @@ class PHPMailer
+             $subject = $this->encodeHeader($this->secureHeader($subject));
+         }
+ 
+-        //Can't use additional_parameters in safe_mode
++        //Can't use additional_parameters in safe_mode, calling mail() with null params breaks
+         //@link http://php.net/manual/en/function.mail.php
+         if (ini_get('safe_mode') or !$this->UseSendmailOptions or is_null($params)) {
+             $result = @mail($to, $subject, $body, $header);
+@@ -1364,7 +1365,7 @@ class PHPMailer
+      */
+     protected function sendmailSend($header, $body)
+     {
+-        if ($this->Sender != '') {
++        if (!empty($this->Sender) and $this->validateAddress($this->Sender)) {
+             if ($this->Mailer == 'qmail') {
+                 $sendmail = sprintf('%s -f%s', escapeshellcmd($this->Sendmail), escapeshellarg($this->Sender));
+             } else {
+@@ -1441,10 +1442,10 @@ class PHPMailer
+ 
+         $params = null;
+         //This sets the SMTP envelope sender which gets turned into a return-path header by the receiver
+-        if (!empty($this->Sender)) {
+-            $params = sprintf('-f%s', $this->Sender);
++        if (!empty($this->Sender) and $this->validateAddress($this->Sender)) {
++            $params = sprintf('-f%s', escapeshellarg($this->Sender));
+         }
+-        if ($this->Sender != '' and !ini_get('safe_mode')) {
++        if (!empty($this->Sender) and !ini_get('safe_mode') and $this->validateAddress($this->Sender)) {
+             $old_from = ini_get('sendmail_from');
+             ini_set('sendmail_from', $this->Sender);
+         }
+@@ -1498,10 +1499,10 @@ class PHPMailer
+         if (!$this->smtpConnect($this->SMTPOptions)) {
+             throw new phpmailerException($this->lang('smtp_connect_failed'), self::STOP_CRITICAL);
+         }
+-        if ('' == $this->Sender) {
+-            $smtp_from = $this->From;
+-        } else {
++        if (!empty($this->Sender) and $this->validateAddress($this->Sender)) {
+             $smtp_from = $this->Sender;
++        } else {
++            $smtp_from = $this->From;
+         }
+         if (!$this->smtp->mail($smtp_from)) {
+             $this->setError($this->lang('from_failed') . $smtp_from . ' : ' . implode(',', $this->smtp->getError()));
+diff --git a/class.pop3.php b/class.pop3.php
+index ae6d5d5..31e4563 100644
+--- a/class.pop3.php
++++ b/class.pop3.php
+@@ -34,7 +34,7 @@ class POP3
+      * @var string
+      * @access public
+      */
+-    public $Version = '5.2.17';
++    public $Version = '5.2.18';
+ 
+     /**
+      * Default POP3 port number.
+diff --git a/class.smtp.php b/class.smtp.php
+index 7a1b37f..806273c 100644
+--- a/class.smtp.php
++++ b/class.smtp.php
+@@ -30,7 +30,7 @@ class SMTP
+      * The PHPMailer SMTP version number.
+      * @var string
+      */
+-    const VERSION = '5.2.17';
++    const VERSION = '5.2.18';
+ 
+     /**
+      * SMTP line break constant.
+@@ -81,7 +81,7 @@ class SMTP
+      * @deprecated Use the `VERSION` constant instead
+      * @see SMTP::VERSION
+      */
+-    public $Version = '5.2.17';
++    public $Version = '5.2.18';
+ 
+     /**
+      * SMTP server port number.
+diff --git a/test/phpmailerTest.php b/test/phpmailerTest.php
+index 87575b8..e99d6e3 100644
+--- a/test/phpmailerTest.php
++++ b/test/phpmailerTest.php
+@@ -1020,14 +1020,21 @@ EOT;
+         $this->Mail->Body = 'This is the <strong>HTML</strong> part of the email.';
+         $this->Mail->Subject .= ': HTML + Attachment';
+         $this->Mail->isHTML(true);
++        $this->Mail->CharSet = 'UTF-8';
+ 
+         if (!$this->Mail->addAttachment(
+-            realpath(self::INCLUDE_DIR . 'examples/images/phpmailer_mini.png'), 'phpmailer_mini.png')
+-        ) {
++            realpath(self::INCLUDE_DIR . 'examples/images/phpmailer_mini.png'),
++            'phpmailer_mini.png'
++        )) {
+             $this->assertTrue(false, $this->Mail->ErrorInfo);
+             return;
+         }
+ 
++        $this->Mail->addAttachment(
++            realpath(self::INCLUDE_DIR . 'examples/images/phpmailer_mini.png'),
++            'žasiukas.png'
++        );
++        $this->Mail->addStringAttachment('123', 'žasiukas.txt');
+         //Make sure that trying to attach a nonexistent file fails
+         $this->assertFalse($this->Mail->addAttachment(__FILE__ . md5(microtime()), 'nonexistent_file.txt'));
+ 

@@ -1,0 +1,175 @@
+PCBV2-0203 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: # fix: d8c69691ef1d15e76a5f4fcf33039316da2340b6 (STRUTS_6_3_0_2 / S2-066)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0203/
+
+diff --git a/core/src/main/java/org/apache/struts2/dispatcher/HttpParameters.java b/core/src/main/java/org/apache/struts2/dispatcher/HttpParameters.java
+index b0ab784abf..f35d475837 100644
+--- a/core/src/main/java/org/apache/struts2/dispatcher/HttpParameters.java
++++ b/core/src/main/java/org/apache/struts2/dispatcher/HttpParameters.java
+@@ -29,7 +29,7 @@
+ import java.util.TreeSet;
+ 
+ @SuppressWarnings("unchecked")
+-public class HttpParameters implements Map<String, Parameter>, Cloneable {
++public class HttpParameters implements Map<String, Parameter> {
+ 
+     final private Map<String, Parameter> parameters;
+ 
+@@ -37,6 +37,7 @@ private HttpParameters(Map<String, Parameter> parameters) {
+         this.parameters = parameters;
+     }
+ 
++    @SuppressWarnings("rawtypes")
+     public static Builder create(Map requestParameterMap) {
+         return new Builder(requestParameterMap);
+     }
+@@ -47,7 +48,7 @@ public static Builder create() {
+ 
+     public HttpParameters remove(Set<String> paramsToRemove) {
+         for (String paramName : paramsToRemove) {
+-            parameters.remove(paramName);
++            parameters.entrySet().removeIf(p -> p.getKey().equalsIgnoreCase(paramName));
+         }
+         return this;
+     }
+@@ -59,12 +60,15 @@ public HttpParameters remove(final String paramToRemove) {
+     }
+ 
+     public boolean contains(String name) {
+-        return parameters.containsKey(name);
++        return parameters.keySet().stream().anyMatch(p -> p.equalsIgnoreCase(name));
+     }
+ 
+     /**
+      * Access to this method can be potentially dangerous as it allows access to raw parameter values.
++     *
++     * @deprecated since 6.4.0, it will be removed with a new major release
+      */
++    @Deprecated
+     private Map<String, String[]> toMap() {
+         final Map<String, String[]> result = new HashMap<>(parameters.size());
+         for (Map.Entry<String, Parameter> entry : parameters.entrySet()) {
+@@ -73,7 +77,14 @@ private Map<String, String[]> toMap() {
+         return result;
+     }
+ 
++    /**
++     * Appends all the parameters by overriding any existing params in a case-insensitive manner
++     *
++     * @param newParams A new params to append
++     * @return a current instance of {@link HttpParameters}
++     */
+     public HttpParameters appendAll(Map<String, Parameter> newParams) {
++        remove(newParams.keySet());
+         parameters.putAll(newParams);
+         return this;
+     }
+@@ -100,8 +111,11 @@ public boolean containsValue(Object value) {
+ 
+     @Override
+     public Parameter get(Object key) {
+-        if (parameters.containsKey(key)) {
+-            return parameters.get(key);
++        if (key != null && contains(String.valueOf(key))) {
++            return parameters.entrySet().stream()
++                .filter(p -> p.getKey().equalsIgnoreCase(String.valueOf(key)))
++                .findFirst().map(Entry::getValue)
++                .orElse(new Parameter.Empty(String.valueOf(key)));
+         } else {
+             return new Parameter.Empty(String.valueOf(key));
+         }
+@@ -177,8 +191,8 @@ public Builder withComparator(Comparator<String> orderedComparator) {
+ 
+         public HttpParameters build() {
+             Map<String, Parameter> parameters = (parent == null)
+-                    ? new HashMap<>()
+-                    : new HashMap<>(parent.parameters);
++                ? new HashMap<>()
++                : new HashMap<>(parent.parameters);
+ 
+             for (Map.Entry<String, Object> entry : requestParameterMap.entrySet()) {
+                 String name = entry.getKey();
+@@ -197,8 +211,9 @@ public HttpParameters build() {
+         * Alternate Builder method which avoids wrapping any parameters that are already
+         * a {@link Parameter} element within another {@link Parameter} wrapper.
+         *
+-        * @return 
++        * @deprecated since 6.4.0, use {@link #build()} instead
+          */
++        @Deprecated
+         public HttpParameters buildNoNestedWrapping() {
+             Map<String, Parameter> parameters = (parent == null)
+                     ? new HashMap<>()
+diff --git a/core/src/test/java/org/apache/struts2/dispatcher/HttpParametersTest.java b/core/src/test/java/org/apache/struts2/dispatcher/HttpParametersTest.java
+new file mode 100644
+index 0000000000..7c2efbc125
+--- /dev/null
++++ b/core/src/test/java/org/apache/struts2/dispatcher/HttpParametersTest.java
+@@ -0,0 +1,65 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one
++ * or more contributor license agreements.  See the NOTICE file
++ * distributed with this work for additional information
++ * regarding copyright ownership.  The ASF licenses this file
++ * to you under the Apache License, Version 2.0 (the
++ * "License"); you may not use this file except in compliance
++ * with the License.  You may obtain a copy of the License at
++ *
++ *  http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing,
++ * software distributed under the License is distributed on an
++ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++ * KIND, either express or implied.  See the License for the
++ * specific language governing permissions and limitations
++ * under the License.
++ */
++package org.apache.struts2.dispatcher;
++
++import org.junit.Test;
++
++import java.util.HashMap;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertTrue;
++
++public class HttpParametersTest {
++
++    @Test
++    public void shouldGetBeCaseInsensitive() {
++        // given
++        HttpParameters params = HttpParameters.create(new HashMap<String, Object>() {{
++            put("param1", "value1");
++        }}).build();
++
++        // then
++        assertEquals("value1", params.get("Param1").getValue());
++        assertEquals("value1", params.get("paraM1").getValue());
++        assertEquals("value1", params.get("pAraM1").getValue());
++    }
++
++    @Test
++    public void shouldAppendSameParamsIgnoringCase() {
++        // given
++        HttpParameters params = HttpParameters.create(new HashMap<String, Object>() {{
++            put("param1", "value1");
++        }}).build();
++
++        // when
++        assertEquals("value1", params.get("param1").getValue());
++
++        params = params.appendAll(HttpParameters.create(new HashMap<String, String>() {{
++            put("Param1", "Value1");
++        }}).build());
++
++        // then
++        assertTrue(params.contains("param1"));
++        assertTrue(params.contains("Param1"));
++
++        assertEquals("Value1", params.get("param1").getValue());
++        assertEquals("Value1", params.get("Param1").getValue());
++    }
++
++}
+\ No newline at end of file

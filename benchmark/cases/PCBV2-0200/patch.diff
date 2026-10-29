@@ -1,0 +1,63 @@
+PCBV2-0200 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 66df351e7e8ad71ca04dcacb4b65782af820b8b1 (2.8.1 / GHSA-m49c-g9wr-hv6v)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0200/
+
+diff --git a/src/main/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolver.java b/src/main/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolver.java
+index 435d8525b..1146ad167 100644
+--- a/src/main/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolver.java
++++ b/src/main/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolver.java
+@@ -79,6 +79,9 @@ public Class<?> getType(ELContext context, Object base, Object property) {
+ 
+   @Override
+   public Object getValue(ELContext context, Object base, Object property) {
++    if (isRestrictedClass(base)) {
++      return null;
++    }
+     Object result = super.getValue(context, base, validatePropertyName(property));
+     return result instanceof Class ? null : result;
+   }
+diff --git a/src/test/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolverTest.java b/src/test/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolverTest.java
+index 642539f80..42627cbfa 100644
+--- a/src/test/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolverTest.java
++++ b/src/test/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolverTest.java
+@@ -8,6 +8,7 @@
+ import com.google.common.collect.ImmutableSet;
+ import com.hubspot.jinjava.JinjavaConfig;
+ import com.hubspot.jinjava.el.JinjavaELContext;
++import com.hubspot.jinjava.interpret.AutoCloseableSupplier;
+ import com.hubspot.jinjava.interpret.JinjavaInterpreter;
+ import javax.el.ELContext;
+ import javax.el.MethodNotFoundException;
+@@ -173,4 +174,16 @@ public void itThrowsExceptionWhenPropertyIsRestrictedFromConfig() {
+       .hasMessageStartingWith("Could not find property");
+     JinjavaInterpreter.popCurrent();
+   }
++
++  @Test
++  public void itDoesNotAllowAccessingPropertiesOfInterpreter() {
++    try (
++      AutoCloseableSupplier.AutoCloseableImpl<JinjavaInterpreter> c = JinjavaInterpreter
++        .closeablePushCurrent(interpreter)
++        .get()
++    ) {
++      assertThat(jinjavaBeanELResolver.getValue(elContext, interpreter, "config"))
++        .isNull();
++    }
++  }
+ }
+diff --git a/src/test/java/com/hubspot/jinjava/interpret/JinjavaInterpreterTest.java b/src/test/java/com/hubspot/jinjava/interpret/JinjavaInterpreterTest.java
+index c23fd8339..5fbcc9dfd 100644
+--- a/src/test/java/com/hubspot/jinjava/interpret/JinjavaInterpreterTest.java
++++ b/src/test/java/com/hubspot/jinjava/interpret/JinjavaInterpreterTest.java
+@@ -600,4 +600,10 @@ public void itOutputsUndefinedVariableError() {
+     assertThat(outputtingErrorInterpreters.getErrors().get(0).getCategoryErrors())
+       .isEqualTo(ImmutableMap.of("variable", "bar"));
+   }
++
++  @Test
++  public void itDoesNotAllowAccessingPropertiesOfInterpreter() {
++    assertThat(jinjava.render("{{ ____int3rpr3t3r____.config }}", new HashMap<>()))
++      .isEqualTo("");
++  }
+ }

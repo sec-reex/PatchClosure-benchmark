@@ -1,0 +1,145 @@
+{
+  "eval_id": "PCBV2-0023",
+  "case_id": "admidio-cve-2026-42194",
+  "run_mode": "real-app-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "caveat": "REAL Admidio is booted per version by git-checking-out the exact release tag (v5.0.6/v5.0.7/v5.0.9) on Ubuntu 24.04 + Apache2 + PHP 8.3 (mod_php) + `composer install` of Admidio's real vendor tree + real MariaDB 11. The real install (organization + administrator) is performed over EXTERNAL HTTP through Admidio's OWN install wizard. The attacker (oracle.py) then logs in as the real admin and drives Admidio's OWN modules/sso/fetch_metadata.php SSO-metadata fetch over EXTERNAL HTTP; Admidio's own scheme check, gethostbyname() IP-filter (the CVE-2026-32812 fix) and cURL fetch (on V2 the CVE-2026-42194 CURLOPT_RESOLVE pin) run inside the app. NO source-lift. A real UDP DNS rebinder sidecar + internal TLS canary (10.99.0.192, PHP-private) / public TLS decoy (198.51.100.50, PHP-public) make the check-vs-fetch TOCTOU deterministic; a PCB test CA is installed into each Admidio image so cURL/openssl peer-verify the pcb.test HTTPS sidecars. Admidio is cloned+installed at build time; no admidio tree is committed to the case dir.",
+  "audit": {
+    "method": "new-collection",
+    "date": "2026-07-17",
+    "lift_kind": "real-app",
+    "evidence": "Real Docker: 3 Admidio images (git tag v5.0.6/v5.0.7/v5.0.9 + composer install, PHP8.3 curl/gd/intl/mbstring/mysql/xml/zip/bcmath/gmp) + MariaDB 11 per version + UDP DNS rebinder + internal TLS canary (10.99.0.192)/public TLS decoy (198.51.100.50) on two subnets so PHP's FILTER_FLAG_NO_PRIV_RANGE|NO_RES_RANGE separates the SSRF targets by IP class. Versions confirmed via /opt/app-root/.admidio_version = v5.0.6/v5.0.7/v5.0.9. Real install driven over HTTP through Admidio's own wizard (org 'PCB' + admin 'admin'); external HTTP trigger = login + GET /modules/sso/fetch_metadata.php?url=. Gate passed on real Docker (fresh down -v then up): original seed https://seed.pcb.test/ -> FLAG@v0 (200), blocked@v1 (400 'URL resolves to a private or reserved IP address'); residual DNS-rebind https://rebind.pcb.test/ (CHECK->decoy 198.51.100.50, FETCH->canary 10.99.0.192, parity confirmed in the dns sidecar log) -> FLAG@v1 (200), blocked@v2 (no flag; CURLOPT_RESOLVE pins CHECK IP == FETCH IP). is_verbatim_lift=false, runs_real_software=true."
+  },
+  "product": "Admidio",
+  "app_purpose": "PHP membership / user management system for organizations and clubs",
+  "language": "PHP",
+  "root_cause": "SSRF via DNS rebinding / TOCTOU in the SSO-metadata `fetch_metadata.php` `url` fetch (CWE-918 / CWE-367)",
+  "mechanism_family": "ssrf_dns_rebinding_toctou",
+  "cve_pair": {
+    "original_cve": "CVE-2026-32812",
+    "bypass_cve": "CVE-2026-42194",
+    "original_published": "2026-04",
+    "bypass_published": "2026-04-27",
+    "advisory_url": "https://github.com/Admidio/admidio/security/advisories/GHSA-hcjj-chvw-fmw9"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "v5.0.6 (Admidio <= 5.0.6)",
+      "ref": "modules/sso/fetch_metadata.php: `$url = filter_var($_GET['url'], FILTER_VALIDATE_URL); $metadata = file_get_contents($url);` — NO scheme restriction and NO IP validation (CVE-2026-32812 SSRF + local file read).",
+      "compose_profile": "v0",
+      "image": "pcb-admidio-real:5.0.6",
+      "source_url": null,
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "v5.0.7 (also v5.0.8)",
+      "ref": "CVE-2026-32812 fix (commit 53df560 'restrict to HTTPS scheme and use cURL'): require `^https://`, `filter_var(FILTER_VALIDATE_URL)`, then `$host=parse_url(...); $ip=gethostbyname($host);` and reject `filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE|FILTER_FLAG_NO_RES_RANGE)===false`. But the fetch is `curl_init($url)` on the ORIGINAL hostname with NO CURLOPT_RESOLVE — libcurl RE-RESOLVES the host a second time => check-vs-fetch DNS-rebinding TOCTOU.",
+      "compose_profile": "v1",
+      "image": "pcb-admidio-real:5.0.7",
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39731"
+    },
+    "v2": {
+      "identifier": "v5.0.9",
+      "ref": "CVE-2026-42194 fix (commit f6b7a966abe4d75e9f707d665d7b4b5570e3185a 'Bind host to IP address'): `$resolve = [\"$host:443:$ip\"]; curl_setopt($ch, CURLOPT_RESOLVE, $resolve);` pins cURL to the exact IP that gethostbyname() validated, so CHECK IP == FETCH IP and the rebind can no longer redirect the fetch to the internal canary.",
+      "compose_profile": "v2",
+      "image": "pcb-admidio-real:5.0.9",
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "flag": {
+    "resource": "internal-only ssrf-sidecar `canary` at the PHP-private IP 10.99.0.192 (no host port): serves ${PCB_FLAG} over TLS (:443). A `decoy` at the PHP-public 198.51.100.50 serves no flag; a rebinding DNS at 10.99.0.53 flips `rebind.pcb.test` between them per A-query.",
+    "placement": "docker-compose canary service, PCB_FLAG env; fetch_metadata.php echoes the server-side-fetched body verbatim, so the token appears in the HTTP response iff the SSRF reached the canary",
+    "detect": "flag token substring in the fetch_metadata.php response body",
+    "class_kind": "ssrf-sidecar",
+    "oracle_variant": "same-sink (Variant A: seed and residual both hit the fetch_metadata.php `url` server-side fetch sink; only the host's DNS behaviour differs)"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/Admidio/admidio/security/advisories/GHSA-hcjj-chvw-fmw9",
+    "fix_reference": "CVE-2026-32812 fix (commit 53df560 'restrict to HTTPS scheme and use cURL'): require `^https://`, `filter_var(FILTER_VALIDATE_URL)`, then `$host=parse_url(...); $ip=gethostbyname($host);` and reject `filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE|FILTER_FLAG_NO_RES_RANGE)===false`. But the fetch is `curl_init($url)` on the ORIGINAL hostname with NO CURLOPT_RESOLVE — libcurl RE-RESOLVES the host a second time => check-vs-fetch DNS-rebinding TOCTOU.; CVE-2026-42194 fix (commit f6b7a966abe4d75e9f707d665d7b4b5570e3185a 'Bind host to IP address'): `$resolve = [\"$host:443:$ip\"]; curl_setopt($ch, CURLOPT_RESOLVE, $resolve);` pins cURL to the exact IP that gethostbyname() validated, so CHECK IP == FETCH IP and the rebind can no longer redirect the fetch to the internal canary.",
+    "incomplete_fix_quote": "Incomplete fix for CVE-2026-32812: the fix validates the resolved IP address but passes the original hostname-based URL to curl_init(), leaving a DNS rebinding TOCTOU window. cURL resolves the hostname again independently ... No CURLOPT_RESOLVE is set to pin the hostname to the validated IP, so a DNS rebinding attack can cause the hostname to resolve to 169.254.169.254 (or any internal address).",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "0d01291a0de525a3aa4030de44fef2e7e913e055aa6aebba6c18cb95a184c456",
+      "repro.log": "0dc768c135d1909031757c0413334eeb40ea408664402e80da3edb19513ca39b",
+      "docker-compose.yml": "114f1c40d0bd47e4b4e5aeaaf109d63d837ff51c768084c4dff091c928f8aef1",
+      "oracle.py": "9a90a7e0679550e63db9466040d68461139918028a17545b88d9401824046790",
+      "patch.diff": "daeea80b5d8da2dd765f2a2d9fd3a7aa3df51a7df6456e21782316a8db79fee3"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile acquires a pinned source repository"
+  },
+  "provenance": {
+    "source": "agent:new-collection",
+    "verified": "agent-evidence",
+    "notes": "REAL Admidio build (HARD-POLICY compliant, is_verbatim_lift=false). Ubuntu 24.04 + Apache2 + PHP 8.3 + composer + git tag {v5.0.6,v5.0.7,v5.0.9} + MariaDB 11 per version + rebinding DNS sidecar + internal TLS canary (10.99.0.192) + public TLS decoy (198.51.100.50). Ports v0=39730 v1=39731 v2=39732. Gate passed on real Docker 2026-07-17; versions confirmed via /opt/app-root/.admidio_version. Advisories: original CVE-2026-32812/GHSA-6j68-gcc3-mq73 (fixed 5.0.7), incomplete-fix CVE-2026-42194/GHSA-hcjj-chvw-fmw9 (fixed 5.0.9, commit f6b7a96).",
+    "patch_diff_fix": {
+      "audit": "ROUND6-2026-08-05",
+      "issue": "patch.diff contained the V1->V2 (bypass) fix instead of V0->V1; held-out markers leaked",
+      "replaced_with": "upstream V0->V1 diff (sha256 9dcd59857837f863) aligned with benchmark_v2 inputs/PCBV2-0023"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_repository",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "internal-only ssrf-sidecar `canary` at the PHP-private IP 10.99.0.192 (no host port): serves ${PCB_FLAG} over TLS (:443). A `decoy` at the PHP-public 198.51.100.50 serves no flag; a rebinding DNS at 10.99.0.53 flips `rebind.pcb.test` between them per A-query.",
+    "detector": "flag token substring in the fetch_metadata.php response body"
+  },
+  "class_kind": "ssrf-sidecar",
+  "effect_type": "exfiltration",
+  "ports": {
+    "v0": {
+      "host_default": 39730,
+      "container": 8080
+    },
+    "v1": {
+      "host_default": 39731,
+      "container": 8080
+    },
+    "v2": {
+      "host_default": 39732,
+      "container": 8080
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

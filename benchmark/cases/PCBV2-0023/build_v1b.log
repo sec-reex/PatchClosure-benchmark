@@ -1,0 +1,77 @@
+ Image pcb-admidio-real:5.0.7 Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 708B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.86kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/composer:2
+#3 DONE 0.0s
+
+#4 [auth] library/ubuntu:pull token for registry-1.docker.io
+#4 DONE 0.0s
+
+#5 [internal] load metadata for docker.io/library/ubuntu:24.04
+#5 DONE 1.4s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 2B done
+#6 DONE 0.0s
+
+#7 [stage-0  1/13] FROM docker.io/library/ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
+#7 DONE 0.0s
+
+#8 FROM docker.io/library/composer:2
+#8 DONE 0.0s
+
+#9 [internal] load build context
+#9 transferring context: 2.45kB done
+#9 DONE 0.0s
+
+#10 [stage-0 10/13] RUN a2enmod php8.3 rewrite  && sed -ri -e "s!/var/www/html!/opt/app-root/src!g" /etc/apache2/sites-available/*.conf  && sed -ri -e "s!/var/www/!/opt/app-root/src!g" /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf  && sed -ri -e "s/^Listen 80$/Listen 8080/" /etc/apache2/ports.conf  && sed -ri -e "s/<VirtualHost \*:80>/<VirtualHost *:8080>/" /etc/apache2/sites-available/000-default.conf  && sed -ri -e "s|^ErrorLog .*$|ErrorLog /dev/stderr|" /etc/apache2/apache2.conf
+#10 CACHED
+
+#11 [stage-0  5/13] WORKDIR /opt/app-root/src
+#11 CACHED
+
+#12 [stage-0  8/13] RUN update-ca-certificates
+#12 CACHED
+
+#13 [stage-0  3/13] COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+#13 CACHED
+
+#14 [stage-0  7/13] COPY certs/ca.crt /usr/local/share/ca-certificates/pcb-test-ca.crt
+#14 CACHED
+
+#15 [stage-0  4/13] RUN git clone --depth 1 --branch "v5.0.7" https://github.com/Admidio/admidio "/opt/app-root/src"
+#15 CACHED
+
+#16 [stage-0  9/13] RUN {       echo "curl.cainfo=/etc/ssl/certs/ca-certificates.crt";       echo "openssl.cafile=/etc/ssl/certs/ca-certificates.crt";       echo "allow_url_fopen=On";     } > /etc/php/8.3/apache2/conf.d/99-pcb.ini  && cp /etc/php/8.3/apache2/conf.d/99-pcb.ini /etc/php/8.3/cli/conf.d/99-pcb.ini
+#16 CACHED
+
+#17 [stage-0  2/13] RUN apt-get update && apt-get install -y --no-install-recommends       apache2 ca-certificates git unzip curl openssl       libapache2-mod-php8.3       php8.3-cli php8.3-common php8.3-curl php8.3-gd php8.3-intl php8.3-mbstring       php8.3-mysql php8.3-xml php8.3-zip php8.3-bcmath php8.3-gmp php8.3-bz2       php8.3-soap php8.3-ldap  && rm -rf /var/lib/apt/lists/*
+#17 CACHED
+
+#18 [stage-0  6/13] RUN composer install --no-interaction --no-progress --no-dev  && printf '%s' "v5.0.7" > /opt/app-root/.admidio_version
+#18 CACHED
+
+#19 [stage-0 11/13] RUN chown -R www-data:www-data "/opt/app-root/src/adm_my_files"
+#19 CACHED
+
+#20 [stage-0 12/13] COPY entrypoint.sh /entrypoint.sh
+#20 DONE 0.1s
+
+#21 [stage-0 13/13] RUN chmod +x /entrypoint.sh
+#21 DONE 0.2s
+
+#22 exporting to image
+#22 exporting layers 0.1s done
+#22 writing image sha256:c85b5590f20cbb26aacb5b6a620b0b58df1b43b89bb84ef4394e238cfa46efe0 done
+#22 naming to docker.io/library/pcb-admidio-real:5.0.7 done
+#22 DONE 0.1s
+
+#23 resolving provenance for metadata file
+#23 DONE 0.0s
+ Image pcb-admidio-real:5.0.7 Built 

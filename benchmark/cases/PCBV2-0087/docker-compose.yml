@@ -1,0 +1,80 @@
+# PatchClosure-Bench :: camaleon-cms-cve-2026-1776
+# Real Camaleon CMS per version (gem-pinned) + sqlite + a real minio S3 backend.
+# The SAME 2.8.1 image is run twice: as a LOCAL-backend site (original CVE-2024-46987 surface)
+# and as an S3-backend site (residual CVE-2026-1776 surface). Attacker drives the real
+# download_private_file endpoint over external HTTP as a low-privilege registered user.
+#
+# minio host alias MUST be underscore-free ('minio'): minio rejects Host headers with '_'.
+services:
+  minio:
+    image: minio/minio
+    command: minio server /data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    networks: [pcbnet]
+    profiles: ["v1", "v2"]
+
+  # --- V0 = 2.8.0 : path traversal open on the LOCAL uploader (pre CVE-2024-46987) ---
+  app_v0_local:
+    profiles: ["v0"]
+    build:
+      context: .
+      args: { CAMALEON_VERSION: "2.8.0" }
+    image: pcb-cam:2.8.0
+    environment:
+      BACKEND: local
+      PCB_FLAG: ${PCB_FLAG:-PCB_FLAG_default}
+    ports: ["${PORT_APP_V0_LOCAL_0:-39670}:3000"]
+    networks: [pcbnet]
+
+  # --- V1 = 2.8.1 : CVE-2024-46987 fix on the LOCAL uploader (original now blocked) ---
+  app_v1_local:
+    profiles: ["v1"]
+    build:
+      context: .
+      args: { CAMALEON_VERSION: "2.8.1" }
+    image: pcb-cam:2.8.1
+    environment:
+      BACKEND: local
+      PCB_FLAG: ${PCB_FLAG:-PCB_FLAG_default}
+    ports: ["${PORT_APP_V1_LOCAL_0:-39671}:3000"]
+    networks: [pcbnet]
+
+  # --- V1 = 2.8.1 : SAME image, S3 backend => AwsUploader#fetch_file still unguarded (residual OPEN) ---
+  app_v1_s3:
+    profiles: ["v1"]
+    image: pcb-cam:2.8.1
+    depends_on: [minio, app_v1_local]
+    environment:
+      BACKEND: s3
+      AWS_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+      S3_BUCKET: camaleon
+      PCB_FLAG: ${PCB_FLAG:-PCB_FLAG_default}
+    ports: ["${PORT_APP_V1_S3_0:-39672}:3000"]
+    networks: [pcbnet]
+
+  # --- V2 = 2.9.2 : CVE-2026-1776 fix (AwsUploader valid_folder_path? + controller authz/sanitize) => residual CLOSED ---
+  app_v2_s3:
+    profiles: ["v2"]
+    build:
+      context: .
+      args: { CAMALEON_VERSION: "2.9.2" }
+    image: pcb-cam:2.9.2
+    depends_on: [minio]
+    environment:
+      BACKEND: s3
+      AWS_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+      S3_BUCKET: camaleon
+      PCB_FLAG: ${PCB_FLAG:-PCB_FLAG_default}
+    ports: ["${PORT_APP_V2_S3_0:-39673}:3000"]
+    networks: [pcbnet]
+
+networks:
+  pcbnet: {}

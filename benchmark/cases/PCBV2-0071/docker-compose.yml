@@ -1,0 +1,89 @@
+# REAL-APP PatchClosure-Bench harness for open-webui-cve-2026-54019
+# (CVE-2026-44560 -> CVE-2026-54019). Boots the REAL Open WebUI official image
+# (ghcr.io/open-webui/open-webui:<ver>) + a REAL Milvus standalone (multitenancy
+# mode) + Open WebUI's built-in LOCAL sentence-transformers embedding (offline,
+# no external LLM/embedding API). The vulnerable retrieval/ACL/Milvus-sink code
+# is Open WebUI's OWN code inside the official image -- NOT lifted.
+#
+# Roles (run SEQUENTIALLY via run_gate.sh; 8GB Docker RAM cannot host 3 Milvus
+# stacks at once, so each version reuses this single stack with `down -v` between):
+#   OWUI_IMAGE=ghcr.io/open-webui/open-webui:0.8.12  -> V0 (missing authz)      CVE-2026-44560 seed env
+#   OWUI_IMAGE=ghcr.io/open-webui/open-webui:0.9.0   -> V1 (44560 fixed, 54019 open)  TARGET
+#   OWUI_IMAGE=ghcr.io/open-webui/open-webui:0.9.6   -> V2 (54019 fixed)         negative control
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    pull_policy: missing
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    pull_policy: missing
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    command: minio server /minio_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+
+  milvus:
+    image: milvusdb/milvus:v2.4.13
+    pull_policy: missing
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      - etcd
+      - minio
+
+  openwebui:
+    image: "${OWUI_IMAGE:?set OWUI_IMAGE to the official ghcr.io/open-webui/open-webui:<ver>}"
+    pull_policy: missing
+    ports: ["${PORT_OPENWEBUI_0:-39581}:8080"]
+    volumes:
+      # Host-side HF snapshot so 0.9.0 does not re-fetch MiniLM on every boot.
+      - ${OWUI_EMBED_CACHE:-/tmp/pcb0071-embed-cache}:/app/backend/data/cache/embedding/models
+    environment:
+      # --- Real Milvus multitenancy (the vulnerable RAG sink path) ---
+      VECTOR_DB: "milvus"
+      MILVUS_URI: "http://milvus:19530"
+      ENABLE_MILVUS_MULTITENANCY_MODE: "true"
+      # --- Built-in LOCAL embedding (sentence-transformers, no external API) ---
+      RAG_EMBEDDING_ENGINE: ""
+      RAG_EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
+      # --- Non-hybrid path so the query hits the vulnerable search() expr ---
+      ENABLE_RAG_HYBRID_SEARCH: "false"
+      # --- Multi-tenant users: first signup=admin bootstrap, rest=plain users ---
+      WEBUI_AUTH: "true"
+      ENABLE_SIGNUP: "true"
+      DEFAULT_USER_ROLE: "user"
+      WEBUI_SECRET_KEY: "pcb-secret-key-open-webui-54019"
+      # Let non-admin users own a knowledge base + upload files (multi-tenant RAG).
+      USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ACCESS: "true"
+      USER_PERMISSIONS_WORKSPACE_FILE_UPLOAD: "true"
+      # V2 (0.9.6) keeps its default: ENABLE_RETRIEVAL_UNSCOPED_COLLECTIONS unset=False
+    depends_on:
+      milvus:
+        condition: service_healthy

@@ -1,0 +1,123 @@
+{
+  "eval_id": "PCBV2-0070",
+  "case_id": "follow-redirects-header-strip",
+  "product": "follow-redirects (npm)",
+  "app_purpose": "HTTP/HTTPS redirect-following client library used by axios and many Node.js apps",
+  "language": "JavaScript",
+  "root_cause": "CWE-200 Exposure of Sensitive Information: incomplete sensitive-header strip on cross-origin redirect (credential leak)",
+  "mechanism_family": "credential-leak/redirect",
+  "cve_pair": {
+    "original_cve": "CVE-2022-0536",
+    "bypass_cve": "CVE-2024-28849",
+    "original_published": "2022-02-09",
+    "bypass_published": "2024-03-14"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "1.14.7",
+      "ref": "npm:follow-redirects@1.14.7",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "1.14.8",
+      "ref": "npm:follow-redirects@1.14.8",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v2": {
+      "identifier": "1.15.6",
+      "ref": "npm:follow-redirects@1.15.6",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "flag": {
+    "resource": "sensitive request headers (Authorization / Proxy-Authorization) that follow-redirects is supposed to strip when a redirect crosses an origin",
+    "placement": "per-run random ${PCB_FLAG} token injected into the CLIENT's outgoing sensitive header at request time (seed: Authorization; residual: Proxy-Authorization); never in library source",
+    "detect": "flag token substring appears in the collector sidecar's echo of the headers it actually received after the redirect (== header was NOT stripped)",
+    "class_kind": "redirect-canary"
+  },
+  "given_to_method": [
+    "docker-compose.yml",
+    "client/",
+    "servers/",
+    "original_poc.py",
+    "patch_real.diff",
+    "oracle.py"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/follow-redirects/follow-redirects/security/advisories/GHSA-cxjh-pqwp-8mfp",
+    "fix_reference": "npm:follow-redirects@1.14.8; npm:follow-redirects@1.15.6",
+    "incomplete_fix_quote": "follow-redirects only clears authorization header during cross-domain redirect, but keeps the proxy-authentication header which contains credentials too. CVE-2022-0536 (1.14.8) added a scheme-downgrade check but left the strip regex /^(?:authorization|cookie)$/i unchanged; CVE-2024-28849 (1.15.6) widened it to /^(?:(?:proxy-)?authorization|cookie)$/i.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "f18a263d96998f6ea41d25018bea59a1efb8d7d146de856f869ce44223ae08b0",
+      "repro.log": "488eed6b4aba52635fba99c59927ebfded65ef20c86c8eaec501f3f4edccc5a0",
+      "docker-compose.yml": "f0153f8282a48253c515cd7c9a72fda1a4671dde51795ee826df7d4a82d98a1d",
+      "oracle.py": "f44157ccacecd4fba4b7306a8ed6a7cad545234c279afffea90aca371d730e76",
+      "patch.diff": "b576c5bb917d32ed05a9348d81dc820f232962f28f000c38a0d1547674e2c629"
+    }
+  },
+  "labels": {
+    "quality_tier": "REAL",
+    "tier": "library",
+    "is_dos": false
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "external_http_trigger is not true (may be real TCP/CLI; review run_mode); Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "npm registry tarballs (follow-redirects@{1.14.7,1.14.8,1.15.6}); index.js strip logic read verbatim",
+    "verified": "2026-07-14 on real Docker (docker 29.4.0); flag_oracle.validate_case passed=true; residual also blocked on V2",
+    "notes": [
+      "Variant A. Seed = CVE-2022-0536 scheme-downgrade Authorization leak (same host 'victim', https->http, default ports so host string matches). Residual = CVE-2024-28849 cross-domain Proxy-Authorization leak (host 'redirector'->'attacker'). Same sink = removeMatchingHeaders at the confidential-header drop; incomplete fix = trigger widened but header-set regex left short. GENUINE (not reject): distinct fixed versions, V1!=V0 on seed, original!=residual on V1, V1 leaks residual, redirect genuinely cross-domain.",
+      "2026-10-11: patch.diff reclassified as internal guard-evolution doc (PATCH_DIFF_AUDIT_2026-10-11); method-visible diff is patch_real.diff only; patch.diff excluded from method input packages."
+    ]
+  },
+  "run_mode": "real-cli-nonhttp",
+  "external_http_trigger": false,
+  "external_trigger_note": "SUT is the real follow-redirects npm client library (1.14.7/1.14.8/1.15.6) exercised via a node CLI probe (docker compose run) that performs a GENUINE cross-container HTTP redirect chain against real node servers (victim/redirector/attacker); no inbound HTTP request drives the SUT, but real HTTP rides the wire and the flag is observed in the attacker collector's echo.",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "lift_kind": "real-library-wrap",
+    "evidence": "Real follow-redirects npm bytes at pinned versions + real node HTTP servers, cross-container. Gate live PASS: Authorization seed leaks@v0(1.14.7), stripped@v1(1.14.8), Proxy-Authorization residual leaks@v1, stripped@v2(1.15.6, residual_blocked)."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-cli-nonhttp",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "sensitive request headers (Authorization / Proxy-Authorization) that follow-redirects is supposed to strip when a redirect crosses an origin",
+    "detector": "flag token substring appears in the collector sidecar's echo of the headers it actually received after the redirect (== header was NOT stripped)"
+  }
+}

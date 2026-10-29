@@ -1,0 +1,234 @@
+PCBV2-0184 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: be9c27c4d18c2e6a5be8af4e53c0797440794473
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0184/
+
+diff --git a/django/utils/text.py b/django/utils/text.py
+index 86d3b52..2663164 100644
+--- a/django/utils/text.py
++++ b/django/utils/text.py
+@@ -67,8 +67,14 @@ def wrap(text, width):
+ class Truncator(SimpleLazyObject):
+     """
+     An object used to truncate text, either by characters or words.
++
++    When truncating HTML text (either chars or words), input will be limited to
++    at most `MAX_LENGTH_HTML` characters.
+     """
+ 
++    # 5 million characters are approximately 4000 text pages or 3 web pages.
++    MAX_LENGTH_HTML = 5_000_000
++
+     def __init__(self, text):
+         super().__init__(lambda: str(text))
+ 
+@@ -164,6 +170,11 @@ class Truncator(SimpleLazyObject):
+         if words and length <= 0:
+             return ""
+ 
++        size_limited = False
++        if len(text) > self.MAX_LENGTH_HTML:
++            text = text[: self.MAX_LENGTH_HTML]
++            size_limited = True
++
+         html4_singlets = (
+             "br",
+             "col",
+@@ -220,10 +231,14 @@ class Truncator(SimpleLazyObject):
+                 # Add it to the start of the open tags list
+                 open_tags.insert(0, tagname)
+ 
++        truncate_text = self.add_truncation_text("", truncate)
++
+         if current_len <= length:
++            if size_limited and truncate_text:
++                text += truncate_text
+             return text
++
+         out = text[:end_text_pos]
+-        truncate_text = self.add_truncation_text("", truncate)
+         if truncate_text:
+             out += truncate_text
+         # Close any tags still open
+diff --git a/docs/ref/templates/builtins.txt b/docs/ref/templates/builtins.txt
+index 9d6bc57..39aa398 100644
+--- a/docs/ref/templates/builtins.txt
++++ b/docs/ref/templates/builtins.txt
+@@ -2652,6 +2652,16 @@ If ``value`` is ``"<p>Joel is a slug</p>"``, the output will be
+ 
+ Newlines in the HTML content will be preserved.
+ 
++.. admonition:: Size of input string
++
++    Processing large, potentially malformed HTML strings can be
++    resource-intensive and impact service performance. ``truncatechars_html``
++    limits input to the first five million characters.
++
++.. versionchanged:: 3.2.22
++
++    In older versions, strings over five million characters were processed.
++
+ .. templatefilter:: truncatewords
+ 
+ ``truncatewords``
+@@ -2694,6 +2704,16 @@ If ``value`` is ``"<p>Joel is a slug</p>"``, the output will be
+ 
+ Newlines in the HTML content will be preserved.
+ 
++.. admonition:: Size of input string
++
++    Processing large, potentially malformed HTML strings can be
++    resource-intensive and impact service performance. ``truncatewords_html``
++    limits input to the first five million characters.
++
++.. versionchanged:: 3.2.22
++
++    In older versions, strings over five million characters were processed.
++
+ .. templatefilter:: unordered_list
+ 
+ ``unordered_list``
+diff --git a/docs/releases/3.2.22.txt b/docs/releases/3.2.22.txt
+index 6e1815d..cfedc41 100644
+--- a/docs/releases/3.2.22.txt
++++ b/docs/releases/3.2.22.txt
+@@ -6,4 +6,20 @@ Django 3.2.22 release notes
+ 
+ Django 3.2.22 fixes a security issue with severity "moderate" in 3.2.21.
+ 
+-...
++CVE-2023-43665: Denial-of-service possibility in ``django.utils.text.Truncator``
++================================================================================
++
++Following the fix for :cve:`2019-14232`, the regular expressions used in the
++implementation of ``django.utils.text.Truncator``'s ``chars()`` and ``words()``
++methods (with ``html=True``) were revised and improved. However, these regular
++expressions still exhibited linear backtracking complexity, so when given a
++very long, potentially malformed HTML input, the evaluation would still be
++slow, leading to a potential denial of service vulnerability.
++
++The ``chars()`` and ``words()`` methods are used to implement the
++:tfilter:`truncatechars_html` and :tfilter:`truncatewords_html` template
++filters, which were thus also vulnerable.
++
++The input processed by ``Truncator``, when operating in HTML mode, has been
++limited to the first five million characters in order to avoid potential
++performance and memory issues.
+diff --git a/docs/releases/4.1.12.txt b/docs/releases/4.1.12.txt
+index d81df3a..6c331dd 100644
+--- a/docs/releases/4.1.12.txt
++++ b/docs/releases/4.1.12.txt
+@@ -6,4 +6,20 @@ Django 4.1.12 release notes
+ 
+ Django 4.1.12 fixes a security issue with severity "moderate" in 4.1.11.
+ 
+-...
++CVE-2023-43665: Denial-of-service possibility in ``django.utils.text.Truncator``
++================================================================================
++
++Following the fix for :cve:`2019-14232`, the regular expressions used in the
++implementation of ``django.utils.text.Truncator``'s ``chars()`` and ``words()``
++methods (with ``html=True``) were revised and improved. However, these regular
++expressions still exhibited linear backtracking complexity, so when given a
++very long, potentially malformed HTML input, the evaluation would still be
++slow, leading to a potential denial of service vulnerability.
++
++The ``chars()`` and ``words()`` methods are used to implement the
++:tfilter:`truncatechars_html` and :tfilter:`truncatewords_html` template
++filters, which were thus also vulnerable.
++
++The input processed by ``Truncator``, when operating in HTML mode, has been
++limited to the first five million characters in order to avoid potential
++performance and memory issues.
+diff --git a/docs/releases/4.2.6.txt b/docs/releases/4.2.6.txt
+index 3192946..9b99d8c 100644
+--- a/docs/releases/4.2.6.txt
++++ b/docs/releases/4.2.6.txt
+@@ -7,6 +7,24 @@ Django 4.2.6 release notes
+ Django 4.2.6 fixes a security issue with severity "moderate" and several bugs
+ in 4.2.5.
+ 
++CVE-2023-43665: Denial-of-service possibility in ``django.utils.text.Truncator``
++================================================================================
++
++Following the fix for :cve:`2019-14232`, the regular expressions used in the
++implementation of ``django.utils.text.Truncator``'s ``chars()`` and ``words()``
++methods (with ``html=True``) were revised and improved. However, these regular
++expressions still exhibited linear backtracking complexity, so when given a
++very long, potentially malformed HTML input, the evaluation would still be
++slow, leading to a potential denial of service vulnerability.
++
++The ``chars()`` and ``words()`` methods are used to implement the
++:tfilter:`truncatechars_html` and :tfilter:`truncatewords_html` template
++filters, which were thus also vulnerable.
++
++The input processed by ``Truncator``, when operating in HTML mode, has been
++limited to the first five million characters in order to avoid potential
++performance and memory issues.
++
+ Bugfixes
+ ========
+ 
+diff --git a/tests/utils_tests/test_text.py b/tests/utils_tests/test_text.py
+index cb2959f..7d20445 100644
+--- a/tests/utils_tests/test_text.py
++++ b/tests/utils_tests/test_text.py
+@@ -1,5 +1,6 @@
+ import json
+ import sys
++from unittest.mock import patch
+ 
+ from django.core.exceptions import SuspiciousFileOperation
+ from django.test import SimpleTestCase
+@@ -94,11 +95,17 @@ class TestUtilsText(SimpleTestCase):
+             text.Truncator(lazystr("The quick brown fox")).chars(10), "The quick…"
+         )
+ 
+-    def test_truncate_chars_html(self):
++    @patch("django.utils.text.Truncator.MAX_LENGTH_HTML", 10_000)
++    def test_truncate_chars_html_size_limit(self):
++        max_len = text.Truncator.MAX_LENGTH_HTML
++        bigger_len = text.Truncator.MAX_LENGTH_HTML + 1
++        valid_html = "<p>Joel is a slug</p>"  # 14 chars
+         perf_test_values = [
+-            (("</a" + "\t" * 50000) + "//>", None),
+-            ("&" * 50000, "&" * 9 + "…"),
++            ("</a" + "\t" * (max_len - 6) + "//>", None),
++            ("</p" + "\t" * bigger_len + "//>", "</p" + "\t" * 6 + "…"),
++            ("&" * bigger_len, "&" * 9 + "…"),
+             ("_X<<<<<<<<<<<>", None),
++            (valid_html * bigger_len, "<p>Joel is a…</p>"),  # 10 chars
+         ]
+         for value, expected in perf_test_values:
+             with self.subTest(value=value):
+@@ -176,15 +183,25 @@ class TestUtilsText(SimpleTestCase):
+         truncator = text.Truncator("<p>I &lt;3 python, what about you?</p>")
+         self.assertEqual("<p>I &lt;3 python,…</p>", truncator.words(3, html=True))
+ 
++    @patch("django.utils.text.Truncator.MAX_LENGTH_HTML", 10_000)
++    def test_truncate_words_html_size_limit(self):
++        max_len = text.Truncator.MAX_LENGTH_HTML
++        bigger_len = text.Truncator.MAX_LENGTH_HTML + 1
++        valid_html = "<p>Joel is a slug</p>"  # 4 words
+         perf_test_values = [
+-            ("</a" + "\t" * 50000) + "//>",
+-            "&" * 50000,
+-            "_X<<<<<<<<<<<>",
++            ("</a" + "\t" * (max_len - 6) + "//>", None),
++            ("</p" + "\t" * bigger_len + "//>", "</p" + "\t" * (max_len - 3) + "…"),
++            ("&" * max_len, None),  # no change
++            ("&" * bigger_len, "&" * max_len + "…"),
++            ("_X<<<<<<<<<<<>", None),
++            (valid_html * bigger_len, valid_html * 12 + "<p>Joel is…</p>"),  # 50 words
+         ]
+-        for value in perf_test_values:
++        for value, expected in perf_test_values:
+             with self.subTest(value=value):
+                 truncator = text.Truncator(value)
+-                self.assertEqual(value, truncator.words(50, html=True))
++                self.assertEqual(
++                    expected if expected else value, truncator.words(50, html=True)
++                )
+ 
+     def test_wrap(self):
+         digits = "1234 67 9"

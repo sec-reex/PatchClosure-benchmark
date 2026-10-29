@@ -1,0 +1,65 @@
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "20.14.0"
+    image: nodefs-pcb-v0:latest
+    container_name: pcb-nodefs-v0
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "$PCB_FLAG" > /flag.txt
+        chmod 444 /flag.txt
+        mkdir -p /tmp/allowed
+        exec node --experimental-permission --allow-fs-read='*' --allow-fs-write=/tmp/allowed /app/server.js
+    ports: ["${PORT_V0_0:-33770}:3000"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "20.15.1"
+    image: nodefs-pcb-v1:latest
+    container_name: pcb-nodefs-v1
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "$PCB_FLAG" > /flag.txt
+        chmod 444 /flag.txt
+        mkdir -p /tmp/allowed
+        exec node --experimental-permission --allow-fs-read='*' --allow-fs-write=/tmp/allowed /app/server.js
+    ports: ["${PORT_V1_0:-33771}:3000"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "20.20.2"
+    image: nodefs-pcb-v2:latest
+    container_name: pcb-nodefs-v2
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "$PCB_FLAG" > /flag.txt
+        chmod 444 /flag.txt
+        mkdir -p /tmp/allowed
+        exec node --experimental-permission --allow-fs-read='*' --allow-fs-write=/tmp/allowed /app/server.js
+    ports: ["${PORT_V2_0:-33772}:3000"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.36.0/24

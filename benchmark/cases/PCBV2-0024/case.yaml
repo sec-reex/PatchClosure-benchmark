@@ -1,0 +1,25 @@
+case_id: PCBV2-0024
+public_name: comfyui-cve-2025-6092
+run_mode: real-app-http
+oracle_family: browser_xss
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/comfyanonymous/ComfyUI.git
+  v0: "563291ee515bd71065a6e16d9e7dfb97fd747b7c"
+  v1: "59d58b1158141ed5de65adabf4ef42bcbb3ee3da"
+service:
+  # Host ports are ${PORT_V*_0} / ${PORT_VICTIM_0} / ${PORT_CALLBACK_0}, not
+  # container :8188. start.sh / reset.sh wait after compose up.
+  readiness: none
+  exposed_ports: [8188]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

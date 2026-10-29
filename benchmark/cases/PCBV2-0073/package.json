@@ -1,0 +1,12 @@
+{
+  "name": "pcb-adonisjs-bodyparser-protopollution",
+  "private": true,
+  "type": "module",
+  "description": "Real-library-wrap for @adonisjs/bodyparser FormFields prototype pollution (CVE-2026-25754 -> CVE-2026-48795). Three published npm versions installed side-by-side via npm aliases; the service runs the REAL BodyParserMiddleware.handle over a real multipart HTTP request and observes Object.prototype pollution in a fresh forked worker per probe.",
+  "dependencies": {
+    "bp_v0": "npm:@adonisjs/bodyparser@10.1.2",
+    "bp_v1": "npm:@adonisjs/bodyparser@10.1.4",
+    "bp_v2": "npm:@adonisjs/bodyparser@10.1.5",
+    "@adonisjs/http-server": "7.8.1"
+  }
+}

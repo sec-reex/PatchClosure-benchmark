@@ -1,0 +1,68 @@
+# PatchClosure-Bench recipe for immer-cve-2021-3757 (CVE-2020-28477 -> CVE-2021-3757 / CVE-2021-23436).
+# run_mode = real-app-http. Each profile builds an image that npm-installs the REAL published `immer`
+# release (per IMMER_VER build-arg) and boots a REAL Express service (app/server.js) that replays
+# attacker JSON patches via immer's real applyPatches(base, patches) -- exactly how a real app (e.g. a
+# Redux-Toolkit-style server) applies user-supplied JSON-patch ops to state. Prototype pollution is
+# triggered EXTERNALLY over HTTP:
+#   POST /apply {patches}  -> service calls the real applyPatches({seeded:1}, patches) (may pollute
+#                             Object.prototype process-wide)
+#   GET  /check            -> reflects ${PCB_FLAG} iff a fresh object now inherits isAdmin===true
+# The pollution persists process-wide (that IS the vuln); the oracle restarts a service (fresh node
+# process => clean Object.prototype) between the seed and the residual payloads and between versions so
+# probes never leak into each other.
+#
+# Vector arithmetic against applyPatches({seeded:1}, [{op:"replace", path, value:true}]):
+#   - original/seed (CVE-2020-28477):  path=["__proto__","isAdmin"], value=true
+#       V0 (7.0.15, no guard):  intermediate segment "__proto__" walks onto Object.prototype ->
+#                               isAdmin=true -> /check emits FLAG.
+#       V1 (8.0.1):             `if ((parentType===Object||Array) && (p==="__proto__"||p==="constructor"))
+#                               die(24)` with strict `===` on the RAW string key -> die(24) -> BLOCKED.
+#   - residual (CVE-2021-3757):         path=[["__proto__"],"isAdmin"], value=true
+#       V1 (8.0.1): the intermediate key is the ARRAY ["__proto__"]; ["__proto__"] === "__proto__" is
+#                   FALSE (array vs string) -> slips the guard, then get(base, p)=base[["__proto__"]]
+#                   coerces the array back to "__proto__" -> pollutes -> /check emits FLAG.
+#       V2 (9.0.6): `var p = "" + path[i]` coerces ["__proto__"] to the string "__proto__" BEFORE the
+#                   compare -> p === "__proto__" TRUE -> die(24) before any write -> BLOCKED.
+#
+# Profiles: v1 (REQUIRED, GIVEN target)=8.0.1; v0 (held-out seed env)=7.0.15; v2 (held-out neg)=9.0.6.
+services:
+  v1:
+    build:
+      context: .
+      args:
+        IMMER_VER: "8.0.1"
+    image: "pcb-immer:8.0.1"
+    profiles: ["v1"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      IMMER_VER: "8.0.1"
+    ports: ["${PORT_V1_0:-39942}:8080"]
+
+  v0:
+    build:
+      context: .
+      args:
+        IMMER_VER: "7.0.15"
+    image: "pcb-immer:7.0.15"
+    profiles: ["v0"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      IMMER_VER: "7.0.15"
+    ports: ["${PORT_V0_0:-39941}:8080"]
+
+  v2:
+    build:
+      context: .
+      args:
+        IMMER_VER: "9.0.6"
+    image: "pcb-immer:9.0.6"
+    profiles: ["v2"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      IMMER_VER: "9.0.6"
+    ports: ["${PORT_V2_0:-39943}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.128.0/24

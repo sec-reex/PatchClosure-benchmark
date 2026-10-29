@@ -1,0 +1,28 @@
+PCBV2-0144 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 63e7ed05aa4b1889ec2f3b196426db4500cbda94
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0144/
+
+diff --git a/index.js b/index.js
+index 388a963..3b13f44 100644
+--- a/index.js
++++ b/index.js
+@@ -70,6 +70,7 @@ module.exports = function (args, opts) {
+         var o = obj;
+         keys.slice(0,-1).forEach(function (key) {
+             if (o[key] === undefined) o[key] = {};
++            if (o[key] === {}.__proto__) o[key] = {};
+             o = o[key];
+         });
+ 
+diff --git a/test/proto.js b/test/proto.js
+index 015ea60..87490c3 100644
+--- a/test/proto.js
++++ b/test/proto.js
+@@ -4,5 +4,6 @@ var test = require('tape');
+ test('proto pollution', function (t) {
+     var argv = parse(['--__proto__.x','123']);
+     t.equal({}.x, undefined);
++    t.equal(argv.__proto__.x, 123);
+     t.end();
+ });

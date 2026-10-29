@@ -1,0 +1,33 @@
+# Three REAL WebOb profiles. Each boots the same tiny WSGI app against a
+# different pip-installed WebOb version. Open-redirect is triggered EXTERNALLY
+# over HTTP; the emitted Location header is the observable.
+services:
+  v0:
+    build:
+      context: .
+      args:
+        WEBOB_VERSION: "1.8.7"
+    image: pcb-webob-44889-v0
+    profiles: ["v0"]
+    ports:
+      - "${PORT_V0_0:-45210}:8000"
+
+  v1:
+    build:
+      context: .
+      args:
+        WEBOB_VERSION: "1.8.8"
+    image: pcb-webob-44889-v1
+    profiles: ["v1"]
+    ports:
+      - "${PORT_V1_0:-45211}:8000"
+
+  v2:
+    build:
+      context: .
+      args:
+        WEBOB_VERSION: "1.8.10"
+    image: pcb-webob-44889-v2
+    profiles: ["v2"]
+    ports:
+      - "${PORT_V2_0:-45212}:8000"

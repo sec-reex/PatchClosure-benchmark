@@ -1,0 +1,6 @@
+{
+ "eval_id": "PCBV2-0086",
+ "family": "state_auth_mutation",
+ "reason": "\u4efb\u52a1\u4e66 \u00a713 \u6307\u5b9a\uff1abudibase CSRF \u72b6\u6001\u5199\uff08R23 \u5df2\u5b9e\u8bc1 readback_company canary\uff09",
+ "recorded_at": "2026-08-11"
+}

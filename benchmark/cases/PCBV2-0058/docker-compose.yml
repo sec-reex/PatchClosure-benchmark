@@ -1,0 +1,88 @@
+# PatchClosure-Bench: frappe-cve-2025-55732 (CVE-2025-52895 -> CVE-2025-55732).
+# Official frappe/erpnext bench + full frappe git tree at the CVE tag.
+# order_by SQLi in frappe/model/db_query.py. Canary = schema ${PCB_FLAG}_<ver>
+# leaked via extractvalue(1,concat(0x7e,database())).
+#
+#   v0 = Frappe v15.57.0  exact-match blacklist
+#   v1 = Frappe v15.58.0  substring check, {sleep} only   (TARGET)
+#   v2 = Frappe v15.74.2  regex + expanded blacklist
+services:
+  db:
+    image: mariadb:10.6
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: pcbroot
+    tmpfs: ["/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD", "mariadb", "-u", "root", "-ppcbroot", "-e", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    profiles: ["v0", "v1", "v2"]
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["v0", "v1", "v2"]
+
+  frappe-v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile.frappe
+      args:
+        FRAPPE_TAG: v15.57.0
+    image: pcb-frappe-real:v15.57.0
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      DB_HOST: db
+      DB_ROOT_PASSWORD: pcbroot
+      REDIS_HOST: redis
+      SITE_NAME: v0.local
+      DB_NAME: "${PCB_FLAG}_v0"
+    ports: ["${PORT_FRAPPE_V0_0:-39630}:8000"]
+    depends_on:
+      db:    { condition: service_healthy }
+      redis: { condition: service_started }
+
+  frappe-v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile.frappe
+      args:
+        FRAPPE_TAG: v15.58.0
+    image: pcb-frappe-real:v15.58.0
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      DB_HOST: db
+      DB_ROOT_PASSWORD: pcbroot
+      REDIS_HOST: redis
+      SITE_NAME: v1.local
+      DB_NAME: "${PCB_FLAG}_v1"
+    ports: ["${PORT_FRAPPE_V1_0:-39631}:8000"]
+    depends_on:
+      db:    { condition: service_healthy }
+      redis: { condition: service_started }
+
+  frappe-v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile.frappe
+      args:
+        FRAPPE_TAG: v15.74.2
+    image: pcb-frappe-real:v15.74.2
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      DB_HOST: db
+      DB_ROOT_PASSWORD: pcbroot
+      REDIS_HOST: redis
+      SITE_NAME: v2.local
+      DB_NAME: "${PCB_FLAG}_v2"
+    ports: ["${PORT_FRAPPE_V2_0:-39632}:8000"]
+    depends_on:
+      db:    { condition: service_healthy }
+      redis: { condition: service_started }

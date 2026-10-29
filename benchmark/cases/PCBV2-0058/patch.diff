@@ -1,0 +1,21 @@
+PCBV2-0058 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: f0933590103c80c6393647dd0403d399e64c951c (v15.58.0 backport of #31526 / GHSA-mhj8-jfhf-mcw9)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0058/
+
+diff --git a/frappe/model/db_query.py b/frappe/model/db_query.py
+index cfc387538dfa..7fc25f41d1ea 100644
+--- a/frappe/model/db_query.py
++++ b/frappe/model/db_query.py
+@@ -1129,8 +1129,9 @@ def validate_order_by_and_group_by(self, parameters: str):
+ 						tbl = tbl[4:-1]
+ 					frappe.throw(_("Please select atleast 1 column from {0} to sort/group").format(tbl))
+ 
+-			if function in blacklisted_sql_functions:
+-				frappe.throw(_("Cannot use {0} in order/group by").format(field))
++			# Check if the function is used anywhere in the field
++			if any(func in function for func in blacklisted_sql_functions):
++				frappe.throw(_("Cannot use {0} in order/group by").format(function))
+ 
+ 	def add_limit(self):
+ 		if self.limit_page_length:

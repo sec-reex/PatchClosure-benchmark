@@ -1,0 +1,36 @@
+# Real comfyanonymous/ComfyUI booted at an exact CVE commit (build ARG COMMIT).
+# The REAL aiohttp server.py routes (/upload/image, /view) run over HTTP -- no re-implementation.
+# CPU-only torch: we only need the HTTP server + the real /view content-type decision to run,
+# NOT GPU / model execution. The ComfyUI tree is cloned AT BUILD TIME (nothing committed to the case).
+FROM python:3.12-slim
+
+# CPU torch stack pinned to the ComfyUI CVE era (Dec-2024 .. Jun-2025), installed first (most
+# cache-stable position) and BEFORE the per-commit requirements so the bare `torch` line in
+# requirements.txt is already satisfied. This heavy layer is identical across all three service
+# builds -> cached, downloaded once.
+RUN pip install --no-cache-dir "numpy<2" \
+      torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
+      --index-url https://download.pytorch.org/whl/cpu
+
+# git+ca-certificates to clone; media-types provides the standard /etc/mime.types (present on a
+# normal Linux host and assumed by the public CVE PoC) so the REAL server resolves .xhtml ->
+# application/xhtml+xml; libgomp1 lets torchaudio load cleanly.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates media-types libgomp1 \
+ && rm -rf /var/lib/apt/lists/*
+
+# Clone the whole ComfyUI tree (not a file-slice harness). ARG COMMIT after clone so
+# the clone layer is shared across v0/v1/v2; only checkout + pip differ per commit.
+RUN git clone --filter=blob:none https://github.com/comfyanonymous/ComfyUI.git /app
+WORKDIR /app
+ARG COMMIT
+RUN git checkout ${COMMIT}
+# `requests` is imported by app/frontend_management.py but absent from the early requirements.txt.
+RUN pip install --no-cache-dir "numpy<2" requests -r requirements.txt
+
+EXPOSE 8188
+
+# Boot the REAL ComfyUI server. --cpu avoids CUDA; --disable-all-custom-nodes skips third-party
+# node loading (irrelevant to the /view sink) for a faster, deterministic boot. The built-in
+# server.py routes -- image_upload() and view_image() -- are registered and served for real.
+CMD ["python", "main.py", "--cpu", "--listen", "0.0.0.0", "--port", "8188", "--disable-all-custom-nodes"]

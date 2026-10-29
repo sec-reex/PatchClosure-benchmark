@@ -1,0 +1,60 @@
+# Four real Next.js profiles isolating the incomplete-fix:
+#   v0        = 15.2.0  webpack   -> original bypass reaches (no fix)
+#   v1_web    = 15.5.16 webpack   -> original bypass BLOCKED (CVE-2026-44575 fix, webpack)
+#   v1_turbo  = 15.5.16 turbopack -> residual bypass reaches (fix not applied under Turbopack)
+#   v2_turbo  = 15.5.18 turbopack -> residual bypass BLOCKED (CVE-2026-45109 fix, Turbopack too)
+services:
+  v0:
+    profiles: ["v0"]
+    image: pcb-nextjs-45109:15.2.0-webpack
+    build:
+      context: .
+      args:
+        NEXT_VERSION: "15.2.0"
+        BUILD_MODE: "webpack"
+        PCB_FLAG: "${PCB_FLAG}"
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+    ports:
+      - "${PORT_V0_0:-41090}:3000"
+
+  v1_web:
+    profiles: ["v1"]
+    image: pcb-nextjs-45109:15.5.16-webpack
+    build:
+      context: .
+      args:
+        NEXT_VERSION: "15.5.16"
+        BUILD_MODE: "webpack"
+        PCB_FLAG: "${PCB_FLAG}"
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+    ports:
+      - "${PORT_V1_WEB_0:-41091}:3000"
+
+  v1_turbo:
+    profiles: ["v1"]
+    image: pcb-nextjs-45109:15.5.16-turbo
+    build:
+      context: .
+      args:
+        NEXT_VERSION: "15.5.16"
+        BUILD_MODE: "turbopack"
+        PCB_FLAG: "${PCB_FLAG}"
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+    ports:
+      - "${PORT_V1_TURBO_0:-41092}:3000"
+
+  v2_turbo:
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        NEXT_VERSION: "15.5.18"
+        BUILD_MODE: "turbopack"
+        PCB_FLAG: "${PCB_FLAG}"
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+    ports:
+      - "${PORT_V2_TURBO_0:-41093}:3000"

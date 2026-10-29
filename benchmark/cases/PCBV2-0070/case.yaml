@@ -1,0 +1,25 @@
+case_id: PCBV2-0070
+public_name: follow-redirects-header-strip
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/follow-redirects/follow-redirects.git
+  v0: 1.14.7
+  v1: 1.14.8
+service:
+  # Exec-style library client: sidecars stay on the compose network only (no host
+  # ports). Platform HTTP readiness would time out; verify.sh waits on sidecars.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

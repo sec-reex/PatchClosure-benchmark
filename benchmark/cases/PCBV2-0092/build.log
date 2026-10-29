@@ -1,0 +1,260 @@
+ Image python:3.12-alpine Pulling 
+ 5de55e5ef9c0 Already exists 0B
+ 7165d099db60 Pulling fs layer 0B
+ 58091a72e5ff Pulling fs layer 0B
+ bbd8ab56026e Pulling fs layer 0B
+ 58091a72e5ff Downloading 146.8kB
+ 58091a72e5ff Downloading 1.179MB
+ 58091a72e5ff Downloading 2.211MB
+ 58091a72e5ff Downloading 3.243MB
+ 58091a72e5ff Downloading 4.276MB
+ 58091a72e5ff Downloading 5.16MB
+ 58091a72e5ff Downloading 5.603MB
+ 58091a72e5ff Downloading 7.077MB
+ 58091a72e5ff Downloading 8.257MB
+ bbd8ab56026e Downloading 248B
+ bbd8ab56026e Verifying Checksum 0B
+ bbd8ab56026e Download complete 0B
+ 7165d099db60 Downloading 15.74kB
+ 7165d099db60 Verifying Checksum 0B
+ 7165d099db60 Download complete 0B
+ 7165d099db60 Extracting 32.77kB
+ 7165d099db60 Extracting 412.4kB
+ 7165d099db60 Extracting 412.4kB
+ 58091a72e5ff Downloading 13.12MB
+ 7165d099db60 Pull complete 0B
+ 58091a72e5ff Verifying Checksum 0B
+ 58091a72e5ff Download complete 0B
+ 58091a72e5ff Extracting 163.8kB
+ 58091a72e5ff Extracting 5.243MB
+ 58091a72e5ff Extracting 8.684MB
+ 58091a72e5ff Extracting 11.8MB
+ 58091a72e5ff Extracting 13.27MB
+ 58091a72e5ff Extracting 13.9MB
+ 58091a72e5ff Extracting 13.9MB
+ 58091a72e5ff Pull complete 0B
+ bbd8ab56026e Extracting 248B
+ bbd8ab56026e Extracting 248B
+ bbd8ab56026e Pull complete 0B
+ Image python:3.12-alpine Pulled 
+ Image pcb-cdx-xxe:11.0.1 Building 
+ Image pcb-cdx-xxe:9.0.4 Building 
+ Image pcb-cdx-xxe:8.0.0 Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.93kB done
+#1 DONE 0.0s
+
+#2 [v1 internal] load build definition from Dockerfile
+#2 DONE 0.0s
+
+#2 [v0 internal] load build definition from Dockerfile
+#2 transferring dockerfile: 862B done
+#2 DONE 0.1s
+
+#3 [v0 internal] load metadata for docker.io/library/maven:3.9-eclipse-temurin-17
+#3 ...
+
+#4 [auth] library/maven:pull token for registry-1.docker.io
+#4 DONE 0.0s
+
+#5 [auth] library/eclipse-temurin:pull token for registry-1.docker.io
+#5 DONE 0.0s
+
+#6 [v0 internal] load metadata for docker.io/library/eclipse-temurin:17-jre
+#6 ...
+
+#3 [v1 internal] load metadata for docker.io/library/maven:3.9-eclipse-temurin-17
+#3 DONE 2.3s
+
+#6 [v0 internal] load metadata for docker.io/library/eclipse-temurin:17-jre
+#6 DONE 3.5s
+
+#7 [v0 internal] load .dockerignore
+#7 transferring context: 2B done
+#7 DONE 0.1s
+
+#8 [v2 build 1/5] FROM docker.io/library/maven:3.9-eclipse-temurin-17@sha256:1ed5d1f54416b706707b4f3238f63a20bb06aab27c6d240090a2bb9ad895ed45
+#8 CACHED
+
+#9 [v2 stage-1 1/3] FROM docker.io/library/eclipse-temurin:17-jre@sha256:92999aea37688157a53a40bfcb187c30f317422e028045fd5fc5c548fde9e626
+#9 resolve docker.io/library/eclipse-temurin:17-jre@sha256:92999aea37688157a53a40bfcb187c30f317422e028045fd5fc5c548fde9e626
+#9 ...
+
+#10 [v1 internal] load build context
+#10 transferring context: 7.65kB done
+#10 DONE 0.1s
+
+#9 [v0 stage-1 1/3] FROM docker.io/library/eclipse-temurin:17-jre@sha256:92999aea37688157a53a40bfcb187c30f317422e028045fd5fc5c548fde9e626
+#9 resolve docker.io/library/eclipse-temurin:17-jre@sha256:92999aea37688157a53a40bfcb187c30f317422e028045fd5fc5c548fde9e626 0.1s done
+#9 sha256:92999aea37688157a53a40bfcb187c30f317422e028045fd5fc5c548fde9e626 7.23kB / 7.23kB done
+#9 sha256:26128274b094ead4a37ae75b54596613a1f5b9eef09898a4ec0b52b5ce53f624 2.14kB / 2.14kB done
+#9 sha256:7d70fa2a985ad2265f8fe162e671e9661f3579d327995be041dcb590eb7979b5 9.28kB / 9.28kB done
+#9 sha256:92999aea37688157a53a40bfcb187c30f317422e028045fd5fc5c548fde9e626 7.23kB / 7.23kB done
+#9 sha256:26128274b094ead4a37ae75b54596613a1f5b9eef09898a4ec0b52b5ce53f624 2.14kB / 2.14kB done
+#9 sha256:7d70fa2a985ad2265f8fe162e671e9661f3579d327995be041dcb590eb7979b5 9.28kB / 9.28kB done
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 0B / 40.71MB 0.2s
+#9 sha256:693710ba20392c457fbbb59aaaa97ef6c2550b80ef7c683300be650839bb9d6b 0B / 392B 0.2s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 0B / 19.93MB 0.2s
+#9 ...
+
+#11 [v2 build 2/5] WORKDIR /build
+#11 DONE 0.4s
+
+#9 [v0 stage-1 1/3] FROM docker.io/library/eclipse-temurin:17-jre@sha256:92999aea37688157a53a40bfcb187c30f317422e028045fd5fc5c548fde9e626
+#9 ...
+
+#12 [v0 build 3/5] COPY pom.xml /build/pom.xml
+#12 DONE 0.1s
+
+#13 [v0 build 4/5] COPY App.java /build/src/main/java/App.java
+#13 DONE 0.1s
+
+#9 [v0 stage-1 1/3] FROM docker.io/library/eclipse-temurin:17-jre@sha256:92999aea37688157a53a40bfcb187c30f317422e028045fd5fc5c548fde9e626
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 3.15MB / 40.71MB 0.8s
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 6.29MB / 40.71MB 1.6s
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 8.39MB / 40.71MB 2.0s
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 15.73MB / 40.71MB 2.2s
+#9 sha256:693710ba20392c457fbbb59aaaa97ef6c2550b80ef7c683300be650839bb9d6b 392B / 392B 2.0s done
+#9 sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 0B / 47.05MB 2.2s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 1.05MB / 19.93MB 2.4s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 2.10MB / 19.93MB 2.5s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 3.15MB / 19.93MB 3.2s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 4.19MB / 19.93MB 3.4s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 5.24MB / 19.93MB 3.5s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 6.29MB / 19.93MB 3.7s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 7.34MB / 19.93MB 3.8s
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 17.83MB / 40.71MB 4.1s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 10.49MB / 19.93MB 4.1s
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 19.92MB / 40.71MB 4.3s
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 22.02MB / 40.71MB 4.5s
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 25.17MB / 40.71MB 5.0s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 11.53MB / 19.93MB 5.0s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 12.58MB / 19.93MB 5.6s
+#9 sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 3.15MB / 47.05MB 5.6s
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 28.31MB / 40.71MB 6.0s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 13.63MB / 19.93MB 6.2s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 14.68MB / 19.93MB 6.4s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 17.83MB / 19.93MB 6.9s
+#9 sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 8.39MB / 47.05MB 6.9s
+#9 sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 19.93MB / 19.93MB 7.2s done
+#9 sha256:551afdd40d97f36ff6b1f84e983d4c53a02f9d96072f8ca20e3b42b001b157a7 0B / 159B 7.3s
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 31.46MB / 40.71MB 7.8s
+#9 sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 12.58MB / 47.05MB 8.3s
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 38.80MB / 40.71MB 8.4s
+#9 sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 15.73MB / 47.05MB 8.5s
+#9 sha256:551afdd40d97f36ff6b1f84e983d4c53a02f9d96072f8ca20e3b42b001b157a7 159B / 159B 8.6s done
+#9 sha256:2519d92a608298d07a4952e042efa81839145e9a79e47b73fb9f2f2c2a1326a4 0B / 2.28kB 8.6s
+#9 sha256:551afdd40d97f36ff6b1f84e983d4c53a02f9d96072f8ca20e3b42b001b157a7 159B / 159B 8.6s done
+#9 sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 20.97MB / 47.05MB 9.2s
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 40.71MB / 40.71MB 9.2s done
+#9 extracting sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a
+#9 sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 40.71MB / 40.71MB 9.2s done
+#9 sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 24.12MB / 47.05MB 9.5s
+#9 sha256:2519d92a608298d07a4952e042efa81839145e9a79e47b73fb9f2f2c2a1326a4 2.28kB / 2.28kB 9.6s done
+#9 ...
+
+#14 [v2 build 5/5] RUN mvn -q -B -Dcdx.version=11.0.1 clean package
+#14 ...
+
+#15 [v0 build 5/5] RUN mvn -q -B -Dcdx.version=8.0.0 clean package
+#15 ...
+
+#16 [v1 build 5/5] RUN mvn -q -B -Dcdx.version=9.0.4 clean package
+#16 ...
+
+#9 [v0 stage-1 1/3] FROM docker.io/library/eclipse-temurin:17-jre@sha256:92999aea37688157a53a40bfcb187c30f317422e028045fd5fc5c548fde9e626
+#9 sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 36.70MB / 47.05MB 10.9s
+#9 extracting sha256:55237ac9880d41596395b2030d7fc23af58cab7740672ae7f52b996301e5101a 2.2s done
+#9 extracting sha256:693710ba20392c457fbbb59aaaa97ef6c2550b80ef7c683300be650839bb9d6b
+#9 sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 39.85MB / 47.05MB 11.7s
+#9 extracting sha256:693710ba20392c457fbbb59aaaa97ef6c2550b80ef7c683300be650839bb9d6b done
+#9 extracting sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f
+#9 sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 47.05MB / 47.05MB 12.0s
+#9 sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 47.05MB / 47.05MB 12.1s done
+#9 extracting sha256:546a8682898cfcbb58bda3955d824c9887bd4ee74d0f8e68fe3e6422d8d3026f 0.6s done
+#9 extracting sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 0.1s
+#9 extracting sha256:f3534100be4d43751819462b48ab20401400b5d85e3aa685fee8835b4967f20a 0.6s done
+#9 extracting sha256:551afdd40d97f36ff6b1f84e983d4c53a02f9d96072f8ca20e3b42b001b157a7 done
+#9 extracting sha256:2519d92a608298d07a4952e042efa81839145e9a79e47b73fb9f2f2c2a1326a4 done
+#9 DONE 13.3s
+
+#17 [v1 stage-1 2/3] WORKDIR /app
+#17 DONE 1.0s
+
+#14 [v2 build 5/5] RUN mvn -q -B -Dcdx.version=11.0.1 clean package
+#14 ...
+
+#15 [v0 build 5/5] RUN mvn -q -B -Dcdx.version=8.0.0 clean package
+#15 DONE 40.4s
+
+#18 [v0 stage-1 3/3] COPY --from=build /build/target/cdx-xxe-sink.jar /app/cdx-xxe-sink.jar
+#18 DONE 0.1s
+
+#14 [v2 build 5/5] RUN mvn -q -B -Dcdx.version=11.0.1 clean package
+#14 ...
+
+#19 [v0] exporting to image
+#19 exporting layers 0.1s done
+#19 writing image sha256:a2e892b04960ecbae211356b909af9d7dbdd8c1927b4cb36e1b078d7be005b64 done
+#19 naming to docker.io/library/pcb-cdx-xxe:8.0.0 done
+#19 DONE 0.1s
+
+#16 [v1 build 5/5] RUN mvn -q -B -Dcdx.version=9.0.4 clean package
+#16 ...
+
+#20 [v0] resolving provenance for metadata file
+#20 DONE 0.4s
+
+#14 [v2 build 5/5] RUN mvn -q -B -Dcdx.version=11.0.1 clean package
+#14 DONE 41.7s
+
+#16 [v1 build 5/5] RUN mvn -q -B -Dcdx.version=9.0.4 clean package
+#16 ...
+
+#21 [v2 stage-1 3/3] COPY --from=build /build/target/cdx-xxe-sink.jar /app/cdx-xxe-sink.jar
+#21 DONE 0.1s
+
+#16 [v1 build 5/5] RUN mvn -q -B -Dcdx.version=9.0.4 clean package
+#16 DONE 41.9s
+
+#22 [v2] exporting to image
+#22 exporting layers 0.1s done
+#22 writing image sha256:208070dd54f16e10ee2c20bbae152edd8c427578a7328940c087444c3cbb333c done
+#22 naming to docker.io/library/pcb-cdx-xxe:11.0.1 0.0s done
+#22 DONE 0.1s
+
+#23 [v1 stage-1 3/3] COPY --from=build /build/target/cdx-xxe-sink.jar /app/cdx-xxe-sink.jar
+#23 DONE 0.1s
+
+#24 [v1] exporting to image
+#24 exporting layers 0.1s done
+#24 writing image sha256:0c660e1ece3aacd08edb21fc2a296c80f2a67f7928bc87434f4dd131f5d498c3 done
+#24 naming to docker.io/library/pcb-cdx-xxe:9.0.4 done
+#24 DONE 0.1s
+
+#25 [v2] resolving provenance for metadata file
+#25 DONE 0.0s
+
+#26 [v1] resolving provenance for metadata file
+#26 DONE 0.0s
+ Image pcb-cdx-xxe:8.0.0 Built 
+ Image pcb-cdx-xxe:9.0.4 Built 
+ Image pcb-cdx-xxe:11.0.1 Built 
+ Network cyclonedx-cve-2025-64518_default Creating 
+ Network cyclonedx-cve-2025-64518_default Created 
+ Container cyclonedx-cve-2025-64518-attacker-1 Creating 
+ Container cyclonedx-cve-2025-64518-attacker-1 Created 
+ Container cyclonedx-cve-2025-64518-v1-1 Creating 
+ Container cyclonedx-cve-2025-64518-v0-1 Creating 
+ Container cyclonedx-cve-2025-64518-v2-1 Creating 
+ Container cyclonedx-cve-2025-64518-v0-1 Created 
+ Container cyclonedx-cve-2025-64518-v1-1 Created 
+ Container cyclonedx-cve-2025-64518-v2-1 Created 
+ Container cyclonedx-cve-2025-64518-attacker-1 Starting 
+ Container cyclonedx-cve-2025-64518-attacker-1 Started 
+ Container cyclonedx-cve-2025-64518-v2-1 Starting 
+ Container cyclonedx-cve-2025-64518-v1-1 Starting 
+ Container cyclonedx-cve-2025-64518-v0-1 Starting 
+ Container cyclonedx-cve-2025-64518-v2-1 Started 
+ Container cyclonedx-cve-2025-64518-v1-1 Started 
+ Container cyclonedx-cve-2025-64518-v0-1 Started 

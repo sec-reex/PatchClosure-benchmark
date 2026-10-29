@@ -1,0 +1,17 @@
+# CVE: CVE-2023-23924
+# Upstream: https://github.com/dompdf/dompdf.git
+# Fix: 7558f07f693b2ac3266089f21051e6b78c6a0c85
+
+diff --git a/src/Image/Cache.php b/src/Image/Cache.php
+index f337bbb..6141cb5 100644
+--- a/src/Image/Cache.php
++++ b/src/Image/Cache.php
+@@ -133,7 +133,7 @@ class Cache
+                 xml_set_element_handler(
+                     $parser,
+                     function ($parser, $name, $attributes) use ($options, $parsed_url, $full_url) {
+-                        if ($name === "image") {
++                        if (strtolower($name) === "image") {
+                             $attributes = array_change_key_case($attributes, CASE_LOWER);
+                             $url = $attributes["xlink:href"] ?? $attributes["href"];
+                             if (!empty($url)) {

@@ -1,0 +1,101 @@
+PCBV2-0154 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: official NukeSentinel_2505_70-80.tar.gz -> NukeSentinel_2506_70-80.tar.gz  html/includes/nukesentinel.php
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0154/
+
+diff --git a/html/includes/nukesentinel.php b/html/includes/nukesentinel.php
+--- a/html/includes/nukesentinel.php
++++ b/html/includes/nukesentinel.php
+@@ -52,9 +52,13 @@
+ // Load constant vars
+ $nsnst_const['server_ip'] = get_server_ip();
+ $nsnst_const['client_ip'] = get_client_ip();
++if(!ereg("^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $nsnst_const['client_ip'])) {$nsnst_const['client_ip'] = "none"; }
+ $nsnst_const['forward_ip'] = get_x_forwarded();
++if(!ereg("^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $nsnst_const['forward_ip'])) {$nsnst_const['forward_ip'] = "none"; }
+ $nsnst_const['remote_addr'] = get_remote_addr();
++if(!ereg("^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $nsnst_const['remote_addr'])) {$nsnst_const['remote_addr'] = "none"; }
+ $nsnst_const['remote_ip'] = get_ip();
++if(!ereg("^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $nsnst_const['remote_ip'])) {$nsnst_const['remote_ip'] = "none"; }
+ $nsnst_const['remote_long'] = sprintf("%u", ip2long($nsnst_const['remote_ip']));
+ $nsnst_const['remote_port'] = get_remote_port();
+ $nsnst_const['request_method'] = get_request_method();
+@@ -70,10 +74,6 @@
+ $nsnst_const['referer'] = get_referer();
+ $nsnst_const['ban_time'] = time();
+ $nsnst_const['ban_ip'] = "";
+-if(!ereg("([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $nsnst_const['client_ip'])) {$nsnst_const['client_ip'] = "none"; }
+-if(!ereg("([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $nsnst_const['forward_ip'])) {$nsnst_const['forward_ip'] = "none"; }
+-if(!ereg("([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $nsnst_const['remote_ip'])) {$nsnst_const['remote_ip'] = "none"; }
+-if(!ereg("([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $nsnst_const['remote_addr'])) {$nsnst_const['remote_addr'] = "none"; }
+ if (isset($_COOKIE['user'])) $uinfo = getusrinfo($_COOKIE['user']); else $uinfo = getusrinfo(''); 
+ if($uinfo['user_id'] > 1 && !empty($uinfo['username'])) {
+   $nsnst_const['ban_user_id'] = $uinfo['user_id'];
+@@ -289,8 +289,10 @@
+   }
+   // Check for XSS attack
+   if(!stristr($nsnst_const['query_string'], "index.php?url=") AND (!isset($_COOKIE['admin']) OR !is_admin($_COOKIE['admin']))) {
+-    if( (isset($name) AND eregi("http\:\/\/", $name)) OR (isset($file) AND eregi("http\:\/\/", $file)) OR (isset($libpath) AND eregi("http\:\/\/", $libpath))
+-    OR stristr($nsnst_const['query_string'], "http://")
++    if( (isset($name) AND (eregi("http\:\/\/", $name) OR eregi("https\:\/\/", $name)))
++    OR (isset($file) AND (eregi("http\:\/\/", $file) OR eregi("https\:\/\/", $file)))
++    OR (isset($libpath) AND (eregi("http\:\/\/", $libpath) OR eregi("https\:\/\/", $libpath)))
++    OR stristr($nsnst_const['query_string'], "http://") OR stristr($nsnst_const['query_string'], "https://")
+     OR ( stristr($nsnst_const['query_string'], "cmd=") AND !stristr($nsnst_const['query_string'], "&cmd") )
+     OR ( stristr($nsnst_const['query_string'], "exec") AND !stristr($nsnst_const['query_string'], "execu") )
+     OR stristr($nsnst_const['query_string'],"concat") AND !stristr($nsnst_const['query_string'], "../") ) {
+@@ -439,9 +441,10 @@
+     $pg = $nsnst_const['script_name'];
+   }
+   if($pg != "/backend.php" AND $pg != '/modules.php' AND !stristr($pg, "op=gfx") AND !stristr($pg, "gfx=gfx") AND !stristr($pg, "gfx=gfx_little")) {
+-    $checkrow = $db->sql_numrows($db->sql_query("SELECT ip_lo FROM `".$prefix."_nsnst_ip2country`"));
++    $tresult = $db->sql_query("SELECT `c2c` FROM `".$prefix."_nsnst_ip2country` WHERE `ip_lo`<='".$nsnst_const['remote_long']."' AND `ip_hi`>='".$nsnst_const['remote_long']."'");
++    $checkrow = $db->sql_numrows($tresult);
+     if($checkrow > 0) {
+-      list($c2c) = $db->sql_fetchrow($db->sql_query("SELECT `c2c` FROM `".$prefix."_nsnst_ip2country` WHERE `ip_lo`<='".$nsnst_const['remote_long']."' AND `ip_hi`>='".$nsnst_const['remote_long']."'"));
++      list($c2c) = $db->sql_fetchrow($tresult);
+     }
+     if(!$c2c) { $c2c = "00"; }
+     if($nsnst_const['ban_user_id']==1) { $nsnst_const['ban_username2'] = ""; } else { $nsnst_const['ban_username2'] = $nsnst_const['ban_username']; }
+@@ -602,24 +605,30 @@
+   if(strpos($nsnst_const['client_ip'], ', ') AND isset($nsnst_const['client_ip'])) {
+     $client_ips = explode(', ', $nsnst_const['client_ip']);
+     if($client_ips[0] != 'unknown' AND $client_ips[0] != 'none' AND !empty($client_ips[0]) AND !is_reserved($client_ips[0])) {
++      if(!ereg("^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $client_ips[0])) { $client_ips[0] = "none"; }
+       $nsnst_const['client_ip'] = $client_ips[0];
+     } else {
++      if(!ereg("^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $client_ips[1])) { $client_ips[1] = "none"; }
+       $nsnst_const['client_ip'] = $client_ips[1];
+     }
+   }
+   if(strpos($nsnst_const['forward_ip'], ', ') AND isset($nsnst_const['forward_ip'])) {
+     $x_forwardeds = explode(', ', $nsnst_const['forward_ip']);
+     if($x_forwardeds[0] != 'unknown' AND $x_forwardeds[0] != 'none' AND !empty($x_forwardeds[0]) AND !is_reserved($x_forwardeds[0])) {
++      if(!ereg("^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $x_forwardeds[0])) { $x_forwardeds[0] = "none"; }
+       $nsnst_const['forward_ip'] = $x_forwardeds[0];
+     } else {
++      if(!ereg("^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $x_forwardeds[1])) { $x_forwardeds[1] = "none"; }
+       $nsnst_const['forward_ip'] = $x_forwardeds[1];
+     }
+   }
+   if(strpos($nsnst_const['remote_addr'], ', ') AND isset($nsnst_const['remote_addr'])) {
+     $remote_addrs = explode(', ', $nsnst_const['remote_addr']);
+     if($remote_addrs[0] != 'unknown' AND $remote_addrs[0] != 'none' AND !empty($remote_addrs[0]) AND !is_reserved($remote_addrs[0])) {
++      if(!ereg("^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $remote_addrs[0])) { $remote_addrs[0] = "none"; }
+       $nsnst_const['remote_addr'] = $remote_addrs[0];
+     } else {
++      if(!ereg("^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})", $remote_addrs[1])) { $remote_addrs[1] = "none"; }
+       $nsnst_const['remote_addr'] = $remote_addrs[1];
+     }
+   }
+@@ -720,6 +729,10 @@
+ function abget_blocked($remoteip){
+   global $prefix, $db;
+   $ip = explode(".", $remoteip);
++  $ip[0] = (isset($ip[0])) ? intval($ip[0]) : '';
++  $ip[1] = (isset($ip[1])) ? intval($ip[1]) : '';
++  $ip[2] = (isset($ip[2])) ? intval($ip[2]) : '';
++  $ip[3] = (isset($ip[3])) ? intval($ip[3]) : '';
+   $testip1 = "$ip[0].*.*.*";
+   $testip2 = "$ip[0].$ip[1].*.*";
+   $testip3 = "$ip[0].$ip[1].$ip[2].*";

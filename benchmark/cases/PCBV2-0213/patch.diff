@@ -1,0 +1,215 @@
+PCBV2-0213 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: # fix: official plugin zips 1.2 → 1.3 (no_mfunc_in_comments)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0213/
+
+diff --git a/Changelog.txt b/Changelog.txt
+index a32eb94..2e1304d 100644
+--- a/Changelog.txt
++++ b/Changelog.txt
+@@ -1,3 +1,46 @@
++2013-04-11 11:14  donncha
++
++	* readme.txt, wp-cache.php: Bump version tested to 3.5.1 and
++	  version to 1.3
++
++2013-04-11 11:07  donncha
++
++	* readme.txt: Updated changelog
++
++2013-04-11 10:39  donncha
++
++	* wp-cache.php: Remove mfunc, mclude and dynamic-cached-content
++	  tags from comments. Props Frank Goossen
++	  (http://blog.futtta.be/2013/04/10/wp-safer-cache-stopgap-for-wordpress-cache-plugins-vulnerability/)
++	  and kisscsaby
++	  (http://wordpress.org/support/topic/pwn3d?replies=6)
++
++2012-12-13 08:17  donncha
++
++	* readme.txt: Bumped tested version to 3.5
++
++2012-12-03 09:59  donncha
++
++	* wp-cache-phase2.php: Hide these fs warnings from the logs
++
++2012-10-24 06:17  donncha
++
++	* wp-cache.php: Don't mention GoDaddy in the 304 warning, it's
++	  hopefully fixed.
++
++2012-10-08 10:07  donncha
++
++	* wp-cache-phase1.php, wp-cache.php: * Use LOGGED_IN_COOKIE in more
++	  places, props askapache
++	  * Make sure to check if that constant is defined before using it
++	  to avoid fatal errors
++	  * Added wpsc_get_logged_in_cookie() to get cookie value without
++	  requiring rewrites of the .htaccess file
++
++2012-10-05 11:39  donncha
++
++	* Changelog.txt: Updated changelog for version 1.2
++
+ 2012-10-05 11:36  donncha
+ 
+ 	* readme.txt, wp-cache.php: * Updated version to 1.2 and bumped
+diff --git a/readme.txt b/readme.txt
+index 2b04a4c..d2fe490 100644
+--- a/readme.txt
++++ b/readme.txt
+@@ -1,8 +1,8 @@
+ === WP Super Cache ===
+ Contributors: donncha, automattic
+ Tags: performance,caching,wp-cache,wp-super-cache,cache
+-Tested up to: 3.5
+-Stable tag: 1.2
++Tested up to: 3.5.1
++Stable tag: 1.3
+ Requires at least: 3.0
+ 
+ A very fast caching engine for WordPress that produces static html files.
+@@ -56,16 +56,20 @@ The cache directory, usually wp-content/cache/ is only for temporary files. Do n
+ 
+ == Upgrade Notice ==
+ 
+-= 1.2 =
+-Lots of bugfixes, garbage collection improved, more details at http://ocaoimh.ie/y/3i
++= 1.3 =
++Fixed mfunc exploit due to user input, add support for LOGGED_IN_COOKIE
+ 
+ == Changelog ==
+ 
++= 1.3 =
++* mfunc tags could be executed in comments. Fixed.
++* More support for sites that use the LOGGED_IN_COOKIE constant and custom cookies.
++
+ = 1.2 =
+ * Garbage collection of old cache files is significantly improved. I added a scheduled job that keeps an eye on things and restarts the job if necessary. Also, if you enable caching from the Easy page garbage collection will be enabled too.
+ * Editors can delete single cached files from the admin bar now.
+ * Fixed the cached page counter on the settings page.
+-* Some sites that updated to 1.0 experienced too much garbage collection. There are still stragglers out there who haven.t upgraded but that.s fixed now!
++* Some sites that updated to 1.0 experienced too much garbage collection. There are still stragglers out there who haven't upgraded but that's fixed now!
+ * Supercached mobile files are now used as there was a tiny little typo that needed fixing.
+ * If your site is in a directory and you saw problems updating a page then that should be fixed now.
+ * The deactivate hook has been changed so your configuration isn.t hosed when you upgrade. Unfortunately this will only happen after you do this upgrade.
+diff --git a/wp-cache-phase1.php b/wp-cache-phase1.php
+index 55576fe..3d8ee3e 100644
+--- a/wp-cache-phase1.php
++++ b/wp-cache-phase1.php
+@@ -337,8 +337,12 @@ function wp_cache_late_loader() {
+ 
+ function wp_cache_get_cookies_values() {
+ 	$string = '';
++	if ( defined( 'LOGGED_IN_COOKIE' ) )
++		$logged_in_cookie = preg_quote( constant( 'LOGGED_IN_COOKIE' ) );
++	else	
++		$logged_in_cookie = 'wordpress_logged_in';
+ 	while ($key = key($_COOKIE)) {
+-		if ( preg_match( "/^wp-postpass|^wordpress_logged_in|^comment_author_/", $key ) ) {
++		if ( preg_match( "/^wp-postpass|^" . $logged_in_cookie . "|^comment_author_/", $key ) ) {
+ 			if ( isset( $GLOBALS[ 'wp_super_cache_debug' ] ) && $GLOBALS[ 'wp_super_cache_debug' ] ) wp_cache_debug( "Cookie detected: $key", 5 );
+ 			$string .= $_COOKIE[ $key ] . ",";
+ 		}
+diff --git a/wp-cache-phase2.php b/wp-cache-phase2.php
+index 000dadd..c607b48 100644
+--- a/wp-cache-phase2.php
++++ b/wp-cache-phase2.php
+@@ -602,11 +602,11 @@ function wp_cache_get_ob(&$buffer) {
+ 				if ( isset( $GLOBALS[ 'wp_super_cache_debug' ] ) && $GLOBALS[ 'wp_super_cache_debug' ] ) wp_cache_debug( "Warning! The file $tmp_wpcache_filename was empty. Did not rename to {$blog_cache_dir}{$cache_filename}", 5 );
+ 				@unlink( $tmp_wpcache_filename );
+ 			} else {
+-				if ( !rename( $tmp_wpcache_filename, $blog_cache_dir . $cache_filename ) ) {
++				if ( !@rename( $tmp_wpcache_filename, $blog_cache_dir . $cache_filename ) ) {
+ 					if ( false == is_dir( $blog_cache_dir ) )
+ 						@wp_mkdir_p( $blog_cache_dir );
+-					unlink( $blog_cache_dir . $cache_filename );
+-					rename( $tmp_wpcache_filename, $blog_cache_dir . $cache_filename );
++					@unlink( $blog_cache_dir . $cache_filename );
++					@rename( $tmp_wpcache_filename, $blog_cache_dir . $cache_filename );
+ 				}
+ 				if ( isset( $GLOBALS[ 'wp_super_cache_debug' ] ) && $GLOBALS[ 'wp_super_cache_debug' ] ) wp_cache_debug( "Renamed temp wp-cache file to {$blog_cache_dir}$cache_filename", 5 );
+ 				$added_cache = 1;
+diff --git a/wp-cache.php b/wp-cache.php
+index 059ce4d..6e38ed7 100644
+--- a/wp-cache.php
++++ b/wp-cache.php
+@@ -3,7 +3,7 @@
+ Plugin Name: WP Super Cache
+ Plugin URI: http://ocaoimh.ie/wp-super-cache/
+ Description: Very fast caching plugin for WordPress.
+-Version: 1.2
++Version: 1.3
+ Author: Donncha O Caoimh
+ Author URI: http://ocaoimh.ie/
+ */
+@@ -321,7 +321,7 @@ function wp_cache_manager_error_checks() {
+ 			<ol><li> <?php _e( 'Set the plugin to legacy mode and enable mobile support.', 'wp-super-cache' ); ?></li>
+ 			<li> <?php _e( 'Scroll down the Advanced Settings page and click the <strong>Update Mod_Rewrite Rules</strong> button.', 'wp-super-cache' ); ?></li>
+ 			<li> <?php printf( __( 'Delete the plugin mod_rewrite rules in %s.htaccess enclosed by <code># BEGIN WPSuperCache</code> and <code># END WPSuperCache</code> and let the plugin regenerate them by reloading this page.', 'wp-super-cache' ), $home_path ); ?></li>
+-			<li> <?php printf( __( 'Add the rules yourself. Edit %s.htaccess and find the block of code enclosed by the lines <code># BEGIN WPSuperCache</code> and <code># END WPSuperCache</code>. There are two sections that look very similar. Just below the line <code>%%{HTTP:Cookie} !^.*(comment_author_|wordpress_logged_in|wp-postpass_).*$</code> add these lines: (do it twice, once for each section)', 'wp-super-cache' ), $home_path ); ?></p>
++			<li> <?php printf( __( 'Add the rules yourself. Edit %s.htaccess and find the block of code enclosed by the lines <code># BEGIN WPSuperCache</code> and <code># END WPSuperCache</code>. There are two sections that look very similar. Just below the line <code>%%{HTTP:Cookie} !^.*(comment_author_|%s|wp-postpass_).*$</code> add these lines: (do it twice, once for each section)', 'wp-super-cache' ), $home_path, wpsc_get_logged_in_cookie() ); ?></p>
+ 			<div style='padding: 2px; margin: 2px; border: 1px solid #333; width:400px; overflow: scroll'><pre><?php echo "RewriteCond %{HTTP_user_agent} !^.*(" . addcslashes( implode( '|', $wp_cache_mobile_browsers ), ' ' ) . ").*\nRewriteCond %{HTTP_user_agent} !^(" . addcslashes( implode( '|', $wp_cache_mobile_prefixes ), ' ' ) . ").*"; ?></pre></div></li></ol></div><?php 
+ 	}
+ 
+@@ -957,7 +957,7 @@ jQuery(document).ready(function(){
+ 					echo "</strike>";
+ 					echo "<p><strong>" . __( 'Warning! 304 browser caching is only supported when not using mod_rewrite caching.', 'wp-super-cache' ) . "</strong></p>";
+ 				} else {
+-					?><em><?php _e( '304 support is disabled by default because in the past GoDaddy had problems with some of the headers used.', 'wp-super-cache' ); ?></em><br /><?php
++					?><em><?php _e( '304 support is disabled by default because some hosts have had problems with the headers used in the past.', 'wp-super-cache' ); ?></em><br /><?php
+ 				}
+ 				?><label><input type='checkbox' name='wp_cache_not_logged_in' <?php if( $wp_cache_not_logged_in ) echo "checked"; ?> value='1'> <?php _e( 'Don&#8217;t cache pages for <acronym title="Logged in users and those that comment">known users</acronym>.', 'wp-super-cache' ); echo " <em>(" . __( "Recommended", "wp-super-cache" ) . ")</em>"; ?></label><br />
+ 				<label><input type='checkbox' name='wp_cache_no_cache_for_get' <?php if( $wp_cache_no_cache_for_get ) echo "checked"; ?> value='1'> <?php _e( 'Don&#8217;t cache pages with GET parameters. (?x=y at the end of a url)', 'wp-super-cache' ); ?></label><br />
+@@ -2724,6 +2724,17 @@ function wpsc_update_htaccess_form( $short_form = true ) {
+ 	}
+ }
+ 
++/* 
++ * Return LOGGED_IN_COOKIE if it doesn't begin with wordpress_logged_in
++ * to avoid having people update their .htaccess file
++ */
++function wpsc_get_logged_in_cookie() {
++	$logged_in_cookie = 'wordpress_logged_in';
++	if ( defined( 'LOGGED_IN_COOKIE' ) && substr( constant( 'LOGGED_IN_COOKIE' ), 0, 19 ) != 'wordpress_logged_in' ) 
++		$logged_in_cookie = constant( 'LOGGED_IN_COOKIE' );
++	return $logged_in_cookie;
++}
++
+ function wpsc_get_htaccess_info() {
+ 	global $wp_cache_mobile_enabled, $wp_cache_mobile_prefixes, $wp_cache_mobile_browsers, $wp_cache_disable_utf8;
+ 	if ( isset( $_SERVER[ "PHP_DOCUMENT_ROOT" ] ) ) {
+@@ -2767,7 +2778,7 @@ function wpsc_get_htaccess_info() {
+ 	}
+ 	$condition_rules[] = "RewriteCond %{REQUEST_METHOD} !POST";
+ 	$condition_rules[] = "RewriteCond %{QUERY_STRING} !.*=.*";
+-	$condition_rules[] = "RewriteCond %{HTTP:Cookie} !^.*(comment_author_|wordpress_logged_in|wp-postpass_).*$";
++	$condition_rules[] = "RewriteCond %{HTTP:Cookie} !^.*(comment_author_|" . wpsc_get_logged_in_cookie() . "|wp-postpass_).*$";
+ 	$condition_rules[] = "RewriteCond %{HTTP:X-Wap-Profile} !^[a-z0-9\\\"]+ [NC]";
+ 	$condition_rules[] = "RewriteCond %{HTTP:Profile} !^[a-z0-9\\\"]+ [NC]";
+ 	if ( $wp_cache_mobile_enabled ) {
+@@ -3126,4 +3137,24 @@ function supercache_admin_bar_render() {
+ }
+ add_action( 'wp_before_admin_bar_render', 'supercache_admin_bar_render' );
+ 
++add_filter( 'preprocess_comment','no_mfunc_in_comments' );
++add_filter( 'comment_text','no_mfunc_in_comments' );
++add_filter( 'comment_excerpt','no_mfunc_in_comments' );
++add_filter( 'comment_text_rss','no_mfunc_in_comments' );
++
++function no_mfunc_in_comments( $comment_data ) {
++	if ( is_array( $comment_data ) )
++		$text = $comment_data[ 'comment_content' ];
++	else
++		$text = $comment_data;
++
++	if ( preg_match( '/<!--\s*mclude|<!--\s*mfunc|<!--\s*dynamic-cached-content/i', $text )) { 
++		$text = preg_replace( '#(<!--\s*(mclude|mfunc|dynamic-cached-content).*<!-+\s*/\s*(mfunc|mclude|dynamic-cached-content)\s*-+>)#ism','<!-- unsafe comment zapped -->', $text );
++		if ( is_array( $comment_data ) )
++			$comment_data[ 'comment_content' ] = $text;
++		else
++			$comment_data = $text;
++	}
++	return $comment_data;
++}
+ ?>

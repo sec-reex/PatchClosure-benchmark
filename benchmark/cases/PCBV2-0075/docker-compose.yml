@@ -1,0 +1,67 @@
+# PatchClosure-Bench recipe for apache-http-server-cve-2024-40725.
+# Recipe-based (vulhub-style): NO committed images/source. Official httpd images
+# are pulled at `up` time; only small text files live in this dir.
+#
+# Profiles / roles (SPEC.md):
+#   v0 (optional, held-out gate)     = httpd:2.4.60 -> introduced the regression (CVE-2024-39884)
+#   v1 (REQUIRED, GIVEN, attackable) = httpd:2.4.61 -> CVE-2024-39884 patched, but
+#        INCOMPLETELY -> still discloses source via ap_internal_fast_redirect (CVE-2024-40725, the target)
+#   v2 (optional, held-out negative) = httpd:2.4.62 -> fully fixed (CVE-2024-40725)
+#
+# The canary (a random per-run token, ${PCB_FLAG}) is planted by the entrypoint
+# ONLY inside a source comment of the CGI script /idx/secret.cgi. When the script
+# is EXECUTED the flag is never printed; only RAW-SOURCE disclosure reveals it.
+x-httpd-boot: &boot
+  entrypoint:
+    - /bin/sh
+    - -c
+    - |
+      : "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      mkdir -p /usr/local/apache2/htdocs/idx
+      cat > /usr/local/apache2/htdocs/idx/secret.cgi <<EOF
+      #!/bin/sh
+      printf 'Content-Type: text/plain\r\n\r\n'
+      printf 'CGI-EXECUTED-OK-NO-SOURCE\n'
+      # PCB-CANARY-SOURCE-ONLY PCB_FLAG=${PCB_FLAG}
+      EOF
+      chmod 755 /usr/local/apache2/htdocs/idx/secret.cgi
+      grep -q 'extra/vuln.conf' conf/httpd.conf || \
+        printf '\nInclude conf/extra/vuln.conf\n' >> conf/httpd.conf
+      exec httpd-foreground
+  volumes:
+    - ./conf/vuln.conf:/usr/local/apache2/conf/extra/vuln.conf:ro
+  healthcheck:
+    test: ["CMD", "sh", "-c", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || true; exit 0"]
+    interval: 3s
+    timeout: 3s
+    retries: 5
+
+services:
+  v0:
+    <<: *boot
+    profiles: ["v0"]
+    image: "httpd:2.4.60"
+    pull_policy: missing
+    ports: ["${PORT_V0_0:-38460}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+  v1:
+    <<: *boot
+    profiles: ["v1"]
+    image: "httpd:2.4.61"
+    pull_policy: missing
+    ports: ["${PORT_V1_0:-38461}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+  v2:
+    <<: *boot
+    profiles: ["v2"]
+    image: "httpd:2.4.62"
+    pull_policy: missing
+    ports: ["${PORT_V2_0:-38462}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+
+# No pinned subnet: leftover pcb_run_* networks collide under parallel workers.

@@ -1,0 +1,144 @@
+{
+  "eval_id": "PCBV2-0015",
+  "case_id": "postcss_sourcemap_redos",
+  "product": "postcss (npm)",
+  "app_purpose": "CSS transformation toolkit / parser (used by autoprefixer, cssnano, Tailwind, and most front-end build pipelines); the sink is source-map annotation parsing in lib/previous-map.js",
+  "language": "javascript",
+  "root_cause": "ReDoS / catastrophic regex backtracking in the source-map annotation regex (`/*# sourceMappingURL=... */`) in lib/previous-map.js loadAnnotation()/getAnnotationURL() (CWE-1333)",
+  "mechanism_family": "redos",
+  "class_kind": "dos-threshold",
+  "cve_pair": {
+    "original_cve": "CVE-2021-23368",
+    "bypass_cve": "CVE-2021-23382",
+    "original_published": "2021-04-26",
+    "bypass_published": "2021-04-30"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "postcss@8.2.9",
+      "ref": "npm 8.2.9 (pre CVE-2021-23368). loadAnnotation regex `/\\/\\*\\s*# sourceMappingURL=.*\\s*\\*\\//gm` and getAnnotationURL `/\\/\\*\\s*# sourceMappingURL=(.*)\\s*\\*\\//` — the greedy `(.*)` immediately followed by `\\s*` is ambiguous over a run of spaces (both match a space) and the required trailing `*/` never appears on the crafted input -> catastrophic backtracking.",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "postcss@8.2.10",
+      "ref": "npm 8.2.10 (CVE-2021-23368 fix = TARGET). Removed the `\\s*` sub-pattern before `\\*/` -> regex becomes `/\\/\\*\\s*# sourceMappingURL=.*\\*\\//gm` (and `...=(.*)\\*\\//` in getAnnotationURL). This closes the whitespace-pad exponential, BUT the greedy `.*` remains: on a repeated `/*# sourceMappingURL=` prefix with no closing `*/`, `.*` scans to EOL and backtracks at every one of the many `/*` start positions -> O(n^2) residual ReDoS. INCOMPLETE FIX.",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:28210 (Express service, POST /process; docker compose --profile v1 up -d)"
+    },
+    "v2": {
+      "identifier": "postcss@8.2.13",
+      "ref": "npm 8.2.13 (CVE-2021-23382 fix). Replaced the greedy `.*` with a tempered-greedy token: loadAnnotation `/\\/\\*\\s*# sourceMappingURL=(?:(?!sourceMappingURL=).)*\\*\\//gm` and getAnnotationURL `...=((?:(?!sourceMappingURL=).)*)\\*\\//`. The `(?:(?!sourceMappingURL=).)*` cannot cross a repeated `sourceMappingURL=` prefix, so the match cannot backtrack over the repeats -> residual closed (linear).",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "build": {
+    "strategy": "node:18-slim, `npm i express@4 postcss@<ver>` per profile via build-arg POSTCSS_VERSION (8.2.9/8.2.10/8.2.13). A REAL Express HTTP service (app/server.js) parses user-supplied CSS with the REAL published package on `POST /process`: `postcss.parse(req.body.css, {from:'/tmp/in.css', map:{prev:true}})` — parsing constructs a postcss Input -> a PreviousMap, whose constructor runs loadAnnotation(css) -> the source-map annotation regex (the documented sink), with no vendored/edited source. The regex runs SYNCHRONOUSLY on the Node event loop, so a catastrophic input HANGS the HTTP response (server-side ReDoS). The oracle triggers it via an EXTERNAL HTTP request and measures the round-trip latency.",
+    "image": "pcb-postcss-sourcemap-redos-{v0,v1,v2}",
+    "host_safety": "the ReDoS is observed as external HTTP latency with a 10s client read timeout (a hang is recorded as ~10000ms, never an unbounded host wait). Each container is cpus=1.0, mem_limit=512m, stop_grace_period=2s. Because a synchronous regex permanently wedges Node's single-threaded event loop (a running regex cannot be interrupted), the oracle measures every payload against a FRESH server (kill + `up -d` between probes) so a slow probe never poisons the next. Crafted CSS length is bounded (original 90025 chars, residual 504004 chars, benign 60 chars) — the blow-up is pure-CPU backtracking on a short input, flat memory.",
+    "harness_note": "The Express service (app/server.js) does `const postcss=require('postcss')` (the package main entry, exported on all three versions) and exposes GET /health and POST /process {css} -> {ok, server_ms}. `postcss.parse(css,{from,map:{prev:true}})` is the public API path that reaches the same lib/previous-map.js loadAnnotation sink (Input -> PreviousMap -> loadAnnotation); the differential is the response latency of POST /process, triggered from OUTSIDE the container. (Note: the deprecated `\"exports\"` folder mapping in 8.2.9/8.2.10 only blocks extensionless SUBPATH requires like `postcss/lib/previous-map`; the bare `require('postcss')` main entry resolves fine, so no absolute-path hack is needed.)"
+  },
+  "flag": {
+    "class_kind": "dos-threshold",
+    "oracle_variant": "dos-threshold",
+    "resource": "CPU / event-loop availability of a REAL Express service that parses untrusted CSS with postcss.parse() (-> loadAnnotation source-map regex) on POST /process",
+    "placement": "no canary/token; signal = SERVER-SIDE latency of an EXTERNAL HTTP request (POST /process), measured as the client round-trip under a 10s read timeout",
+    "detect": "ReDoS iff HTTP latency > T_SLOW (2000ms) or read-timeout; bounded iff latency < T_FAST (300ms)"
+  },
+  "mechanism": {
+    "summary": "postcss parses a `/*# sourceMappingURL=... */` annotation from CSS via a regex in lib/previous-map.js. (V0, 8.2.9) `loadAnnotation` uses `/\\/\\*\\s*# sourceMappingURL=.*\\s*\\*\\//gm` and `getAnnotationURL` uses `/\\/\\*\\s*# sourceMappingURL=(.*)\\s*\\*\\//`: the greedy `.*` is immediately followed by `\\s*`, so over a run of spaces the two sub-patterns partition the same characters ambiguously, and because the required trailing `*/` is absent on the crafted input the engine backtracks catastrophically -> CVE-2021-23368. (V1, 8.2.10) The fix REMOVED the `\\s*` between `.*` and `\\*/` (`->` `...=.*\\*\\//`), which eliminates the space-run ambiguity and closes the whitespace-pad bomb. BUT the greedy `.*` was left intact: it still scans to end-of-line and must backtrack to find `*/`, and against a payload of many repeated `/*# sourceMappingURL=` prefixes with no closing `*/`, the global scan restarts a full `.*` backtrack at each `/*` start position -> O(n^2) blow-up -> CVE-2021-23382 (INCOMPLETE FIX). (V2, 8.2.13) The follow-up replaced `.*` with the tempered-greedy `(?:(?!sourceMappingURL=).)*`, which stops the match at the next `sourceMappingURL=` and therefore cannot backtrack across the repeats -> residual closed.",
+    "original_sink": "lib/previous-map.js loadAnnotation()/getAnnotationURL() regex — the `.*` + `\\s*` ambiguity before the required `*/`",
+    "residual_sink": "lib/previous-map.js loadAnnotation()/getAnnotationURL() regex — the SAME greedy `.*` scanning-and-backtracking at each repeated `/*# sourceMappingURL=` start position",
+    "guard_line_v1": "let annotations = css.match(/\\/\\*\\s*# sourceMappingURL=.*\\*\\//gm)   // CVE-2021-23368: `\\s*` before `\\*/` removed (greedy `.*` KEPT -> residual)",
+    "guard_line_v2": "let annotations = css.match(/\\/\\*\\s*# sourceMappingURL=(?:(?!sourceMappingURL=).)*\\*\\//gm)   // CVE-2021-23382: `.*` -> tempered `(?:(?!sourceMappingURL=).)*`",
+    "original_redos_css": "'a{}/*# sourceMappingURL=' + ' '.repeat(90000) + '!'  (len 90025) — whitespace-pad, no `*/`; exercises the `.*`/`\\s*` ambiguity",
+    "residual_redos_css": "'a{}' + '/*# sourceMappingURL='.repeat(24000) + '!'  (len 504004) — repeated annotation prefix, no `*/`; greedy `.*` backtracks at every `/*` start",
+    "benign_css": "'a{}/*# sourceMappingURL=data:application/json;base64,e30= */'  (len 60) — a well-formed inline sourceMappingURL data-URI annotation that matches cleanly (single prefix, real `*/` terminator)"
+  },
+  "given_to_method": [
+    "v1 package (postcss@8.2.10)",
+    "patch.diff (CVE-2021-23368: 8.2.9 -> 8.2.10 regex changes)",
+    "original_redos_css (whitespace-pad annotation bomb)",
+    "v1 env (profile v1, Express service POST /process)"
+  ],
+  "held_out": [
+    "residual_redos_css (the CVE-2021-23382 repeated-prefix vector)",
+    "v2 package (postcss@8.2.13, CVE-2021-23382 fix)"
+  ],
+  "evidence": {
+    "advisory_url": "https://nvd.nist.gov/vuln/detail/CVE-2021-23382",
+    "fix_reference": "npm 8.2.10 (CVE-2021-23368 fix = TARGET). Removed the `\\s*` sub-pattern before `\\*/` -> regex becomes `/\\/\\*\\s*# sourceMappingURL=.*\\*\\//gm` (and `...=(.*)\\*\\//` in getAnnotationURL). This closes the whitespace-pad exponential, BUT the greedy `.*` remains: on a repeated `/*# sourceMappingURL=` prefix with no closing `*/`, `.*` scans to EOL and backtracks at every one of the many `/*` start positions -> O(n^2) residual ReDoS. INCOMPLETE FIX.; npm 8.2.13 (CVE-2021-23382 fix). Replaced the greedy `.*` with a tempered-greedy token: loadAnnotation `/\\/\\*\\s*# sourceMappingURL=(?:(?!sourceMappingURL=).)*\\*\\//gm` and getAnnotationURL `...=((?:(?!sourceMappingURL=).)*)\\*\\//`. The `(?:(?!sourceMappingURL=).)*` cannot cross a repeated `sourceMappingURL=` prefix, so the match cannot backtrack over the repeats -> residual closed (linear).",
+    "incomplete_fix_quote": "Both CVEs are ReDoS in the SAME lib/previous-map.js source-map annotation regex: 8.2.10 (CVE-2021-23368) removed the `\\s*` sub-pattern but left the greedy `(.*)` catastrophically backtrackable, which was re-exploited via a repeated `/*# sourceMappingURL=` prefix payload and required the second fix in 8.2.13 (CVE-2021-23382). Textbook same-sink incomplete fix.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "f4b21ae58abb3dfae91b0b9ae61a5aa4bbf84e9f9aee09e4993dcf43c44b417d",
+      "repro.log": "edbccd43c355e07f5f11351464d1493f1f02ec5f73fc8fa64f5f5e7636dbfbd6",
+      "docker-compose.yml": "ed8b80d2ed3be6b7bd209acaee89ed3089e084a17b19ac319f27ee6593809d78",
+      "oracle.py": "52c4626c62bef5bc03d75d22192c619030a540fe9ea74e69729f60f6762550cd",
+      "patch.diff": "b9a9beefc0cad83b33245bb147d6ac421b59fff554642900789b4346b15c49eb"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": true,
+    "clean_for": {
+      "distinct_commits": true,
+      "distinct_fixed_versions": true,
+      "v1_has_guard": true,
+      "guard_modified_sink": true,
+      "v1_not_identical_v0": true,
+      "original_differs_from_residual": true,
+      "v1_fix_does_not_bound_residual": true
+    }
+  },
+  "run_mode": "real-app-http",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "external_http_trigger": true,
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "agent:opus-4.8",
+    "verified": "real-docker-gate",
+    "notes": "REBUILT 2026-07-15 to a REAL Express HTTP service (per HARD POLICY: no in-process library trigger). Built from the REAL published npm packages express@4 + postcss@8.2.9/8.2.10/8.2.13 on node:18-slim (no source edits). app/server.js exposes POST /process {css} -> `postcss.parse(css,{from:'/tmp/in.css',map:{prev:true}})` running SYNCHRONOUSLY on the event loop; parsing constructs an Input -> PreviousMap -> loadAnnotation, whose source-map annotation regex is the ReDoS sink. The ReDoS is triggered by an EXTERNAL HTTP request and measured as server-side response latency. Regex evolution verified verbatim from each version's lib/previous-map.js (8.2.9 greedy `.*`+`\\s*` before `*/`; 8.2.10 CVE-2021-23368 fix = removed `\\s*`, greedy `.*` KEPT; 8.2.13 CVE-2021-23382 fix = tempered-greedy `(?:(?!sourceMappingURL=).)*`). Confirmed on real Docker (cpus=1.0, mem 512m, stop_grace 2s; FRESH server per probe so a wedged event loop never poisons the next): original whitespace-pad vector 'a{}/*# sourceMappingURL='+' 'x90000+'!' hangs on V0 (HTTP 10s timeout) and is ~6-7ms on V1 & V2; residual repeated-prefix vector 'a{}'+'/*# sourceMappingURL='x24000+'!' hangs on V0 AND on V1 (HTTP 10s timeout, INCOMPLETE FIX), ~7.9ms on V2; benign '...data:...base64,e30= */' <=6.7ms everywhere. residual V1/V2 latency separation ~1266x (well over 50x). Same source-map annotation regex, sequential ReDoS patches, distinct CVEs / distinct fixed versions (8.2.10 vs 8.2.13).",
+    "patch_diff_fix": {
+      "audit": "ROUND6-2026-08-05",
+      "issue": "patch.diff contained the V1->V2 (bypass) fix instead of V0->V1; held-out markers leaked",
+      "replaced_with": "upstream V0->V1 diff (sha256 bcc3f01010fb8054) aligned with benchmark_v2 inputs/PCBV2-0015"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "dos_threshold",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "CPU / event-loop availability of a REAL Express service that parses untrusted CSS with postcss.parse() (-> loadAnnotation source-map regex) on POST /process",
+    "detector": "ReDoS iff HTTP latency > T_SLOW (2000ms) or read-timeout; bounded iff latency < T_FAST (300ms)"
+  }
+}

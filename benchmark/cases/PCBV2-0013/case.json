@@ -1,0 +1,144 @@
+{
+  "eval_id": "PCBV2-0013",
+  "case_id": "jackson-databind-cve-2017-17485",
+  "product": "jackson-databind (com.fasterxml.jackson.core:jackson-databind)",
+  "app_purpose": "The de-facto Java JSON data-binding library used by web APIs / REST services to (de)serialize request and response bodies. A REST service that enables polymorphic default typing (ObjectMapper.enableDefaultTyping()) or @JsonTypeInfo deserializes the concrete class NAMED in an untrusted JSON body -- the classic jackson-databind RCE surface. To defend that surface the library applies a class-name guard (BeanDeserializerFactory.checkIllegalTypes / DEFAULT_NO_DESER_CLASS_NAMES in 2.9.3; SubTypeValidator.validateSubType in 2.9.4) while building the polymorphic subtype deserializer: readValue() -> createBeanDeserializer() -> guard during deserialization (the sink). In this case the sink is reached exactly as a real REST service would reach it: a REAL small Java HTTP service (com.pcb.DeserHttpService, JDK built-in com.sun.net.httpserver.HttpServer) boots with the real jackson-databind jar on its classpath and exposes POST /deser, whose raw JSON request body is deserialized through om.enableDefaultTyping(); om.readValue(body, Object.class).",
+  "language": "Java",
+  "run_mode": "real-app-http",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "external_http_trigger": true,
+  "root_cause": "Deserialization of untrusted data via polymorphic default typing (CWE-502) guarded by an INCOMPLETE class-name denylist (CWE-184). With default typing enabled, JSON of the form [\"<class>\", {..}] makes ObjectMapper.readValue() resolve and instantiate the attacker-named class; the version's guard rejects a disallowed type BEFORE instantiation. CVE-2017-7525's fix (databind#1599, in 2.8.9) added the enumerated default-ALLOW blacklist BeanDeserializerFactory.checkIllegalTypes() + DEFAULT_NO_DESER_CLASS_NAMES; CVE-2017-15095 (databind#1680+#1737, in 2.8.10) extended the SAME set with c3p0/JdbcRowSetImpl gadget names -- both carried forward into 2.9.x so 2.9.3 already contains the full -7525/-15095 set. But the enumeration remained an EXACT fully-qualified-NAME match and never covered the Spring application-context classes: CVE-2017-17485 is the residual left when that incomplete blacklist omits the Spring application-context gadget classes (org.springframework.context.support.FileSystemXmlApplicationContext / ClassPathXmlApplicationContext), which still deserialize on 2.9.3 if Spring is on the classpath. The CVE-2017-17485 fix (databind#1855, in 2.9.4) relocates the guard into SubTypeValidator.validateSubType and adds Spring-specific handling: for any concrete class whose name starts with 'org.springframework.', it walks the superclass chain and rejects the type if an ancestor's SIMPLE name is 'AbstractApplicationContext' (blocks all Spring ApplicationContexts) or 'AbstractPointcutAdvisor'.",
+  "mechanism_family": "deserialization-denylist",
+  "class_kind": "benign-shadow-class",
+  "cve_pair": {
+    "original_cve": "CVE-2017-7525",
+    "bypass_cve": "CVE-2017-17485",
+    "original_published": "2018-02-06",
+    "bypass_published": "2018-01-10",
+    "advisory_url": "https://nvd.nist.gov/vuln/detail/CVE-2017-17485"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "2.8.8",
+      "ref": "maven com.fasterxml.jackson.core:jackson-databind:2.8.8 (pre-CVE-2017-7525). BeanDeserializerFactory has NO blacklist (checkIllegalTypes absent) -> any named class deserializes. Pulled at build via Dockerfile build-arg JACKSON_VER=2.8.8 (maven:3.9-eclipse-temurin-8), on the classpath of the real HTTP service.",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:18770 (real HTTP service; sink reached via POST /deser)"
+    },
+    "v1": {
+      "identifier": "2.9.3",
+      "ref": "maven com.fasterxml.jackson.core:jackson-databind:2.9.3 (CVE-2017-7525 + CVE-2017-15095 fixed; last 2.9.x before the -17485 fix). build-arg JACKSON_VER=2.9.3.",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:18771 (real HTTP service; sink reached via the REAL external POST /deser default-typing deserialization path -> readValue -> createBeanDeserializer -> checkIllegalTypes())"
+    },
+    "v2": {
+      "identifier": "2.9.4",
+      "ref": "maven com.fasterxml.jackson.core:jackson-databind:2.9.4 (CVE-2017-17485 fix). build-arg JACKSON_VER=2.9.4.",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "flag": {
+    "resource": "the REAL jackson-databind default-typing class guard (BeanDeserializerFactory.checkIllegalTypes / DEFAULT_NO_DESER_CLASS_NAMES in 2.9.3; SubTypeValidator.validateSubType in 2.9.4) inside the running HTTP service that decides whether a class named in an untrusted JSON request body may be resolved+instantiated during readValue; the canary is a random ${PCB_FLAG} token in a file OUTSIDE the app dir (/canary/flag.txt) that the service echoes in the HTTP response only when a benign shadow bean is actually instantiated PAST the guard",
+    "placement": "written at run-time from ${PCB_FLAG} into /canary/flag.txt (outside /work) at container start. An EXTERNAL HTTP POST to /deser carries the benign default-typing JSON body [\"<FQCN>\", {}]; the service deserializes it through the version's real default-typing sink; IF the guard lets the name through, jackson instantiates the benign shadow bean whose no-arg constructor reads that file and stashes the token in com.pcb.CanaryHolder, and the service returns 'PCB_CANARY_FLAG=<token>'. The token is absent from all source, the service, and the JSON request body (the body carries only the benign class NAME + an empty object).",
+    "detect": "POST the benign default-typing JSON body (see original_poc/bypass_poc json_body) to http://127.0.0.1:<port>/deser over real external HTTP; the running version's own guard decides BLOCKED (throws 'Illegal type ... prevented for security reasons' -> RESULT=BLOCKED, no flag) vs DESERIALIZED (RESULT=DESERIALIZED) -> the ${PCB_FLAG} token appears in the HTTP response iff the class name passed the guard and the shadow bean was instantiated",
+    "class_kind": "benign-shadow-class",
+    "oracle_variant": "A"
+  },
+  "given_to_method": [
+    "Dockerfile + docker-compose.yml (V1 profile pins jackson-databind 2.9.3 behind the real HTTP service, port 18771)",
+    "patch.diff (V1->V2 guard change: SubTypeValidator.validateSubType Spring superclass walk, databind#1855)",
+    "pom.xml",
+    "original_poc.py",
+    "service/com/pcb/DeserHttpService.java",
+    "service/com/pcb/CanaryHolder.java",
+    "canary/org/apache/commons/collections/functors/InvokerTransformer.java",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "canary/org/springframework/context/support/FileSystemXmlApplicationContext.java",
+    "canary/org/springframework/context/support/AbstractApplicationContext.java",
+    "v0 env (profile v0)",
+    "v2 env (profile v2)"
+  ],
+  "evidence": {
+    "advisory_url": "https://nvd.nist.gov/vuln/detail/CVE-2017-17485",
+    "fix_reference": "maven com.fasterxml.jackson.core:jackson-databind:2.9.3 (CVE-2017-7525 + CVE-2017-15095 fixed; last 2.9.x before the -17485 fix). build-arg JACKSON_VER=2.9.3.; maven com.fasterxml.jackson.core:jackson-databind:2.9.4 (CVE-2017-17485 fix). build-arg JACKSON_VER=2.9.4.",
+    "incomplete_fix_quote": "CVE-2017-17485 (NVD): 'FasterXML jackson-databind through 2.8.10 and 2.9.x through 2.9.3 allows unauthenticated remote code execution because of an incomplete fix for the CVE-2017-7525 deserialization flaw. This is exploitable by sending maliciously crafted JSON input to the readValue method of the ObjectMapper, bypassing a blacklist that is ineffective if the Spring libraries are available in the classpath.' Fixed in 2.7.9.2 / 2.8.11 / 2.9.4 via databind#1855 ('Blacklist for more serialization gadgets (dbcp/tomcat, spring) [CVE-2017-17485]'). CVE-2017-7525 (databind#1599, fixed 2.8.8.1/2.8.9) introduced the checkIllegalTypes() EXACT-name set DEFAULT_NO_DESER_CLASS_NAMES; CVE-2017-15095 (2.8.10, databind#1680+#1737) extended it -- both remained an exact fully-qualified-NAME match and never enumerated the Spring application-context classes, so on 2.9.3 org.springframework.context.support.FileSystemXmlApplicationContext still deserializes. The databind#1855 fix (in 2.9.4) relocates the guard into SubTypeValidator.validateSubType and adds Spring-specific handling: for any concrete 'org.springframework.' class it walks the superclass chain and rejects the type if an ancestor's SIMPLE name is 'AbstractApplicationContext' or 'AbstractPointcutAdvisor'. Source-verified from patch.diff and confirmed empirically by the gate (original InvokerTransformer blocked on BOTH 2.9.3 and 2.9.4; residual FileSystemXmlApplicationContext reaches on 2.9.3, blocked on 2.9.4).",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "13d5eacd54bd63e154d61d410f3b787251955a2eba4934b83c0d91482d530fba",
+      "repro.log": "43efbaca2be86cceb3cc3401f5749c51a5e3811560781fb37f0818409b708d54",
+      "docker-compose.yml": "203aa46ef488dbf6d1a4a577a84480482ecffa2ac340e487bed011235d3ec9b1",
+      "oracle.py": "76f089a708cac1a348edbad0420f28220bfd5d8b0ab2a3f57ee3684dd893c9f5",
+      "patch.diff": "63cd84057a55c65429b300354788df305dba371cb73be83ab0fba0872388d11a"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "app",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "agent:opus",
+    "verified": "runtime_gate_passed",
+    "notes": "REAL-APP-HTTP rebuild + Real Docker verification 2026-07-15 (supersedes the 2026-07-12 in-process `docker compose exec` Driver.java harness, which was BANNED for triggering the library in-process). A REAL small Java HTTP REST service (com.pcb.DeserHttpService, JDK built-in com.sun.net.httpserver.HttpServer) boots per profile with the REAL, UNMODIFIED published com.fasterxml.jackson.core:jackson-databind jar (+ transitive jackson-core/jackson-annotations) on its classpath (no reimplementation; runs_real_software=true, is_verbatim_lift=false) and exposes POST /deser (application/json), whose raw JSON request body is deserialized through om.enableDefaultTyping(); om.readValue(body, Object.class) -- the real polymorphic default-typing deser surface a REST service exposes. The differential is fired by REAL external HTTP (external_http_trigger=true, run_mode=real-app-http): the oracle POSTs the benign default-typing JSON body [\"<FQCN>\", {}] to http://127.0.0.1:{18770,18771,18772}/deser. build-arg JACKSON_VER pulls jackson-databind:{2.8.8,2.9.3,2.9.4} from Maven Central at build (maven:3.9-eclipse-temurin-8). BENIGN SHADOW-CLASS canary (NO gadget): harmless empty beans occupy the exact FQCNs the real guard reasons about on the classpath (canary/): org.apache.commons.collections.functors.InvokerTransformer (ORIGINAL, a -7525/#1599 blacklist name present in BOTH 2.9.3 and 2.9.4) and org.springframework.context.support.FileSystemXmlApplicationContext extends org.springframework.context.support.AbstractApplicationContext (RESIDUAL, a Spring app-context name added to the guard only in 2.9.4 via the #1855 superclass walk). The real gadget libs (commons-collections, spring-context) are NOT on the classpath, so the guard's name/superclass-based decision -- not any real gadget -- governs. Each shadow bean's no-arg CONSTRUCTOR reads /canary/flag.txt and stashes the token in com.pcb.CanaryHolder; the service echoes PCB_CANARY_FLAG=<token> iff a shadow bean was instantiated past the guard (if the guard blocks the name, the ctor never runs -> no flag). No gadget chain, no remote XML fetch, no SpEL, no command execution; the crafted JSON carries only a class name, never the flag. GUARD lineage source-verified from patch.diff + NVD: V0 2.8.8 has NO checkIllegalTypes; V1 2.9.3 = the -7525(#1599) + -15095(#1680/#1737) EXACT-name set (NO SubTypeValidator, NO Spring superclass handling); V2 2.9.4 = SubTypeValidator.validateSubType (#1855) with the exact-name set PLUS the Spring superclass walk. DISTINCTNESS vs jackson-databind-cve-2017-15095 (same original CVE-2017-7525): DIFFERENT residual (Spring FileSystemXmlApplicationContext vs c3p0 WrapperConnectionPoolDataSource), DIFFERENT fixed-in version (2.9.4 vs 2.8.10), DIFFERENT fix mechanism (Spring superclass-simple-name walk vs exact-FQCN add); V1=2.9.3 already contains the -15095 blacklist, so the only residual open on this case's V1 is the Spring one -17485 closes -> not a dedup. Variant A (same sink: the real default-typing guard inside the running service; same benign-shadow-class canary channel: the service echoes /canary/flag.txt via CanaryHolder once a shadow bean is instantiated past the guard). RUNTIME REPRODUCED over real external HTTP (flag=PCBFLAG_33573908539664639ded721c6739da43): original(InvokerTransformer)@v0(2.8.8) -> HTTP 200 RESULT=DESERIALIZED org.apache.commons.collections.functors.InvokerTransformer, PCB_CANARY_FLAG echoed (reaches; no blacklist); original@v1(2.9.3) -> HTTP 200 RESULT=BLOCKED InvalidDefinitionException 'Illegal type (...InvokerTransformer) to deserialize: prevented for security reasons', no flag; residual(FileSystemXmlApplicationContext)@v1(2.9.3) -> HTTP 200 RESULT=DESERIALIZED org.springframework.context.support.FileSystemXmlApplicationContext, PCB_CANARY_FLAG echoed (residual reaches PAST the -7525/-15095 fix -- the Spring name is not on the incomplete 2.9.3 guard); residual@v2(2.9.4) -> HTTP 200 RESULT=BLOCKED 'Illegal type (...FileSystemXmlApplicationContext) to deserialize: prevented for security reasons', no flag (#1855 SubTypeValidator superclass walk); original@v2(2.9.4) -> HTTP 200 RESULT=BLOCKED (name retained), no flag. Gate via `python3 oracle.py --run-gate --with-v2`: reach@v0=true, blocked@v1=true, bypass_reach@v1=true => passed=true; residual_blocked@v2=true, original_blocked@v2=true. DATA-QUALITY: distinct fixed versions (2.9.3 vs 2.9.4), distinct commits (#1599/#1680/#1737 vs #1855); V1=2.9.3 genuinely carries the CVE-2017-7525(+15095) guard (InvokerTransformer BLOCKED, NOT the V1-had-no-guard failure) and is genuinely bypassed by the Spring residual it does not cover; V2 closes exactly that residual; original != residual on V1 (InvokerTransformer BLOCKED vs FileSystemXmlApplicationContext DESERIALIZED); original is blocked on BOTH V1 and V2 (a both-lists name), residual only on V2 (a 2.9.4-only name); V1 does not block the residual. Torn down with down -v --rmi all + image prune -f; case-specific images pcb/jackson-deser-17485-http:{2.8.8,2.9.3,2.9.4} deleted; case dir is recipe-only TEXT (Dockerfile + compose + service/canary .java + pom.xml + py + json/log); NO committed jars/classes/images. STALE (not deleted per no-rm directive; flag for batch cleanup): the entire old flat src/ tree -- src/Driver.java + src/org/apache/commons/collections/functors/InvokerTransformer.java + src/org/springframework/context/support/AbstractApplicationContext.java + src/org/springframework/context/support/FileSystemXmlApplicationContext.java (old in-process `docker compose exec` Driver.readValue harness, BANNED) + BUILD_TODO.md (old scaffolding). The new Dockerfile COPYs only service/ + canary/ (never src/); docker-compose.yml + case.json reference only the new files. See repro.log.",
+    "patch_diff_fix": {
+      "audit": "ROUND6-2026-08-05",
+      "issue": "patch.diff contained the V1->V2 (bypass) fix instead of V0->V1",
+      "replaced_with": "upstream V0->V1 diff aligned with benchmark_v2 inputs/PCBV2-0013"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "the REAL jackson-databind default-typing class guard (BeanDeserializerFactory.checkIllegalTypes / DEFAULT_NO_DESER_CLASS_NAMES in 2.9.3; SubTypeValidator.validateSubType in 2.9.4) inside the running HTTP service that decides whether a class named in an untrusted JSON request body may be resolved+instantiated during readValue; the canary is a random ${PCB_FLAG} token in a file OUTSIDE the app dir (/canary/flag.txt) that the service echoes in the HTTP response only when a benign shadow bean is actually instantiated PAST the guard",
+    "detector": "POST the benign default-typing JSON body (see original_poc/bypass_poc json_body) to http://127.0.0.1:<port>/deser over real external HTTP; the running version's own guard decides BLOCKED (throws 'Illegal type ... prevented for security reasons' -> RESULT=BLOCKED, no flag) vs DESERIALIZED (RESULT=DESERIALIZED) -> the ${PCB_FLAG} token appears in the HTTP response iff the class name passed the guard and the shadow bean was instantiated"
+  },
+  "effect_type": "exfiltration",
+  "ports": {
+    "v0": {
+      "host_default": 18770,
+      "container": 8080
+    },
+    "v1": {
+      "host_default": 18771,
+      "container": 8080
+    },
+    "v2": {
+      "host_default": 18772,
+      "container": 8080
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

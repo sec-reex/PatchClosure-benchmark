@@ -1,0 +1,65 @@
+# PatchClosure-Bench recipe for mongoose-cve-2025-23061
+# Pair: CVE-2024-53900 (original) -> CVE-2025-23061 (incomplete-fix target).
+# Canary kind = read-exfil (BUILD_GUIDE): a "secret" MongoDB document whose title carries the per-run
+# ${PCB_FLAG}. The intended object filter {"secret":false} excludes it at MongoDB, so the flag is
+# returned ONLY when a `$where` predicate widens the sift-side populate match past the version guard.
+#
+# Sink = Mongoose `Author.find().populate({ path:'books', match:<filter> })`. When `match` is an
+# ARRAY, Mongoose filters in-process via sift, whose `$where` compiles a STRING to a function (RCE/
+# injection surface). The per-version `getModelsMapForPopulate` sanitizer is the guard both CVEs concern:
+#   seed  (CVE-2024-53900): filter=[{"$where":"true"}]
+#       -> V0 mongoose@8.8.2  NO guard        -> sift admits, secret book leaks -> FLAG.
+#       -> V1 mongoose@8.8.3  non-recursive guard throws "Cannot use $where filter..." -> BLOCKED.
+#   residual (CVE-2025-23061): filter=[{"$or":[{"$where":"true"}]}]
+#       -> V1 mongoose@8.8.3  guard inspects only top-level item.$where, misses the $or-nested one
+#          -> sift admits, secret book leaks -> FLAG (residual bypass of the -53900 guard).
+#       -> V2 mongoose@8.9.5  recursive throwOn$where walks nested keys -> BLOCKED (negative control).
+#
+# Profiles: v1 (REQUIRED, GIVEN target) = 8.8.3; v0 (held-out seed env) = 8.8.2; v2 (fixed) = 8.9.5.
+# `mongo` has no profile => it starts alongside whichever app profiles are selected (shared, per-VER db).
+services:
+  mongo:
+    image: "mongo:7"
+    command: ["mongod", "--quiet", "--bind_ip_all"]
+    # no host port: reachable only from the app containers on the compose network.
+
+  v1:
+    profiles: ["v1"]
+    build: { context: . }
+    image: "pcb-mongoose-core:core"
+    command: ["node", "/app/harness.mjs"]
+    depends_on: ["mongo"]
+    environment:
+      HARNESS_VER: "v1"
+      MONGO_URL: "mongodb://mongo:27017"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-39596}:8080"]
+
+  v0:
+    profiles: ["v0"]
+    build: { context: . }
+    image: "pcb-mongoose-core:core"
+    command: ["node", "/app/harness.mjs"]
+    depends_on: ["mongo"]
+    environment:
+      HARNESS_VER: "v0"
+      MONGO_URL: "mongodb://mongo:27017"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-39595}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: { context: . }
+    image: "pcb-mongoose-core:core"
+    command: ["node", "/app/harness.mjs"]
+    depends_on: ["mongo"]
+    environment:
+      HARNESS_VER: "v2"
+      MONGO_URL: "mongodb://mongo:27017"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-39597}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.148.0/24

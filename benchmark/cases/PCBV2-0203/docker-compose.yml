@@ -1,0 +1,35 @@
+# PatchClosure-Bench recipe for struts-fileupload-interceptor-path-traversal-rce
+# (CVE-2023-50164 [S2-066] -> CVE-2024-53677 [S2-067]). REAL Struts 2 WAR on Tomcat.
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: "."
+      dockerfile: "Dockerfile"
+      args: {STRUTS_VER: "6.3.0", MODE: "legacy"}
+    image: "pcb/struts-fileupload:6.3.0"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: "."
+      dockerfile: "Dockerfile"
+      args: {STRUTS_VER: "6.3.0.2", MODE: "legacy"}
+    image: "pcb/struts-fileupload:6.3.0.2"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: "."
+      dockerfile: "Dockerfile"
+      args: {STRUTS_VER: "6.4.0", MODE: "migrated"}
+    image: "pcb/struts-fileupload:6.4.0"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0}:8080"]

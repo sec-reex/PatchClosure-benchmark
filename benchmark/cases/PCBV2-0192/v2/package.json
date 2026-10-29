@@ -1,0 +1,8 @@
+{
+  "name": "pcb-simple-git-6951-v2",
+  "private": true,
+  "description": "V2 = REAL published simple-git@3.36.0 -- the CVE-2026-6951 fix. It floors @simple-git/argv-parser to ^1.1.0 (resolves to 1.1.1), whose expanded config-key blocklist now rejects filter.<x>.smudge (allowUnsafeFilter) as well as core.pager/editor, credential.helper, gpg.program, diff.textconv, merge.driver, sequence.editor, init.templateDir, etc. -- closing the residual.",
+  "dependencies": {
+    "simple-git": "3.36.0"
+  }
+}

@@ -1,0 +1,101 @@
+# PatchClosure-Bench recipe for apache-http-server-mod-proxy-cve-2011-3639.
+# Canary kind = ssrf-sidecar: an INTERNAL-ONLY service (`sidecar`, no host port)
+# returns ${PCB_FLAG} for any path on :80. SSRF success = mod_proxy is coerced into
+# routing the request to `sidecar` (instead of the intended `legit-backend`) and the
+# flag body comes back in the proxied response.
+#
+# Two reverse-proxy front-ends onto the SAME mod_proxy routing sink (see conf/httpd.conf):
+#   port 80   = RewriteRule .* http://legit-backend%{REQUEST_URI} [P]   (ORIGINAL vector)
+#   port 8080 = ProxyPassMatch ^(.*)$ http://legit-backend$1            (RESIDUAL vector)
+# Attack request-target "@sidecar/" -> http://legit-backend@sidecar/ (legit-backend becomes
+# userinfo, `sidecar` becomes the real host).
+#
+# The three app images are built from ONE httpd 2.2.21 source, differing only in the
+# mod_rewrite.c / mod_proxy.c request-URI guard (PATCHLEVEL, see patch_source.py):
+#   v0 = pristine 2.2.21                 (CVE-2011-3368 vulnerable)          ports 38260/38263
+#   v1 = mod_rewrite.c guarded ONLY      (CVE-2011-3368 fixed, INCOMPLETE)   ports 38261/38264  <- TARGET
+#        RewriteRule [P] blocked; the sibling ProxyPassMatch front-end still reaches the sink
+#        -> CVE-2011-3639 / CVE-2011-4317 residual
+#   v2 = mod_rewrite.c + mod_proxy.c     (residual fixed; == 2.2.22)         ports 38262/38265
+# `sidecar` and `legit-backend` have no profile -> always up.
+# Per version: host port <n>0 -> :80 (RewriteRule), <n>3 -> :8080 (ProxyPassMatch).
+services:
+  sidecar:
+    image: "python:3.10-slim"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    # Internal-only: NO host port. Returns the flag for any path on :80.
+    command:
+      - python3
+      - -c
+      - |
+        import http.server, os
+        FLAG = os.environ["PCB_FLAG"].encode()
+        class H(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.0"
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(FLAG)))
+                self.end_headers()
+                self.wfile.write(FLAG)
+            def log_message(self, *a):
+                pass
+        http.server.HTTPServer(("0.0.0.0", 80), H).serve_forever()
+
+  legit-backend:
+    image: "python:3.10-slim"
+    # The INTENDED proxy backend (internal). Normal requests land here.
+    command:
+      - python3
+      - -c
+      - |
+        import http.server
+        class H(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.0"
+            def do_GET(self):
+                b = b"legit-backend-ok"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+            def log_message(self, *a):
+                pass
+        http.server.HTTPServer(("0.0.0.0", 80), H).serve_forever()
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args:
+        PATCHLEVEL: "v1"
+    image: "pcb-httpd:2.2.21-v1"
+    ports: ["${PORT_V1_0:-38261}:80", "${PORT_V1_1:-38264}:8080"]
+    depends_on: ["sidecar", "legit-backend"]
+
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args:
+        PATCHLEVEL: "v0"
+    image: "pcb-httpd:2.2.21-v0"
+    ports: ["${PORT_V0_0:-38260}:80", "${PORT_V0_1:-38263}:8080"]
+    depends_on: ["sidecar", "legit-backend"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        PATCHLEVEL: "v2"
+    image: "pcb-httpd:2.2.21-v2"
+    ports: ["${PORT_V2_0:-38262}:80", "${PORT_V2_1:-38265}:8080"]
+    depends_on: ["sidecar", "legit-backend"]
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.77.0/24

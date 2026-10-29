@@ -1,0 +1,257 @@
+# CVE-2026-34084
+# upstream: https://github.com/PHPOffice/PhpSpreadsheet
+# fix: b6c44a4ce907c4a861db040999eb58fb59570c14 (1.30.3 / GHSA-q4q6-r8wh-5cgh)
+diff --git a/src/PhpSpreadsheet/Helper/Downloader.php b/src/PhpSpreadsheet/Helper/Downloader.php
+index 0cac69c357..e5911432ba 100644
+--- a/src/PhpSpreadsheet/Helper/Downloader.php
++++ b/src/PhpSpreadsheet/Helper/Downloader.php
+@@ -23,17 +23,15 @@ class Downloader
+ 
+     public function __construct(string $folder, string $filename, ?string $filetype = null)
+     {
+-        if ((is_dir($folder) === false) || (is_readable($folder) === false)) {
+-            throw new Exception('Folder is not accessible');
+-        }
+-        $filepath = "{$folder}/{$filename}";
+-        $this->filepath = (string) realpath($filepath);
+-        $this->filename = basename($filepath);
+-        if ((file_exists($this->filepath) === false) || (is_readable($this->filepath) === false)) {
++        clearstatcache();
++        $filepath = realpath("{$folder}/{$filename}");
++        if ($filepath === false || !is_file($filepath) || !is_readable($filepath)) {
+             throw new Exception('File not found, or cannot be read');
+         }
++        $this->filepath = $filepath;
++        $this->filename = basename($this->filepath);
+ 
+-        $filetype ??= pathinfo($filename, PATHINFO_EXTENSION);
++        $filetype ??= pathinfo($this->filename, PATHINFO_EXTENSION);
+         if (array_key_exists(strtolower($filetype), self::CONTENT_TYPES) === false) {
+             throw new Exception('Invalid filetype: cannot be downloaded');
+         }
+diff --git a/src/PhpSpreadsheet/IOFactory.php b/src/PhpSpreadsheet/IOFactory.php
+index c088397d81..901d901c07 100644
+--- a/src/PhpSpreadsheet/IOFactory.php
++++ b/src/PhpSpreadsheet/IOFactory.php
+@@ -30,7 +30,7 @@ abstract class IOFactory
+     public const WRITER_CSV = 'Csv';
+     public const WRITER_HTML = 'Html';
+ 
+-    /** @var string[] */
++    /** @var array<string, class-string<IReader>> */
+     private static $readers = [
+         self::READER_XLSX => Reader\Xlsx::class,
+         self::READER_XLS => Reader\Xls::class,
+@@ -236,4 +236,16 @@ public static function registerReader(string $readerType, string $readerClass):
+ 
+         self::$readers[$readerType] = $readerClass;
+     }
++
++    /**
++     * @return array<string, class-string<IReader>>
++     *
++     * @internal
++     *
++     * @codeCoverageIgnore
++     */
++    public static function getReaders(): array
++    {
++        return self::$readers;
++    }
+ }
+diff --git a/src/PhpSpreadsheet/Reader/Xml.php b/src/PhpSpreadsheet/Reader/Xml.php
+index 6c790d06ad..b9fc40c8c5 100644
+--- a/src/PhpSpreadsheet/Reader/Xml.php
++++ b/src/PhpSpreadsheet/Reader/Xml.php
+@@ -75,6 +75,7 @@ public function canRead(string $filename): bool
+         ];
+ 
+         // Open file
++        File::assertFile($filename);
+         $data = (string) file_get_contents($filename);
+         $data = $this->getSecurityScannerOrThrow()->scan($data);
+ 
+diff --git a/src/PhpSpreadsheet/Shared/File.php b/src/PhpSpreadsheet/Shared/File.php
+index 737a6eb591..a4860a1e10 100644
+--- a/src/PhpSpreadsheet/Shared/File.php
++++ b/src/PhpSpreadsheet/Shared/File.php
+@@ -140,11 +140,30 @@ public static function temporaryFilename(): string
+         return $filename;
+     }
+ 
++    /**
++     * All filenames starting with protocol (e.g. phar://) are prohibited.
++     * Note that many protocols, including http and zip, will already
++     * return false for is_file.
++     * A whitelist of protocols may be added if needed in future.
++     */
++    public static function prohibitWrappers(string $filename): void
++    {
++        $scheme = parse_url($filename, PHP_URL_SCHEME);
++        // strlen check > 1 to avoid issues with Windows absolute paths (e.g. C:\...), Windows quirks :)
++        // since no built-in or commonly registered PHP stream wrapper uses a single-character scheme, this should be ok, to my knowledge
++        if (is_string($scheme) && strlen($scheme) > 1) {
++            throw new Exception(
++                "Stream wrappers are not permitted as file paths: {$filename}"
++            );
++        }
++    }
++
+     /**
+      * Assert that given path is an existing file and is readable, otherwise throw exception.
+      */
+     public static function assertFile(string $filename, string $zipMember = ''): void
+     {
++        self::prohibitWrappers($filename);
+         if (!is_file($filename)) {
+             throw new ReaderException('File "' . $filename . '" does not exist.');
+         }
+@@ -167,9 +186,11 @@ public static function assertFile(string $filename, string $zipMember = ''): voi
+ 
+     /**
+      * Same as assertFile, except return true/false and don't throw Exception.
++     * Will nevertheless throw if filename uses invalid protocol, e.g. phar.
+      */
+     public static function testFileNoThrow(string $filename, ?string $zipMember = null): bool
+     {
++        self::prohibitWrappers($filename);
+         if (!is_file($filename)) {
+             return false;
+         }
+diff --git a/src/PhpSpreadsheet/Style/NumberFormat/Formatter.php b/src/PhpSpreadsheet/Style/NumberFormat/Formatter.php
+index 3e0071f471..107d612027 100644
+--- a/src/PhpSpreadsheet/Style/NumberFormat/Formatter.php
++++ b/src/PhpSpreadsheet/Style/NumberFormat/Formatter.php
+@@ -14,6 +14,7 @@ class Formatter
+      * Matches any @ symbol that isn't enclosed in quotes.
+      */
+     private const SYMBOL_AT = '/@(?=(?:[^"]*"[^"]*")*[^"]*\Z)/miu';
++    private const QUOTE_REPLACEMENT = "\u{fffe}"; // invalid Unicode character
+ 
+     /**
+      * Matches any ; symbol that isn't enclosed in quotes, for a "section" split.
+@@ -137,8 +138,28 @@ public static function toFormattedString($value, $format, $callBack = null)
+         }
+         // For now we do not treat strings in sections, although section 4 of a format code affects strings
+         // Process a single block format code containing @ for text substitution
+-        if (preg_match(self::SECTION_SPLIT, $format) === 0 && preg_match(self::SYMBOL_AT, $format) === 1) {
+-            return str_replace('"', '', preg_replace(self::SYMBOL_AT, (string) $value, $format) ?? '');
++        $formatx = str_replace('\"', self::QUOTE_REPLACEMENT, $format);
++        if (preg_match(self::SECTION_SPLIT, $format) === 0 && preg_match(self::SYMBOL_AT, $formatx) === 1) {
++            if (strpos($format, '"') === false) {
++                return str_replace('@', "$value", $format);
++            }
++            //escape any dollar signs on the string, so they are not replaced with an empty value
++            $value = str_replace(
++                ['$', '"'],
++                ['\$', self::QUOTE_REPLACEMENT],
++                (string) $value
++            );
++            $temp = preg_replace(self::SYMBOL_AT, $value, $formatx) ?? $value;
++            if (is_callable($callBack)) {
++                $temp = $callBack($temp, $formatx);
++            }
++            /** @var string $temp */
++
++            return str_replace(
++                ['"', self::QUOTE_REPLACEMENT],
++                ['', '"'],
++                $temp
++            );
+         }
+ 
+         // If we have a text value, return it "as is"
+diff --git a/src/PhpSpreadsheet/Writer/Html.php b/src/PhpSpreadsheet/Writer/Html.php
+index 64ddbb4f22..5da3a1fd49 100644
+--- a/src/PhpSpreadsheet/Writer/Html.php
++++ b/src/PhpSpreadsheet/Writer/Html.php
+@@ -1724,7 +1724,7 @@ public function formatColor($value, $format)
+         }
+ 
+         // convert to PCDATA
+-        $result = htmlspecialchars($value, Settings::htmlEntityFlags());
++        $result = htmlspecialchars($value, ENT_NOQUOTES);
+ 
+         // color span tag
+         if ($color !== null) {
+diff --git a/tests/PhpSpreadsheetTests/Reader/NoPharTest.php b/tests/PhpSpreadsheetTests/Reader/NoPharTest.php
+new file mode 100644
+index 0000000000..ec425be7c9
+--- /dev/null
++++ b/tests/PhpSpreadsheetTests/Reader/NoPharTest.php
+@@ -0,0 +1,40 @@
++<?php
++
++declare(strict_types=1);
++
++namespace PhpOffice\PhpSpreadsheetTests\Reader;
++
++use PhpOffice\PhpSpreadsheet\Exception as SpreadsheetException;
++use PhpOffice\PhpSpreadsheet\IOFactory;
++use PhpOffice\PhpSpreadsheet\Reader\IReader;
++use PHPUnit\Framework\TestCase;
++
++class NoPharTest extends TestCase
++{
++    /**
++     * @dataProvider providerReaders
++     *
++     * @param class-string<IReader> $reader
++     */
++    public function testNoPhar(string $reader): void
++    {
++        $this->expectException(SpreadsheetException::class);
++        $this->expectExceptionMessage('Stream wrappers are not permitted');
++        $reader = new $reader();
++        $reader->load('phar://anyoldname');
++    }
++
++    /**
++     * @return array<array<class-string<IReader>>>
++     */
++    public static function providerReaders(): array
++    {
++        $readers = IOFactory::getReaders();
++        $array = [];
++        foreach ($readers as $key => $reader) {
++            $array[$key] = [$reader];
++        }
++
++        return $array;
++    }
++}
+diff --git a/tests/PhpSpreadsheetTests/Writer/Html/AtSignFormatTest.php b/tests/PhpSpreadsheetTests/Writer/Html/AtSignFormatTest.php
+new file mode 100644
+index 0000000000..a157ba01cd
+--- /dev/null
++++ b/tests/PhpSpreadsheetTests/Writer/Html/AtSignFormatTest.php
+@@ -0,0 +1,29 @@
++<?php
++
++declare(strict_types=1);
++
++namespace PhpOffice\PhpSpreadsheetTests\Writer\Html;
++
++use PhpOffice\PhpSpreadsheet\Spreadsheet;
++use PhpOffice\PhpSpreadsheet\Writer\Html as HtmlWriter;
++use PHPUnit\Framework\TestCase;
++
++class AtSignFormatTest extends TestCase
++{
++    public function testAtSignFormat(): void
++    {
++        $spreadsheet = new Spreadsheet();
++        $sheet = $spreadsheet->getActiveSheet();
++        $payload = '<img src=x onerror=alert(document.domain)>';
++        $formatCode = '@ "items"';
++        $sheet->setCellValue('A1', $payload);
++        $sheet->getStyle('A1')
++            ->getNumberFormat()
++            ->setFormatCode($formatCode);
++
++        $writer = new HtmlWriter($spreadsheet);
++        $html = $writer->generateHTMLAll();
++        self::assertStringContainsString('<td class="column0 style1 s">&lt;img src=x onerror=alert(document.domain)&gt; items</td>', $html);
++        $spreadsheet->disconnectWorksheets();
++    }
++}

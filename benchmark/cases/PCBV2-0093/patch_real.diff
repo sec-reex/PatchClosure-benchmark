@@ -1,0 +1,163 @@
+# CVE: CVE-2026-27598
+# Upstream: https://github.com/dagu-org/dagu.git
+# Fix: e2ed589105d79273e4e6ac8eb31525f765bb3ce4
+
+diff --git a/internal/core/validator.go b/internal/core/validator.go
+index 13e6820..9d70bfb 100644
+--- a/internal/core/validator.go
++++ b/internal/core/validator.go
+@@ -36,6 +36,9 @@ func ValidateDAGName(name string) error {
+ 	if name == "" {
+ 		return nil
+ 	}
++	if name == "." || name == ".." {
++		return ErrNameInvalidChars
++	}
+ 	if len(name) > DAGNameMaxLen {
+ 		return ErrNameTooLong
+ 	}
+diff --git a/internal/persis/filedag/store.go b/internal/persis/filedag/store.go
+index 7d9742c..8933c03 100644
+--- a/internal/persis/filedag/store.go
++++ b/internal/persis/filedag/store.go
+@@ -490,15 +490,18 @@ func (store *Storage) Rename(_ context.Context, oldID, newID string) error {
+ }
+ 
+ // generateFilePath generates the file path for a DAG by its name.
++// It uses filepath.Base to strip directory components and verifies
++// the result stays inside baseDir to prevent path traversal.
+ func (store *Storage) generateFilePath(name string) string {
+-	if strings.Contains(name, string(filepath.Separator)) {
+-		filePath, err := filepath.Abs(name)
+-		if err == nil {
+-			return filePath
+-		}
+-	}
+-	filePath := fileutil.EnsureYAMLExtension(path.Join(store.baseDir, name))
+-	return filepath.Clean(filePath)
++	safeName := filepath.Base(name)
++	filePath := fileutil.EnsureYAMLExtension(path.Join(store.baseDir, safeName))
++	filePath = filepath.Clean(filePath)
++	// Verify the resolved path is inside baseDir.
++	basePrefix := filepath.Clean(store.baseDir) + string(filepath.Separator)
++	if !strings.HasPrefix(filePath, basePrefix) {
++		return filepath.Join(store.baseDir, "_invalid.yaml")
++	}
++	return filePath
+ }
+ 
+ // locateDAG locates the DAG file by its name or path.
+diff --git a/internal/persis/filedag/store_test.go b/internal/persis/filedag/store_test.go
+index 61255ed..c6dfae5 100644
+--- a/internal/persis/filedag/store_test.go
++++ b/internal/persis/filedag/store_test.go
+@@ -219,6 +219,32 @@ steps:
+ 	assert.Equal(t, exec.ErrDAGAlreadyExists, err)
+ }
+ 
++func TestGenerateFilePathPreventsTraversal(t *testing.T) {
++	baseDir := "/base/dir"
++	store := New(baseDir, WithSkipExamples(true)).(*Storage)
++
++	tests := []struct {
++		name  string
++		input string
++	}{
++		{"parent traversal", "../../tmp/pwned"},
++		{"single parent", "../escape"},
++		{"subdirectory", "foo/bar"},
++		{"deep traversal", "../../../etc/malicious"},
++		{"empty string", ""},
++		{"dot dot", ".."},
++		{"normal name", "my-dag"},
++	}
++
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			result := store.generateFilePath(tc.input)
++			assert.Equal(t, baseDir, filepath.Dir(result),
++				"generated path must be directly inside baseDir")
++		})
++	}
++}
++
+ func TestUpdateSpec(t *testing.T) {
+ 	tmpDir := fileutil.MustTempDir("test-update-spec")
+ 	defer func() {
+diff --git a/internal/service/frontend/api/v1/dags.go b/internal/service/frontend/api/v1/dags.go
+index ac2bc21..9f3828a 100644
+--- a/internal/service/frontend/api/v1/dags.go
++++ b/internal/service/frontend/api/v1/dags.go
+@@ -122,6 +122,22 @@ func (a *API) CreateNewDAG(ctx context.Context, request api.CreateNewDAGRequestO
+ 		return nil, err
+ 	}
+ 
++	if request.Body.Name == "" {
++		return nil, &Error{
++			HTTPStatus: http.StatusBadRequest,
++			Code:       api.ErrorCodeBadRequest,
++			Message:    "DAG name must not be empty",
++		}
++	}
++
++	if err := core.ValidateDAGName(request.Body.Name); err != nil {
++		return nil, &Error{
++			HTTPStatus: http.StatusBadRequest,
++			Code:       api.ErrorCodeBadRequest,
++			Message:    err.Error(),
++		}
++	}
++
+ 	var yamlSpec []byte
+ 	if request.Body.Spec != nil && strings.TrimSpace(*request.Body.Spec) != "" {
+ 		_, err := spec.LoadYAML(ctx,
+diff --git a/internal/service/frontend/api/v1/dags_test.go b/internal/service/frontend/api/v1/dags_test.go
+index 67657ed..69b3f4e 100644
+--- a/internal/service/frontend/api/v1/dags_test.go
++++ b/internal/service/frontend/api/v1/dags_test.go
+@@ -81,6 +81,45 @@ func TestDAGWritesAllowedWhenGitSyncDisabled(t *testing.T) {
+ 	server.Client().Delete("/api/v1/dags/test_dag_gitsync_disabled").ExpectStatus(http.StatusNoContent).Send(t)
+ }
+ 
++func TestCreateNewDAGPathTraversal(t *testing.T) {
++	server := test.SetupServer(t)
++
++	traversalNames := []string{
++		"../../tmp/traversal",
++		"../escape",
++		"foo/bar",
++		"../../../etc/malicious",
++	}
++
++	for _, name := range traversalNames {
++		t.Run("with_spec/"+name, func(t *testing.T) {
++			spec := "steps:\n  - command: echo test"
++			server.Client().Post("/api/v1/dags", api.CreateNewDAGJSONRequestBody{
++				Name: name,
++				Spec: &spec,
++			}).ExpectStatus(http.StatusBadRequest).Send(t)
++		})
++
++		t.Run("without_spec/"+name, func(t *testing.T) {
++			server.Client().Post("/api/v1/dags", api.CreateNewDAGJSONRequestBody{
++				Name: name,
++			}).ExpectStatus(http.StatusBadRequest).Send(t)
++		})
++	}
++
++	t.Run("empty_name", func(t *testing.T) {
++		server.Client().Post("/api/v1/dags", api.CreateNewDAGJSONRequestBody{
++			Name: "",
++		}).ExpectStatus(http.StatusBadRequest).Send(t)
++	})
++
++	t.Run("dot_dot_name", func(t *testing.T) {
++		server.Client().Post("/api/v1/dags", api.CreateNewDAGJSONRequestBody{
++			Name: "..",
++		}).ExpectStatus(http.StatusBadRequest).Send(t)
++	})
++}
++
+ func TestDAG(t *testing.T) {
+ 	server := test.SetupServer(t)
+ 

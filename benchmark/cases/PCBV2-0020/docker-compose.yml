@@ -1,0 +1,97 @@
+services:
+  sidecar:
+    image: python:3.12-slim
+    pull_policy: never
+
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    volumes:
+      - ./sidecar_server.py:/sidecar_server.py:ro
+      - ./sidecar_hits.json:/sidecar_hits.json
+    command: ["python", "/sidecar_server.py"]
+    ports: ["${PORT_SIDECAR_0:-57599}:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  v0:
+    profiles: ["v0"]
+    image: n8nio/n8n:2.17.3
+    container_name: pcb-n8n-v0
+    pull_policy: never
+
+    depends_on:
+      sidecar:
+        condition: service_healthy
+    environment:
+      N8N_SECURE_COOKIE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_TELEMETRY_DISABLED: "true"
+      GENERIC_TIMEZONE: "UTC"
+    ports: ["${PORT_V0_0:-57510}:5678"]
+    volumes: ["n0:/home/node/.n8n"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 30
+
+  v1:
+    profiles: ["v1"]
+    image: n8nio/n8n:2.20.6
+    container_name: pcb-n8n-v1
+    pull_policy: never
+
+    depends_on:
+      sidecar:
+        condition: service_healthy
+    environment:
+      N8N_SECURE_COOKIE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_TELEMETRY_DISABLED: "true"
+      GENERIC_TIMEZONE: "UTC"
+    ports: ["${PORT_V1_0:-57511}:5678"]
+    volumes: ["n1:/home/node/.n8n"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 30
+
+  v2:
+    profiles: ["v2"]
+    image: n8nio/n8n:2.20.7
+    container_name: pcb-n8n-v2
+    pull_policy: never
+
+    depends_on:
+      sidecar:
+        condition: service_healthy
+    environment:
+      N8N_SECURE_COOKIE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_TELEMETRY_DISABLED: "true"
+      GENERIC_TIMEZONE: "UTC"
+    ports: ["${PORT_V2_0:-57512}:5678"]
+    volumes: ["n2:/home/node/.n8n"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 30
+
+volumes:
+  n0:
+  n1:
+  n2:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.20.0/24

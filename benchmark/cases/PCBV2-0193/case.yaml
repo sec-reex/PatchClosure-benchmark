@@ -1,0 +1,25 @@
+case_id: PCBV2-0193
+public_name: siyuan-cve-2026-31807
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  # Runtime is the official b3log/siyuan kernel image (v3.5.8 / v3.5.9).
+  type: docker_image
+  repo: b3log/siyuan
+  v0: "3.5.8"
+  v1: "3.5.9"
+service:
+  # Host port is ${PORT_V*_0}, not :6806. start.sh waits on getDynamicIcon.
+  readiness: none
+  exposed_ports: [6806, 8070, 9000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

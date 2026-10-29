@@ -1,0 +1,63 @@
+# PatchClosure-Bench recipe for pp2-set-in (CVE-2020-28273 -> CVE-2022-25354).
+# run_mode = real-app-http. Each profile builds an image that npm-installs the REAL published
+# `set-in` release (per SETIN_VER build-arg) and boots a REAL Express service (app/server.js) that
+# deep-merges attacker JSON via set-in's setIn(object, path, value) -- exactly how a real app merges
+# user-supplied JSON. Prototype pollution is triggered EXTERNALLY over HTTP:
+#   POST /merge {path,value}  -> service calls the real setIn on it (may pollute Object.prototype)
+#   GET  /check               -> reflects ${PCB_FLAG} iff a fresh object now inherits isAdmin===true
+# The pollution persists process-wide (that IS the vuln); the oracle restarts a service (fresh node
+# process => clean Object.prototype) between the seed and the residual payloads and between versions
+# so probes never leak into each other.
+#
+# Vector arithmetic against setIn({}, path, value):
+#   - original/seed (CVE-2020-28273):  path=["__proto__","isAdmin"], value=true
+#       V0 (2.0.0, no guard):     walks onto Object.prototype -> isAdmin=true -> /check emits FLAG.
+#       V1 (2.0.1):               `assert.ok(path[index] !== '__proto__')` throws -> BLOCKED (no flag).
+#   - residual (CVE-2022-25354):       path=[["__proto__"],"isAdmin"], value=true
+#       V1 (2.0.1): key ["__proto__"] !== '__proto__' (array vs string) slips the assert, then
+#                   object[["__proto__"]] coerces to '__proto__' -> pollutes -> /check emits FLAG.
+#       V2 (2.0.3): entry `assert.ok(path.every(p=>typeof p==='number'||'string'))` throws (the
+#                   segment is an array, typeof 'object') -> BLOCKED before any write.
+#
+# Profiles: v1 (REQUIRED, GIVEN target)=2.0.1; v0 (held-out seed env)=2.0.0; v2 (held-out neg)=2.0.3.
+services:
+  v1:
+    build:
+      context: .
+      args:
+        SETIN_VER: "2.0.1"
+    image: "pcb-set-in:2.0.1"
+    profiles: ["v1"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      SETIN_VER: "2.0.1"
+    ports: ["${PORT_V1_0:-39872}:8080"]
+
+  v0:
+    build:
+      context: .
+      args:
+        SETIN_VER: "2.0.0"
+    image: "pcb-set-in:2.0.0"
+    profiles: ["v0"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      SETIN_VER: "2.0.0"
+    ports: ["${PORT_V0_0:-39871}:8080"]
+
+  v2:
+    build:
+      context: .
+      args:
+        SETIN_VER: "2.0.3"
+    image: "pcb-set-in:2.0.3"
+    profiles: ["v2"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      SETIN_VER: "2.0.3"
+    ports: ["${PORT_V2_0:-39873}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.178.0/24

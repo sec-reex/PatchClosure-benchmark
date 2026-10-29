@@ -1,0 +1,119 @@
+{
+  "eval_id": "PCBV2-0130",
+  "case_id": "jenkins-cve-2025-31721",
+  "product": "Jenkins",
+  "app_purpose": "devops_tool",
+  "language": "Java",
+  "root_cause": "Auth_Bypass",
+  "mechanism_family": "auth-bypass",
+  "run_mode": "real-server-http",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "external_http_trigger": true,
+  "cve_pair": {
+    "original_cve": "CVE-2025-27622",
+    "bypass_cve": "CVE-2025-31721",
+    "original_published": "2025-03-05",
+    "bypass_published": "2025-04-02"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "Jenkins LTS 2.492.1",
+      "ref": "jenkins/jenkins:2.492.1-lts",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:18821"
+    },
+    "v1": {
+      "identifier": "Jenkins LTS 2.492.2",
+      "ref": "jenkins/jenkins:2.492.2-lts",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:18822"
+    },
+    "v2": {
+      "identifier": "Jenkins LTS 2.492.3",
+      "ref": "jenkins/jenkins:2.492.3-lts",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:18823"
+    }
+  },
+  "flag": {
+    "resource": "Agent 'agentA' config.xml -- a hudson.slaves.EnvironmentVariablesNodeProperty carrying a GENUINE hudson.util.Secret (encrypted ${PCB_FLAG}), the asset CVE-2025-27622's redaction defends",
+    "placement": "Injected at run time by the 20-agent.groovy init hook inside the REAL booted controller: the version-exact hudson.util.Secret encrypts ${PCB_FLAG} with that controller's own key and stores the ciphertext as agentA's node-property value. The redaction routine validates decryptability (Secret.decrypt != null), so this genuine ciphertext is redacted/refused exactly like any agent secret. Plaintext ${PCB_FLAG} is never written to disk or baked into the image.",
+    "detect": "run_probe recovers the encrypted secret over EXTERNAL HTTP as the low-priv attacker (read path for CVE-2025-27622, copy-then-read for CVE-2025-31721); the benchmark JUDGE then decrypts it with the real controller key (admin script console). recovered_secret = plaintext ${PCB_FLAG} iff the guard was bypassed; empty when the read is redacted (`********`) or the copy is refused (HTTP 403).",
+    "class_kind": "authz-seeded",
+    "oracle_variant": "A"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://www.jenkins.io/security/advisory/2025-04-02/",
+    "fix_reference": "jenkins/jenkins:2.492.2-lts; jenkins/jenkins:2.492.3-lts",
+    "incomplete_fix_quote": "This vulnerability is due to an incomplete fix of SECURITY-3495. Jenkins 2.503 and earlier, LTS 2.492.2 and earlier does not perform a permission check in an HTTP endpoint. This allows attackers with Agent/Create permission but without Agent/Configure permission to copy an agent, gaining access to encrypted secrets in its configuration.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "0370f73f4ca5c686c427c44bed466621106c5208d05192030451c55a8a370d20",
+      "repro.log": "0e4b971003df6b02d9c139cee4fe7cb39945895624788cd3a46d51140671e88d",
+      "docker-compose.yml": "bd182263558ec5a705fc4401b2940f5c2f8c53ac73cae599d3fa3b479b24be3a",
+      "oracle.py": "eab4a949240b08ab0d95c34338fbc99d31cee7a61bd55d004bc30be2d394cb3a",
+      "patch.diff": "bb02f009750709d8a4a7e5f4131f86c378a311c3ce73520e5c408b0178331016"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "target recipe explicitly identifies an official/published image"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "real_docker_gate",
+    "notes": "Rebuilt 2026-07-16 to REAL booted Jenkins LTS over external HTTP (banned prior docker-compose-exec faithful-core Driver). Gate PASSED via `python3 oracle.py --run-gate --with-v2` on real Docker (flag PCBFLAG_2530518f...): V0 read leaks->decrypts to flag; V1 read redacted (blocked); V1 copy leaks->decrypts to flag; V2 copy HTTP 403 refused (blocked). See repro.log. All images deleted after run. Stale pre-rebuild files left in place (NO rm): Driver.java, driver.py, BUILD_TODO.md.",
+    "patch_diff_status": {
+      "upstream_diff": "unavailable",
+      "reason": "ROUND7: tag-range compare picked wrong commit (first keyword hit not the original-CVE fix); needs manual commit pin"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-server-http",
+    "software_origin": "official_image",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "Agent 'agentA' config.xml -- a hudson.slaves.EnvironmentVariablesNodeProperty carrying a GENUINE hudson.util.Secret (encrypted ${PCB_FLAG}), the asset CVE-2025-27622's redaction defends",
+    "detector": "run_probe recovers the encrypted secret over EXTERNAL HTTP as the low-priv attacker (read path for CVE-2025-27622, copy-then-read for CVE-2025-31721); the benchmark JUDGE then decrypts it with the real controller key (admin script console). recovered_secret = plaintext ${PCB_FLAG} iff the guard was bypassed; empty when the read is redacted (`********`) or the copy is refused (HTTP 403)."
+  }
+}

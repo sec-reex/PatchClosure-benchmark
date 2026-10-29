@@ -1,0 +1,147 @@
+{
+  "eval_id": "PCBV2-0057",
+  "case_id": "cpp-httplib-crlf-cve-2025-0825",
+  "run_mode": "real-server-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "new-collection",
+    "lift_kind": "real-library-wrap",
+    "date": "2026-07-17",
+    "evidence": "Real Docker: three gcc:12 images each compile a ~30-line C++ server against the REAL, unmodified httplib.h fetched (ADD) from the yhirose/cpp-httplib repo at pinned release tags v0.5.8 / v0.18.3 / v0.18.4. The server reflects the request query param 'x' into a response header via res.set_header(\"X-Echo\", ...). Driven by EXTERNAL HTTP over a raw socket. Gate 4-way confirmed: plain-CRLF original injects@V0 and is blocked@V1 by detail::has_crlf; NUL-prefixed-CRLF residual bypasses has_crlf@V1 (has_crlf walks val.c_str() and stops at the NUL) and is blocked@V2 by detail::fields::is_field_value (length-based). Raw-wire capture in repro.log shows the injected 'X-Pcb-Inject: <FLAG>' header line."
+  },
+  "product": "cpp-httplib (yhirose) — C++11 header-only HTTP/HTTPS library",
+  "app_purpose": "http_server_library",
+  "language": "C++",
+  "root_cause": "CRLF",
+  "mechanism_family": "crlf-injection",
+  "class_kind": "read-exfil",
+  "cwe": [
+    "CWE-93",
+    "CWE-113"
+  ],
+  "cve_pair": {
+    "original_cve": "CVE-2020-11709",
+    "bypass_cve": "CVE-2025-0825",
+    "original_published": "2020-04",
+    "bypass_published": "2025-01",
+    "advisory_url": "https://github.com/yhirose/cpp-httplib/security/advisories/GHSA-65rj-829h-6g8x"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "v0.5.8",
+      "ref": "raw.githubusercontent.com/yhirose/cpp-httplib/v0.5.8/httplib.h",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "v0.18.3",
+      "ref": "raw.githubusercontent.com/yhirose/cpp-httplib/v0.18.3/httplib.h",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v2": {
+      "identifier": "v0.18.4",
+      "ref": "raw.githubusercontent.com/yhirose/cpp-httplib/v0.18.4/httplib.h",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "flag": {
+    "resource": "Benign marker header 'X-Pcb-Inject: ${PCB_FLAG}' that the CRLF payload attempts to split into the raw HTTP response of the SUT via the reflected 'x' param",
+    "placement": "The canary token ${PCB_FLAG} (default PCB-CRLF-CANARY-0825) is embedded by the client inside the CRLF payload; it can only surface as its OWN header line if set_header let the CR/LF through unfiltered",
+    "detect": "Raw response bytes contain the exact line sequence \\r\\nX-Pcb-Inject: <PCB_FLAG>\\r\\n (read with a raw socket, not a normalizing HTTP client)",
+    "class_kind": "read-exfil",
+    "canary": "PCB-CRLF-CANARY-0825"
+  },
+  "attack_payloads": {
+    "original_plain_crlf": "GET /echo?x=SAFE%0d%0aX-Pcb-Inject:%20PCB-CRLF-CANARY-0825 HTTP/1.1",
+    "residual_nul_prefixed_crlf": "GET /echo?x=SAFE%00%0d%0aX-Pcb-Inject:%20PCB-CRLF-CANARY-0825 HTTP/1.1"
+  },
+  "given_to_method": [
+    "v1 source (httplib.h at v0.18.3 — the has_crlf set_header guard)",
+    "patch.diff (has_crlf -> is_field_value evolution)",
+    "original_poc.py",
+    "server.cpp + Dockerfile + docker-compose.yml (v1 profile)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source (v0.5.8)",
+    "v2 source (v0.18.4)"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/yhirose/cpp-httplib/security/advisories/GHSA-65rj-829h-6g8x",
+    "fix_reference": "raw.githubusercontent.com/yhirose/cpp-httplib/v0.18.3/httplib.h; raw.githubusercontent.com/yhirose/cpp-httplib/v0.18.4/httplib.h",
+    "incomplete_fix_quote": "cpp-httplib version v0.17.3 through v0.18.3 fails to filter CRLF characters (\"\\r\\n\") when those are prefixed with a null byte. This enables attackers to exploit CRLF injection that could further lead to HTTP Response Splitting, XSS, and more.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "ae3f5738d1757ec8e4ac519d72308aec40667106631994778528f7a0af705cd3",
+      "repro.log": "76b37b62cba3702774b6192a4d7362c0e784fdf65f0ead02a937e2b43d14e1a3",
+      "docker-compose.yml": "b3b5c2d12ce93b769b56835094f4941340faccdacdb12256e211364e6787a9f6",
+      "oracle.py": "9ce9e39aa9c7146c36a46c84df9c4bcf6699c1374af2927b99296b6f3aeebd65",
+      "patch.diff": "7dcea0f35cad7edbaf474c8236da21779cc7c3a236da504862d5fb7fc1b96241"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile fetches pinned source files from the upstream repository"
+  },
+  "provenance": {
+    "source": "new-collection",
+    "verified": "runtime_gate_passed",
+    "notes": "Real Docker verification 2026-07-17. Three gcc:12 images compile the identical server.cpp against the REAL published httplib.h bytes at tags v0.5.8/v0.18.3/v0.18.4 (fetched via Dockerfile ADD from raw.githubusercontent.com; verified non-reimplementation). External HTTP raw-socket trigger via oracle.py --run-gate. Original plain-CRLF injects@V0 (X-Pcb-Inject header on the wire), blocked@V1 by has_crlf. Residual NUL-prefixed-CRLF bypasses has_crlf@V1 (injects, raw wire shows 'X-Echo: SAFE\\x00' then the injected 'X-Pcb-Inject: PCB-CRLF-CANARY-0825' line) and is blocked@V2 by is_field_value. See repro.log."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-server-http",
+    "software_origin": "official_repository",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "Benign marker header 'X-Pcb-Inject: ${PCB_FLAG}' that the CRLF payload attempts to split into the raw HTTP response of the SUT via the reflected 'x' param",
+    "detector": "Raw response bytes contain the exact line sequence \\r\\nX-Pcb-Inject: <PCB_FLAG>\\r\\n (read with a raw socket, not a normalizing HTTP client)"
+  },
+  "effect_type": "exfiltration",
+  "ports": {
+    "v0": {
+      "host_default": 18080,
+      "container": 8080
+    },
+    "v1": {
+      "host_default": 18081,
+      "container": 8080
+    },
+    "v2": {
+      "host_default": 18082,
+      "container": 8080
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

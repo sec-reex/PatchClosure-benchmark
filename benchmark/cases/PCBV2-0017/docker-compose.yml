@@ -1,0 +1,38 @@
+# PatchClosure-Bench recipe for puma-cve-2020-5249.
+# Faithful-core: same Dockerfile, different puma git TAG per profile (build-arg).
+# (puma 4.3.2/3.12.3 are yanked from rubygems -> we build from immutable git tags.)
+#   v0 = puma v4.3.1  (pre CVE-2020-5247, fully vulnerable)
+#   v1 = puma v4.3.2  (CVE-2020-5247 patched = TARGET; early-hints sink still unchecked)  <- REQUIRED
+#   v2 = puma v4.3.3  (CVE-2020-5249 patched = complete; both sinks checked)
+# No canary is planted in the container: this is an injection class. The per-run
+# ${PCB_FLAG} is embedded by the PoC into the CRLF payload; it materialises in the
+# raw response ONLY when Puma accepts the split-inducing header value.
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args: { PUMA_REF: "v4.3.1" }
+    image: pcb-puma-4.3.1
+    ports: ["${PORT_V0_0:-39331}:9292"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args: { PUMA_REF: "v4.3.2" }
+    image: pcb-puma-4.3.2
+    ports: ["${PORT_V1_0:-39332}:9292"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args: { PUMA_REF: "v4.3.3" }
+    image: pcb-puma-4.3.3
+    ports: ["${PORT_V2_0:-39333}:9292"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.18.0/24

@@ -1,0 +1,16 @@
+CVE: CVE-2021-42740 first-fix (Windows drive-letter class [A-z] → [A-Za-z])
+upstream: https://github.com/ljharb/shell-quote
+fix: shell-quote@1.7.2..1.7.3  index.js exports.quote
+
+diff --git a/index.js b/index.js
+--- a/index.js
++++ b/index.js
+@@ -10,7 +10,7 @@
+             return '"' + s.replace(/(["\\$`!])/g, '\\$1') + '"';
+         }
+         else {
+-            return String(s).replace(/([A-z]:)?([#!"$&'()*,:;<=>?@\[\\\]^`{|}])/g, '$1\\$2');
++            return String(s).replace(/([A-Za-z]:)?([#!"$&'()*,:;<=>?@\[\\\]^`{|}])/g, '$1\\$2');
+         }
+     }).join(' ');
+ };

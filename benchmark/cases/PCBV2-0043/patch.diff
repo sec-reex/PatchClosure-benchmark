@@ -1,0 +1,167 @@
+PCBV2-0043 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: v6.2.1..v6.2.2
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0043/
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 7d5e577..2c20ff6 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
+ and this project adheres to [Semantic Versioning](http://semver.org/).
+ 
+ 
++## [6.2.2] - 2022-03-27
++
++### Fixed
++
++- More complete fix for prototype pollution vulnerability first addressed in
++  #384 (Marc-Aurèle Darche @madarche)
++
++
+ ## [6.2.1] - 2021-10-20
+ 
+ ### Fixed
+diff --git a/lerna.json b/lerna.json
+index c626bdc..b3fdad9 100644
+--- a/lerna.json
++++ b/lerna.json
+@@ -2,5 +2,5 @@
+   "packages": [
+     "packages/*"
+   ],
+-  "version": "6.2.1"
++  "version": "6.2.2"
+ }
+diff --git a/packages/convict/package.json b/packages/convict/package.json
+index 7948c10..7aa84b4 100644
+--- a/packages/convict/package.json
++++ b/packages/convict/package.json
+@@ -17,7 +17,7 @@
+     "yaml",
+     "toml"
+   ],
+-  "version": "6.2.1",
++  "version": "6.2.2",
+   "license": "Apache-2.0",
+   "homepage": "https://github.com/mozilla/node-convict",
+   "repository": {
+diff --git a/packages/convict/src/main.js b/packages/convict/src/main.js
+index fd89b39..4e532af 100644
+--- a/packages/convict/src/main.js
++++ b/packages/convict/src/main.js
+@@ -9,6 +9,15 @@ const fs = require('fs')
+ const parseArgs = require('yargs-parser')
+ const cloneDeep = require('lodash.clonedeep')
+ 
++// Forbidden key paths, for protection against prototype pollution
++const FORBIDDEN_KEY_PATHS = [
++  '__proto__',
++  'this.constructor.prototype',
++]
++
++const ALLOWED_OPTION_STRICT = 'strict'
++const ALLOWED_OPTION_WARN = 'warn'
++
+ function assert(assertion, err_msg) {
+   if (!assertion) {
+     throw new Error(err_msg)
+@@ -65,13 +74,10 @@ const types = {
+ // alias
+ types.integer = types.int
+ 
+-const converters = new Map()
++const custom_converters = new Map()
+ 
+ const parsers_registry = {'*': JSON.parse}
+ 
+-const ALLOWED_OPTION_STRICT = 'strict'
+-const ALLOWED_OPTION_WARN = 'warn'
+-
+ function flatten(obj, useProperties) {
+   const stack = Object.keys(obj)
+   let key
+@@ -398,12 +404,11 @@ function getFormat(schema, path) {
+ }
+ 
+ function coerce(k, v, schema, instance) {
+-  // magic coerceing
+   const format = getFormat(schema, k)
+ 
+   if (typeof v === 'string') {
+-    if (converters.has(format)) {
+-      return converters.get(format)(v, instance, k)
++    if (custom_converters.has(format)) {
++      return custom_converters.get(format)(v, instance, k)
+     }
+     switch (format) {
+     case 'port':
+@@ -562,14 +567,18 @@ const convict = function convict(def, opts) {
+      * exist, they will be initialized to empty objects
+      */
+     set: function(k, v) {
++      for (const path of FORBIDDEN_KEY_PATHS) {
++        if (k.startsWith(`${path}.`)) {
++          return this
++        }
++      }
++
+       v = coerce(k, v, this._schema, this)
+       const path = k.split('.')
+       const childKey = path.pop()
+       const parentKey = path.join('.')
+-      if (!(parentKey == '__proto__' || parentKey == 'constructor' || parentKey == 'prototype')) {
+-        const parent = walk(this._instance, parentKey, true)
+-        parent[childKey] = v
+-      }
++      const parent = walk(this._instance, parentKey, true)
++      parent[childKey] = v
+       return this
+     },
+ 
+@@ -727,7 +736,7 @@ convict.addFormat = function(name, validate, coerce) {
+   }
+   types[name] = validate
+   if (coerce) {
+-    converters.set(name, coerce)
++    custom_converters.set(name, coerce)
+   }
+ }
+ 
+diff --git a/packages/convict/test/prototype_pollution.test.js b/packages/convict/test/prototype_pollution.test.js
+new file mode 100644
+index 0000000..eb9466c
+--- /dev/null
++++ b/packages/convict/test/prototype_pollution.test.js
+@@ -0,0 +1,31 @@
++'use strict'
++
++const convict = require('../')
++
++describe('Convict prototype pollution resistance', function() {
++
++  test('against __proto__', function() {
++    const obj = {}
++    const config = convict(obj)
++
++    config.set('__proto__.polluted_proto_root', 'Polluted!')
++    expect({}).not.toHaveProperty('polluted_proto_root')
++
++    config.set('__proto__.nested.polluted_proto_nested', 'Polluted!')
++    expect({}).not.toHaveProperty('nested')
++    expect({}).not.toHaveProperty('nested.polluted_proto_nested')
++  })
++
++  test('against this.constructor.prototype', function() {
++    const obj = {}
++    const config = convict(obj)
++
++    config.set('this.constructor.prototype.polluted_constructor_prototype_root', 'Polluted!')
++    expect({}).not.toHaveProperty('polluted_constructor_prototype_root')
++
++    config.set('this.constructor.prototype.nested.polluted_constructor_prototype_nested', 'Polluted!')
++    expect({}).not.toHaveProperty('nested')
++    expect({}).not.toHaveProperty('nested.polluted_constructor_prototype_nested')
++  })
++
++})

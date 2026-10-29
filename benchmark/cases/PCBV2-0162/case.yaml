@@ -1,0 +1,24 @@
+case_id: PCBV2-0162
+public_name: openstack-nova-cve-2024-40767
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/openstack/nova.git
+  v0: a90bd50887c45de1e1ee3cb4f0901ae62fcf9bfd
+  v1: 1191a49a65dce694b12df26bb5316b0a816b278e
+service:
+  # Host port is ${PORT_V*_0}, not :8080. start.sh waits for /healthz after up.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

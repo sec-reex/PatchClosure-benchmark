@@ -1,0 +1,32 @@
+# CVE-2024-26141
+# https://github.com/rack/rack.git
+# fix: 4849132bef471adb21131980df745f4bb84de2d9
+diff --git a/lib/rack/utils.rb b/lib/rack/utils.rb
+index 62c2502..f91838b 100644
+--- a/lib/rack/utils.rb
++++ b/lib/rack/utils.rb
+@@ -459,6 +459,9 @@ module Rack
+         end
+         ranges << (r0..r1)  if r0 <= r1
+       end
++
++      return [] if ranges.map(&:size).sum > size
++
+       ranges
+     end
+ 
+diff --git a/test/spec_utils.rb b/test/spec_utils.rb
+index c4f9b27..2165c5a 100644
+--- a/test/spec_utils.rb
++++ b/test/spec_utils.rb
+@@ -716,6 +716,10 @@ describe Rack::Utils, "cookies" do
+ end
+ 
+ describe Rack::Utils, "get_byte_ranges" do
++  it "returns an empty list if the sum of the ranges is too large" do
++    assert_equal [], Rack::Utils.byte_ranges({ "HTTP_RANGE" => "bytes=0-20,0-500" }, 500)
++  end
++
+   deprecated "pase simple byte ranges from env" do
+     Rack::Utils.byte_ranges({ "HTTP_RANGE" => "bytes=123-456" }, 500).must_equal [(123..456)]
+   end

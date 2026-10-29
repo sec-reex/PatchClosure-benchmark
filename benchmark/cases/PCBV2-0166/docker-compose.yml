@@ -1,0 +1,110 @@
+# Official dpage/pgadmin4 images (whole product). No snippet harness.
+# V0=9.15 (CVE-2026-12045 open)  V1=9.16 (12045 closed; CVE-2026-17351 residual)
+# V2=9.17 (17351 closed). Flag lives in postgres pcb_secret via $PCB_FLAG.
+x-pg-common: &pg-common
+  image: postgres:16-alpine
+  environment:
+    POSTGRES_PASSWORD: pcbpass
+    PCB_FLAG: "${PCB_FLAG:?}"
+  volumes:
+    - "./pg_init.sh:/docker-entrypoint-initdb.d/init.sh:ro"
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U postgres && psql -U postgres -tAc 'SELECT 1 FROM pcb_secret' | grep -q ."]
+    interval: 3s
+    timeout: 5s
+    retries: 30
+
+x-llm-common: &llm-common
+  build:
+    context: .
+    dockerfile: Dockerfile.llm
+
+services:
+  pg_v0:
+    <<: *pg-common
+    profiles: ["v0"]
+    container_name: pcb-pgc-v0-pg
+
+  mockllm_v0:
+    <<: *llm-common
+    profiles: ["v0"]
+
+  v0:
+    profiles: ["v0"]
+    image: dpage/pgadmin4:9.15
+    depends_on:
+      pg_v0:
+        condition: service_healthy
+      mockllm_v0:
+        condition: service_started
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "admin@pcb-lab.com"
+      PGADMIN_DEFAULT_PASSWORD: "Admin12345!"
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_CONFIG_DEFAULT_LLM_PROVIDER: "'openai'"
+      PGADMIN_CONFIG_OPENAI_API_URL: "'http://mockllm_v0:8000/v1'"
+      PGADMIN_CONFIG_OPENAI_API_MODEL: "'pcb-mock'"
+      PGADMIN_CONFIG_LLM_ENABLED: "True"
+      PGADMIN_CONFIG_OPENAI_API_KEY_FILE: "''"
+      PGADMIN_CONFIG_ALLOWED_LLM_API_URLS: "['http://mockllm_v0:8000']"
+    ports: ["${PORT_V0_0:-33930}:80"]
+
+  pg_v1:
+    <<: *pg-common
+    profiles: ["v1"]
+    container_name: pcb-pgc-v1-pg
+
+  mockllm_v1:
+    <<: *llm-common
+    profiles: ["v1"]
+
+  v1:
+    profiles: ["v1"]
+    image: dpage/pgadmin4:9.16
+    depends_on:
+      pg_v1:
+        condition: service_healthy
+      mockllm_v1:
+        condition: service_started
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "admin@pcb-lab.com"
+      PGADMIN_DEFAULT_PASSWORD: "Admin12345!"
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_CONFIG_DEFAULT_LLM_PROVIDER: "'openai'"
+      PGADMIN_CONFIG_OPENAI_API_URL: "'http://mockllm_v1:8000/v1'"
+      PGADMIN_CONFIG_OPENAI_API_MODEL: "'pcb-mock'"
+      PGADMIN_CONFIG_LLM_ENABLED: "True"
+      PGADMIN_CONFIG_OPENAI_API_KEY_FILE: "''"
+      PGADMIN_CONFIG_ALLOWED_LLM_API_URLS: "['http://mockllm_v1:8000']"
+    ports: ["${PORT_V1_0:-33931}:80"]
+
+  pg_v2:
+    <<: *pg-common
+    profiles: ["v2"]
+    container_name: pcb-pgc-v2-pg
+
+  mockllm_v2:
+    <<: *llm-common
+    profiles: ["v2"]
+
+  v2:
+    profiles: ["v2"]
+    image: dpage/pgadmin4:9.17
+    depends_on:
+      pg_v2:
+        condition: service_healthy
+      mockllm_v2:
+        condition: service_started
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "admin@pcb-lab.com"
+      PGADMIN_DEFAULT_PASSWORD: "Admin12345!"
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_CONFIG_DEFAULT_LLM_PROVIDER: "'openai'"
+      PGADMIN_CONFIG_OPENAI_API_URL: "'http://mockllm_v2:8000/v1'"
+      PGADMIN_CONFIG_OPENAI_API_MODEL: "'pcb-mock'"
+      PGADMIN_CONFIG_LLM_ENABLED: "True"
+      PGADMIN_CONFIG_OPENAI_API_KEY_FILE: "''"
+      PGADMIN_CONFIG_ALLOWED_LLM_API_URLS: "['http://mockllm_v2:8000']"
+    ports: ["${PORT_V2_0:-33932}:80"]
+
+# No pinned subnet — IPAM collisions with parallel cases are not part of the vuln.

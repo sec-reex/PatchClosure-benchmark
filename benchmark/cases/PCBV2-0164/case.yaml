@@ -1,0 +1,31 @@
+case_id: PCBV2-0164
+public_name: parse-server-literalizeRegexPart-pg-sqli
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/parse-community/parse-server.git
+  v0: 6.4.0
+  v1: 6.5.0
+service:
+  readiness: http://127.0.0.1:1337/
+  exposed_ports: [1337]
+  # 1337 is the CONTAINER port. docker-compose.yml publishes it on per-profile
+  # host ports ${PORT_V0_0:-39640} / ${PORT_V1_0:-39650} / ${PORT_V2_0:-39657}
+  # (matching oracle.py/case.json base_url) so the three profiles can be up
+  # simultaneously. The platform rewrites this readiness URL's container port
+  # to the host port resolved via `docker compose port` (exposed_ports drives
+  # that lookup), and scripts/verify.sh resolves PCB_TARGET_PORT the same way.
+  # NOTE: scripts/verify.sh greps `exposed_ports` within 4 lines of `service:` —
+  # keep these comments BELOW the two keys, never between them.
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

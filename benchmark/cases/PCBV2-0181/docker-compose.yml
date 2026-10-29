@@ -1,0 +1,94 @@
+# PatchClosure-Bench env for qdpm-cve-2020-7246  (CVE-2015-3884 -> CVE-2020-7246).
+# qdPM (Symfony 1.4 PHP). Source downloaded from SourceForge at BUILD time (no vendored source).
+#   V0 = qdPM 9.1, uploads script-block .htaccess neutralised  -> CVE-2015-3884 unmitigated (seed reaches flag)
+#   V1 = qdPM 9.1 stock (uploads/.htaccess present)             -> seed blocked; CVE-2020-7246 residual reaches flag   <- TARGET
+#   V2 = qdPM 9.2 stock (app::is_image guards upload + unlink)  -> residual blocked (CVE-2020-7246 fixed)
+# Canary (rce): ${PCB_FLAG} planted at /flag/pcb_flag.txt OUTSIDE docroot; only an executed uploaded PHP echoes it.
+x-db: &db
+  image: "mariadb:10.11"
+  environment:
+    MARIADB_DATABASE: qdpm
+    MARIADB_USER: qdpm
+    MARIADB_PASSWORD: qdpmpass
+    MARIADB_ROOT_PASSWORD: rootpass
+  healthcheck:
+    test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+    interval: 5s
+    timeout: 5s
+    retries: 40
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment: &app-env
+    PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    DB_HOST: "db"
+    DB_NAME: "qdpm"
+    DB_USER: "qdpm"
+    DB_PASS: "qdpmpass"
+  healthcheck:
+    test: ["CMD", "sh", "-c", "test -f /flag/pcb_flag.txt && curl -fsS http://127.0.0.1/index.php >/dev/null 2>&1"]
+    interval: 5s
+    timeout: 5s
+    retries: 60
+
+services:
+  db-v0:
+    <<: *db
+    profiles: ["v0"]
+  v0:
+    <<: *app
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args: {QDPM_VER: "9.1"}
+    depends_on:
+      db-v0: {condition: service_healthy}
+    ports: ["${PORT_V0_0:-39450}:80"]
+    environment:
+      <<: *app-env
+      DB_HOST: "db-v0"
+      STRIP_UPLOAD_HTACCESS: "1"
+
+  db-v1:
+    <<: *db
+    profiles: ["v1"]
+  v1:
+    <<: *app
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args: {QDPM_VER: "9.1"}
+    depends_on:
+      db-v1: {condition: service_healthy}
+    ports: ["${PORT_V1_0:-39451}:80"]
+    environment:
+      <<: *app-env
+      DB_HOST: "db-v1"
+      STRIP_UPLOAD_HTACCESS: "0"
+
+  db-v2:
+    <<: *db
+    profiles: ["v2"]
+  v2:
+    <<: *app
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args: {QDPM_VER: "9.2"}
+    depends_on:
+      db-v2: {condition: service_healthy}
+    ports: ["${PORT_V2_0:-39452}:80"]
+    environment:
+      <<: *app-env
+      DB_HOST: "db-v2"
+      STRIP_UPLOAD_HTACCESS: "0"
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.181.0/24

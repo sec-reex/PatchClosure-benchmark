@@ -1,0 +1,23 @@
+CVE: seed proto-key guard in dset() (3.0.0 / as shipped in 3.1.2); not CVE-2022-25645 merge helper
+upstream: https://github.com/lukeed/dset
+fix: v2.0.1..v3.1.2  src/index.js
+
+diff --git a/src/index.js b/src/index.js
+index ade2de8..75a01fb 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -1,8 +1,9 @@
+-export default function (obj, keys, val) {
++export function dset(obj, keys, val) {
+ 	keys.split && (keys=keys.split('.'));
+-	var i=0, l=keys.length, t=obj, x;
+-	for (; i < l; ++i) {
+-		x = t[keys[i]];
+-		t = t[keys[i]] = (i === l - 1 ? val : (x != null ? x : (!!~keys[i+1].indexOf('.') || !(+keys[i+1] > -1)) ? {} : []));
++	var i=0, l=keys.length, t=obj, x, k;
++	while (i < l) {
++		k = keys[i++];
++		if (k === '__proto__' || k === 'constructor' || k === 'prototype') break;
++		t = t[k] = (i === l) ? val : (typeof(x=t[k])===typeof(keys)) ? x : (keys[i]*0 !== 0 || !!~(''+keys[i]).indexOf('.')) ? {} : [];
+ 	}
+ }

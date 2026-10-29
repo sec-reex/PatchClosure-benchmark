@@ -1,0 +1,86 @@
+# PatchClosure-Bench — nukesentinel-php-nuke-security-addon-cve-2007-1493
+# Official SourceForge full packages (html/ overlay) + thin PHP-Nuke host.
+# CVE-2007-1172 (V1 incomplete) -> CVE-2007-1493 (V2 fix). SQLi via Client-IP.
+#
+#   v0 = 2.5.05 (unanchored ereg)   -> original Client-IP payload injects
+#   v1 = 2.5.06 (^-anchored only)   -> original blocked, IP-prefixed residual injects
+#   v2 = 2.5.07 (^...$-anchored)    -> both blocked
+
+services:
+  db:
+    image: mariadb:10.6
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: phpnuke
+      MYSQL_USER: nuke
+      MYSQL_PASSWORD: nuke
+    profiles: ["v0", "v1", "v2"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  v0:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+      args:
+        NS_TGZ: upstream/NukeSentinel_2505_70-80.tar.gz
+    image: "nukesentinel-cve-2007-1493:v0"
+    profiles: ["v0"]
+    ports: ["${PORT_V0_0:-39620}:80"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NS_VERSION: "v0"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary}"
+      DB_HOST: db
+      DB_USER: nuke
+      DB_PASS: nuke
+      DB_NAME: phpnuke
+
+  v1:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+      args:
+        NS_TGZ: upstream/NukeSentinel_2506_70-80.tar.gz
+    image: "nukesentinel-cve-2007-1493:v1"
+    profiles: ["v1"]
+    ports: ["${PORT_V1_0:-39621}:80"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NS_VERSION: "v1"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary}"
+      DB_HOST: db
+      DB_USER: nuke
+      DB_PASS: nuke
+      DB_NAME: phpnuke
+
+  v2:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+      args:
+        NS_TGZ: upstream/NukeSentinel_2507_70-80.tar.gz
+    image: "nukesentinel-cve-2007-1493:v2"
+    profiles: ["v2"]
+    ports: ["${PORT_V2_0:-39622}:80"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NS_VERSION: "v2"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary}"
+      DB_HOST: db
+      DB_USER: nuke
+      DB_PASS: nuke
+      DB_NAME: phpnuke

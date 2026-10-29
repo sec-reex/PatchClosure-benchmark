@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Faithful-core recipe: pull the EXACT published org.apache.dubbo:dubbo:${dubbo.version}
+     (V0=2.7.6 / V1=2.7.8 / V2=2.7.12) + dubbo-serialization-native-hession from Maven Central at
+     build time. No vendored jars. The `dubbo` bundle shades the per-version hessian-lite
+     (2.7.6 -> 3.2.6 [no ClassFactory], 2.7.8/2.7.12 -> 3.2.8+ [ClassFactory whitelist]). -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.pcb</groupId>
+  <artifactId>dubbo-serializer-switch</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <properties>
+    <dubbo.version>2.7.8</dubbo.version>
+    <maven.compiler.source>8</maven.compiler.source>
+    <maven.compiler.target>8</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.dubbo</groupId>
+      <artifactId>dubbo</artifactId>
+      <version>${dubbo.version}</version>
+    </dependency>
+    <!-- native-hessian serializer (id 10): the CVE-2021-25641 serializer-switch target. Pulls
+         com.caucho:hessian, a DIFFERENT hessian impl that does NOT consult the hessian2 allowlist. -->
+    <dependency>
+      <groupId>org.apache.dubbo</groupId>
+      <artifactId>dubbo-serialization-native-hession</artifactId>
+      <version>${dubbo.version}</version>
+    </dependency>
+    <!-- Runtime deps the `dubbo` bundle marks optional but a real provider/consumer needs. -->
+    <dependency>
+      <groupId>io.netty</groupId>
+      <artifactId>netty-all</artifactId>
+      <version>4.1.32.Final</version>
+    </dependency>
+    <dependency>
+      <groupId>org.javassist</groupId>
+      <artifactId>javassist</artifactId>
+      <version>3.20.0-GA</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>1.7.30</version>
+    </dependency>
+  </dependencies>
+</project>

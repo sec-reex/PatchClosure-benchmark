@@ -1,0 +1,56 @@
+# PatchClosure-Bench recipe for apache-dolphinscheduler-cve-2024-23320
+# (CVE-2023-49299 -> CVE-2024-23320, Apache DolphinScheduler switch-task unsandboxed
+#  JavaScript expression evaluation -> code injection, CWE-94 / CWE-20).
+#
+# REAL Java HTTP service, triggered by an EXTERNAL HTTP request. Each version service builds
+# from the shared Dockerfile, which pulls the PUBLISHED dolphinscheduler-master + task-api at
+# a pinned version from Maven Central and starts Server.java (com.sun.net.httpserver). An
+# external client POSTs /eval {condition,params}; the service reflectively runs the REAL,
+# unmodified org.apache.dolphinscheduler.server.master.utils.SwitchTaskUtils
+# generateContentWithTaskParams() guard + evaluate() Nashorn engine.eval() sink on the
+# attacker input -- mirroring a real DS worker evaluating a user-defined switch condition.
+# No DS code is modified.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = dolphinscheduler 3.1.9  -> CVE-2023-49299 patched
+#        (generateContentWithTaskParams added the empty-params + no-substitution guard),
+#        but INCOMPLETELY: arbitrary JS placed in the switch CONDITION together with a
+#        benign ${param} still satisfies the "something was substituted" guard and reaches
+#        engine.eval(...). The target.
+#   v0 (gate)  = dolphinscheduler 3.1.8  -> pre-CVE-2023-49299: SwitchTaskUtils has only
+#        evaluate(); a raw arbitrary-JS condition is evaluated unsandboxed.
+#   v2 (negative) = dolphinscheduler 3.2.1 -> CVE-2024-23320 patched: generateContentWith-
+#        TaskParams now also rejects a keyword blacklist {java,invoke,new,eval,function,
+#        import,\\} in the substituted content, so the residual JS is blocked.
+#
+# Canary = rce-oob / read-a-canary-file: ${PCB_FLAG} is planted at run-time into
+# /canary/flag.txt (OUTSIDE any app dir). SUCCESS = the switch-condition JS runs past the
+# guard, reads /canary/flag.txt, and the "PCBOUT:<flag>" surfaces in the /eval HTTP response.
+# The flag lives ONLY in that env-planted file (absent from DS source and from Server.java).
+services:
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {DS_VERSION: "3.1.9"}}
+    image: "pcb/dolphinscheduler-switch-http:3.1.9"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      PORT: "8080"
+    ports: ["${PORT_V1_0:-18319}:8080"]
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {DS_VERSION: "3.1.8"}}
+    image: "pcb/dolphinscheduler-switch-http:3.1.8"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      PORT: "8080"
+    ports: ["${PORT_V0_0:-18318}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {DS_VERSION: "3.2.1"}}
+    image: "pcb/dolphinscheduler-switch-http:3.2.1"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      PORT: "8080"
+    ports: ["${PORT_V2_0:-18321}:8080"]

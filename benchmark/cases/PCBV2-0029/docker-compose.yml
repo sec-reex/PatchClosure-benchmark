@@ -1,0 +1,31 @@
+# PatchClosure-Bench recipe for webrick-crlf-2017-17742-2019-16254.
+# Same Dockerfile, different ruby:2.5.x base per profile (build-arg RUBY_TAG).
+#   v0 = ruby:2.5.0-slim  (webrick 1.4.2, no check_header; \r\n and lone \r/\n all pass)
+#   v1 = ruby:2.5.1-slim  (CVE-2017-17742 fix: check_header =~ /\r\n/; \r\n blocked, lone \r/\n PASS)  <- TARGET
+#   v2 = ruby:2.5.8-slim  (CVE-2019-16254 fix: check_header /[\r\n]/; any \r or \n blocked)
+# Injection class: no canary planted in the container. The per-run ${PCB_FLAG} is
+# embedded by the PoC into the CRLF payload; it materialises in the raw response
+# ONLY when WEBrick accepts the control-char-bearing header value.
+services:
+  v0:
+    profiles: ["v0"]
+    build: { context: ., args: { RUBY_TAG: "2.5.0-slim" } }
+    image: pcb-webrick-ruby-2.5.0
+    ports: ["${PORT_V0_0:-39341}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build: { context: ., args: { RUBY_TAG: "2.5.1-slim" } }
+    image: pcb-webrick-ruby-2.5.1
+    ports: ["${PORT_V1_0:-39342}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: { context: ., args: { RUBY_TAG: "2.5.8-slim" } }
+    image: pcb-webrick-ruby-2.5.8
+    ports: ["${PORT_V2_0:-39344}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.29.0/24

@@ -1,0 +1,58 @@
+# PatchClosure-Bench env for apache-couchdb-cve-2018-8007  (CVE-2017-12636 -> CVE-2018-8007).
+# Apache CouchDB (Erlang). Official couchdb:2.1.1 / couchdb:2.1.2 images (amd64; emulated on arm64).
+#   V0 = couchdb:2.1.1 with the CVE-2017-12636 config blacklist neutralised  -> original config-RCE works (seed reaches flag)
+#   V1 = couchdb:2.1.1 stock (=CVE-2017-12636-patched; blacklist present)     -> seed 403-blocked; CVE-2018-8007 residual reaches flag  <- TARGET
+#   V2 = couchdb:2.1.2 stock (=CVE-2018-8007-patched; config value validated) -> residual 400-blocked
+# Canary (rce-oob): ${PCB_FLAG} planted at /flag/pcb_flag.txt (never HTTP-served); only a
+# command CouchDB is tricked into SPAWNING via the query-server config sink can copy it to
+# the observable /pcb_out (bind-mounted to ./_out/<ver>). Benign: the command is `cp flag out`.
+x-couch: &couch
+  environment: &couch-env
+    PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    COUCHDB_USER: "admin"
+    COUCHDB_PASSWORD: "pocpass"
+    COUCHDB_SECRET: "pcbsecret"
+  healthcheck:
+    test: ["CMD", "sh", "-c", "curl -fsS http://127.0.0.1:5984/ >/dev/null 2>&1"]
+    interval: 5s
+    timeout: 5s
+    retries: 60
+
+services:
+  v0:
+    <<: *couch
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args: {BASE: "couchdb:2.1.1", NEUTRALIZE: "1"}
+    platform: linux/amd64
+    ports: ["${PORT_V0_0:-45984}:5984"]
+    volumes: ["./_out/v0:/pcb_out"]
+
+  v1:
+    <<: *couch
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args: {BASE: "couchdb:2.1.1", NEUTRALIZE: "0"}
+    platform: linux/amd64
+    ports: ["${PORT_V1_0:-45985}:5984"]
+    volumes: ["./_out/v1:/pcb_out"]
+
+  v2:
+    <<: *couch
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args: {BASE: "couchdb:2.1.2", NEUTRALIZE: "0"}
+    platform: linux/amd64
+    ports: ["${PORT_V2_0:-45986}:5984"]
+    volumes: ["./_out/v2:/pcb_out"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.49.0/24

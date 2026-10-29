@@ -1,0 +1,952 @@
+# CVE: CVE-2025-59146
+# Upstream: https://github.com/QuantumNous/new-api.git
+# Fix: c3f5478593d5260681cc88334120ac078a3a7767
+
+diff --git a/common/ip.go b/common/ip.go
+new file mode 100644
+index 0000000..bfb64ee
+--- /dev/null
++++ b/common/ip.go
+@@ -0,0 +1,22 @@
++package common
++
++import "net"
++
++func IsPrivateIP(ip net.IP) bool {
++	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
++		return true
++	}
++
++	private := []net.IPNet{
++		{IP: net.IPv4(10, 0, 0, 0), Mask: net.CIDRMask(8, 32)},
++		{IP: net.IPv4(172, 16, 0, 0), Mask: net.CIDRMask(12, 32)},
++		{IP: net.IPv4(192, 168, 0, 0), Mask: net.CIDRMask(16, 32)},
++	}
++
++	for _, privateNet := range private {
++		if privateNet.Contains(ip) {
++			return true
++		}
++	}
++	return false
++}
+diff --git a/common/ssrf_protection.go b/common/ssrf_protection.go
+new file mode 100644
+index 0000000..b0988d9
+--- /dev/null
++++ b/common/ssrf_protection.go
+@@ -0,0 +1,384 @@
++package common
++
++import (
++	"fmt"
++	"net"
++	"net/url"
++	"strconv"
++	"strings"
++)
++
++// SSRFProtection SSRF防护配置
++type SSRFProtection struct {
++	AllowPrivateIp   bool
++	WhitelistDomains []string // domain format, e.g. example.com, *.example.com
++	WhitelistIps     []string // CIDR format
++	AllowedPorts     []int    // 允许的端口范围
++}
++
++// DefaultSSRFProtection 默认SSRF防护配置
++var DefaultSSRFProtection = &SSRFProtection{
++	AllowPrivateIp:   false,
++	WhitelistDomains: []string{},
++	WhitelistIps:     []string{},
++	AllowedPorts:     []int{},
++}
++
++// isPrivateIP 检查IP是否为私有地址
++func isPrivateIP(ip net.IP) bool {
++	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
++		return true
++	}
++
++	// 检查私有网段
++	private := []net.IPNet{
++		{IP: net.IPv4(10, 0, 0, 0), Mask: net.CIDRMask(8, 32)},     // 10.0.0.0/8
++		{IP: net.IPv4(172, 16, 0, 0), Mask: net.CIDRMask(12, 32)},  // 172.16.0.0/12
++		{IP: net.IPv4(192, 168, 0, 0), Mask: net.CIDRMask(16, 32)}, // 192.168.0.0/16
++		{IP: net.IPv4(127, 0, 0, 0), Mask: net.CIDRMask(8, 32)},    // 127.0.0.0/8
++		{IP: net.IPv4(169, 254, 0, 0), Mask: net.CIDRMask(16, 32)}, // 169.254.0.0/16 (链路本地)
++		{IP: net.IPv4(224, 0, 0, 0), Mask: net.CIDRMask(4, 32)},    // 224.0.0.0/4 (组播)
++		{IP: net.IPv4(240, 0, 0, 0), Mask: net.CIDRMask(4, 32)},    // 240.0.0.0/4 (保留)
++	}
++
++	for _, privateNet := range private {
++		if privateNet.Contains(ip) {
++			return true
++		}
++	}
++
++	// 检查IPv6私有地址
++	if ip.To4() == nil {
++		// IPv6 loopback
++		if ip.Equal(net.IPv6loopback) {
++			return true
++		}
++		// IPv6 link-local
++		if strings.HasPrefix(ip.String(), "fe80:") {
++			return true
++		}
++		// IPv6 unique local
++		if strings.HasPrefix(ip.String(), "fc") || strings.HasPrefix(ip.String(), "fd") {
++			return true
++		}
++	}
++
++	return false
++}
++
++// parsePortRanges 解析端口范围配置
++// 支持格式: "80", "443", "8000-9000"
++func parsePortRanges(portConfigs []string) ([]int, error) {
++	var ports []int
++
++	for _, config := range portConfigs {
++		config = strings.TrimSpace(config)
++		if config == "" {
++			continue
++		}
++
++		if strings.Contains(config, "-") {
++			// 处理端口范围 "8000-9000"
++			parts := strings.Split(config, "-")
++			if len(parts) != 2 {
++				return nil, fmt.Errorf("invalid port range format: %s", config)
++			}
++
++			startPort, err := strconv.Atoi(strings.TrimSpace(parts[0]))
++			if err != nil {
++				return nil, fmt.Errorf("invalid start port in range %s: %v", config, err)
++			}
++
++			endPort, err := strconv.Atoi(strings.TrimSpace(parts[1]))
++			if err != nil {
++				return nil, fmt.Errorf("invalid end port in range %s: %v", config, err)
++			}
++
++			if startPort > endPort {
++				return nil, fmt.Errorf("invalid port range %s: start port cannot be greater than end port", config)
++			}
++
++			if startPort < 1 || startPort > 65535 || endPort < 1 || endPort > 65535 {
++				return nil, fmt.Errorf("port range %s contains invalid port numbers (must be 1-65535)", config)
++			}
++
++			// 添加范围内的所有端口
++			for port := startPort; port <= endPort; port++ {
++				ports = append(ports, port)
++			}
++		} else {
++			// 处理单个端口 "80"
++			port, err := strconv.Atoi(config)
++			if err != nil {
++				return nil, fmt.Errorf("invalid port number: %s", config)
++			}
++
++			if port < 1 || port > 65535 {
++				return nil, fmt.Errorf("invalid port number %d (must be 1-65535)", port)
++			}
++
++			ports = append(ports, port)
++		}
++	}
++
++	return ports, nil
++}
++
++// isAllowedPort 检查端口是否被允许
++func (p *SSRFProtection) isAllowedPort(port int) bool {
++	if len(p.AllowedPorts) == 0 {
++		return true // 如果没有配置端口限制，则允许所有端口
++	}
++
++	for _, allowedPort := range p.AllowedPorts {
++		if port == allowedPort {
++			return true
++		}
++	}
++	return false
++}
++
++// isAllowedPortFromRanges 从端口范围字符串检查端口是否被允许
++func isAllowedPortFromRanges(port int, portRanges []string) bool {
++	if len(portRanges) == 0 {
++		return true // 如果没有配置端口限制，则允许所有端口
++	}
++
++	allowedPorts, err := parsePortRanges(portRanges)
++	if err != nil {
++		// 如果解析失败，为安全起见拒绝访问
++		return false
++	}
++
++	for _, allowedPort := range allowedPorts {
++		if port == allowedPort {
++			return true
++		}
++	}
++	return false
++}
++
++// isDomainWhitelisted 检查域名是否在白名单中
++func (p *SSRFProtection) isDomainWhitelisted(domain string) bool {
++	if len(p.WhitelistDomains) == 0 {
++		return false
++	}
++
++	domain = strings.ToLower(domain)
++	for _, whitelistDomain := range p.WhitelistDomains {
++		whitelistDomain = strings.ToLower(whitelistDomain)
++
++		// 精确匹配
++		if domain == whitelistDomain {
++			return true
++		}
++
++		// 通配符匹配 (*.example.com)
++		if strings.HasPrefix(whitelistDomain, "*.") {
++			suffix := strings.TrimPrefix(whitelistDomain, "*.")
++			if strings.HasSuffix(domain, "."+suffix) || domain == suffix {
++				return true
++			}
++		}
++	}
++	return false
++}
++
++// isIPWhitelisted 检查IP是否在白名单中
++func (p *SSRFProtection) isIPWhitelisted(ip net.IP) bool {
++	if len(p.WhitelistIps) == 0 {
++		return false
++	}
++
++	for _, whitelistCIDR := range p.WhitelistIps {
++		_, network, err := net.ParseCIDR(whitelistCIDR)
++		if err != nil {
++			// 尝试作为单个IP处理
++			if whitelistIP := net.ParseIP(whitelistCIDR); whitelistIP != nil {
++				if ip.Equal(whitelistIP) {
++					return true
++				}
++			}
++			continue
++		}
++
++		if network.Contains(ip) {
++			return true
++		}
++	}
++	return false
++}
++
++// IsIPAccessAllowed 检查IP是否允许访问
++func (p *SSRFProtection) IsIPAccessAllowed(ip net.IP) bool {
++	// 如果IP在白名单中，直接允许访问（绕过私有IP检查）
++	if p.isIPWhitelisted(ip) {
++		return true
++	}
++
++	// 如果IP白名单为空，允许所有IP（但仍需通过私有IP检查）
++	if len(p.WhitelistIps) == 0 {
++		// 检查私有IP限制
++		if isPrivateIP(ip) && !p.AllowPrivateIp {
++			return false
++		}
++		return true
++	}
++
++	// 如果IP白名单不为空且IP不在白名单中，拒绝访问
++	return false
++}
++
++// ValidateURL 验证URL是否安全
++func (p *SSRFProtection) ValidateURL(urlStr string) error {
++	// 解析URL
++	u, err := url.Parse(urlStr)
++	if err != nil {
++		return fmt.Errorf("invalid URL format: %v", err)
++	}
++
++	// 只允许HTTP/HTTPS协议
++	if u.Scheme != "http" && u.Scheme != "https" {
++		return fmt.Errorf("unsupported protocol: %s (only http/https allowed)", u.Scheme)
++	}
++
++	// 解析主机和端口
++	host, portStr, err := net.SplitHostPort(u.Host)
++	if err != nil {
++		// 没有端口，使用默认端口
++		host = u.Host
++		if u.Scheme == "https" {
++			portStr = "443"
++		} else {
++			portStr = "80"
++		}
++	}
++
++	// 验证端口
++	port, err := strconv.Atoi(portStr)
++	if err != nil {
++		return fmt.Errorf("invalid port: %s", portStr)
++	}
++
++	if !p.isAllowedPort(port) {
++		return fmt.Errorf("port %d is not allowed", port)
++	}
++
++	// 检查域名白名单
++	if p.isDomainWhitelisted(host) {
++		return nil // 白名单域名直接通过
++	}
++
++	// DNS解析获取IP地址
++	ips, err := net.LookupIP(host)
++	if err != nil {
++		return fmt.Errorf("DNS resolution failed for %s: %v", host, err)
++	}
++
++	// 检查所有解析的IP地址
++	for _, ip := range ips {
++		if !p.IsIPAccessAllowed(ip) {
++			if isPrivateIP(ip) {
++				return fmt.Errorf("private IP address not allowed: %s resolves to %s", host, ip.String())
++			} else {
++				return fmt.Errorf("IP address not in whitelist: %s resolves to %s", host, ip.String())
++			}
++		}
++	}
++
++	return nil
++}
++
++// ValidateURLWithDefaults 使用默认配置验证URL
++func ValidateURLWithDefaults(urlStr string) error {
++	return DefaultSSRFProtection.ValidateURL(urlStr)
++}
++
++// ValidateURLWithFetchSetting 使用FetchSetting配置验证URL
++func ValidateURLWithFetchSetting(urlStr string, enableSSRFProtection, allowPrivateIp bool, whitelistDomains, whitelistIps, allowedPorts []string) error {
++	// 如果SSRF防护被禁用，直接返回成功
++	if !enableSSRFProtection {
++		return nil
++	}
++
++	// 解析端口范围配置
++	allowedPortInts, err := parsePortRanges(allowedPorts)
++	if err != nil {
++		return fmt.Errorf("request reject - invalid port configuration: %v", err)
++	}
++
++	protection := &SSRFProtection{
++		AllowPrivateIp:   allowPrivateIp,
++		WhitelistDomains: whitelistDomains,
++		WhitelistIps:     whitelistIps,
++		AllowedPorts:     allowedPortInts,
++	}
++	return protection.ValidateURL(urlStr)
++}
++
++// ValidateURLWithPortRanges 直接使用端口范围字符串验证URL（更高效的版本）
++func ValidateURLWithPortRanges(urlStr string, allowPrivateIp bool, whitelistDomains, whitelistIps, allowedPorts []string) error {
++	// 解析URL
++	u, err := url.Parse(urlStr)
++	if err != nil {
++		return fmt.Errorf("invalid URL format: %v", err)
++	}
++
++	// 只允许HTTP/HTTPS协议
++	if u.Scheme != "http" && u.Scheme != "https" {
++		return fmt.Errorf("unsupported protocol: %s (only http/https allowed)", u.Scheme)
++	}
++
++	// 解析主机和端口
++	host, portStr, err := net.SplitHostPort(u.Host)
++	if err != nil {
++		// 没有端口，使用默认端口
++		host = u.Host
++		if u.Scheme == "https" {
++			portStr = "443"
++		} else {
++			portStr = "80"
++		}
++	}
++
++	// 验证端口
++	port, err := strconv.Atoi(portStr)
++	if err != nil {
++		return fmt.Errorf("invalid port: %s", portStr)
++	}
++
++	if !isAllowedPortFromRanges(port, allowedPorts) {
++		return fmt.Errorf("port %d is not allowed", port)
++	}
++
++	// 创建临时的SSRFProtection来复用域名和IP检查逻辑
++	protection := &SSRFProtection{
++		AllowPrivateIp:   allowPrivateIp,
++		WhitelistDomains: whitelistDomains,
++		WhitelistIps:     whitelistIps,
++	}
++
++	// 检查域名白名单
++	if protection.isDomainWhitelisted(host) {
++		return nil // 白名单域名直接通过
++	}
++
++	// DNS解析获取IP地址
++	ips, err := net.LookupIP(host)
++	if err != nil {
++		return fmt.Errorf("DNS resolution failed for %s: %v", host, err)
++	}
++
++	// 检查所有解析的IP地址
++	for _, ip := range ips {
++		if !protection.IsIPAccessAllowed(ip) {
++			if isPrivateIP(ip) {
++				return fmt.Errorf("private IP address not allowed: %s resolves to %s", host, ip.String())
++			} else {
++				return fmt.Errorf("IP address not in whitelist: %s resolves to %s", host, ip.String())
++			}
++		}
++	}
++
++	return nil
++}
+diff --git a/service/cf_worker.go b/service/download.go
+similarity index 52%
+rename from service/cf_worker.go
+rename to service/download.go
+index 4a7b437..2f30870 100644
+--- a/service/cf_worker.go
++++ b/service/download.go
+@@ -6,7 +6,7 @@ import (
+ 	"fmt"
+ 	"net/http"
+ 	"one-api/common"
+-	"one-api/setting"
++	"one-api/setting/system_setting"
+ 	"strings"
+ )
+ 
+@@ -21,14 +21,20 @@ type WorkerRequest struct {
+ 
+ // DoWorkerRequest 通过Worker发送请求
+ func DoWorkerRequest(req *WorkerRequest) (*http.Response, error) {
+-	if !setting.EnableWorker() {
++	if !system_setting.EnableWorker() {
+ 		return nil, fmt.Errorf("worker not enabled")
+ 	}
+-	if !setting.WorkerAllowHttpImageRequestEnabled && !strings.HasPrefix(req.URL, "https") {
++	if !system_setting.WorkerAllowHttpImageRequestEnabled && !strings.HasPrefix(req.URL, "https") {
+ 		return nil, fmt.Errorf("only support https url")
+ 	}
+ 
+-	workerUrl := setting.WorkerUrl
++	// SSRF防护：验证请求URL
++	fetchSetting := system_setting.GetFetchSetting()
++	if err := common.ValidateURLWithFetchSetting(req.URL, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.WhitelistDomains, fetchSetting.WhitelistIps, fetchSetting.AllowedPorts); err != nil {
++		return nil, fmt.Errorf("request reject: %v", err)
++	}
++
++	workerUrl := system_setting.WorkerUrl
+ 	if !strings.HasSuffix(workerUrl, "/") {
+ 		workerUrl += "/"
+ 	}
+@@ -43,15 +49,21 @@ func DoWorkerRequest(req *WorkerRequest) (*http.Response, error) {
+ }
+ 
+ func DoDownloadRequest(originUrl string, reason ...string) (resp *http.Response, err error) {
+-	if setting.EnableWorker() {
++	if system_setting.EnableWorker() {
+ 		common.SysLog(fmt.Sprintf("downloading file from worker: %s, reason: %s", originUrl, strings.Join(reason, ", ")))
+ 		req := &WorkerRequest{
+ 			URL: originUrl,
+-			Key: setting.WorkerValidKey,
++			Key: system_setting.WorkerValidKey,
+ 		}
+ 		return DoWorkerRequest(req)
+ 	} else {
+-		common.SysLog(fmt.Sprintf("downloading from origin with worker: %s, reason: %s", originUrl, strings.Join(reason, ", ")))
++		// SSRF防护：验证请求URL（非Worker模式）
++		fetchSetting := system_setting.GetFetchSetting()
++		if err := common.ValidateURLWithFetchSetting(originUrl, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.WhitelistDomains, fetchSetting.WhitelistIps, fetchSetting.AllowedPorts); err != nil {
++			return nil, fmt.Errorf("request reject: %v", err)
++		}
++
++		common.SysLog(fmt.Sprintf("downloading from origin: %s, reason: %s", common.MaskSensitiveInfo(originUrl), strings.Join(reason, ", ")))
+ 		return http.Get(originUrl)
+ 	}
+ }
+diff --git a/service/user_notify.go b/service/user_notify.go
+index c4a3ea9..f9d7b66 100644
+--- a/service/user_notify.go
++++ b/service/user_notify.go
+@@ -7,7 +7,7 @@ import (
+ 	"one-api/common"
+ 	"one-api/dto"
+ 	"one-api/model"
+-	"one-api/setting"
++	"one-api/setting/system_setting"
+ 	"strings"
+ )
+ 
+@@ -91,11 +91,11 @@ func sendBarkNotify(barkURL string, data dto.Notify) error {
+ 	var resp *http.Response
+ 	var err error
+ 
+-	if setting.EnableWorker() {
++	if system_setting.EnableWorker() {
+ 		// 使用worker发送请求
+ 		workerReq := &WorkerRequest{
+ 			URL:    finalURL,
+-			Key:    setting.WorkerValidKey,
++			Key:    system_setting.WorkerValidKey,
+ 			Method: http.MethodGet,
+ 			Headers: map[string]string{
+ 				"User-Agent": "OneAPI-Bark-Notify/1.0",
+@@ -113,6 +113,12 @@ func sendBarkNotify(barkURL string, data dto.Notify) error {
+ 			return fmt.Errorf("bark request failed with status code: %d", resp.StatusCode)
+ 		}
+ 	} else {
++		// SSRF防护：验证Bark URL（非Worker模式）
++		fetchSetting := system_setting.GetFetchSetting()
++		if err := common.ValidateURLWithFetchSetting(finalURL, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.WhitelistDomains, fetchSetting.WhitelistIps, fetchSetting.AllowedPorts); err != nil {
++			return fmt.Errorf("request reject: %v", err)
++		}
++
+ 		// 直接发送请求
+ 		req, err = http.NewRequest(http.MethodGet, finalURL, nil)
+ 		if err != nil {
+diff --git a/service/webhook.go b/service/webhook.go
+index 8faccda..1f159eb 100644
+--- a/service/webhook.go
++++ b/service/webhook.go
+@@ -8,8 +8,9 @@ import (
+ 	"encoding/json"
+ 	"fmt"
+ 	"net/http"
++	"one-api/common"
+ 	"one-api/dto"
+-	"one-api/setting"
++	"one-api/setting/system_setting"
+ 	"time"
+ )
+ 
+@@ -56,11 +57,11 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error
+ 	var req *http.Request
+ 	var resp *http.Response
+ 
+-	if setting.EnableWorker() {
++	if system_setting.EnableWorker() {
+ 		// 构建worker请求数据
+ 		workerReq := &WorkerRequest{
+ 			URL:    webhookURL,
+-			Key:    setting.WorkerValidKey,
++			Key:    system_setting.WorkerValidKey,
+ 			Method: http.MethodPost,
+ 			Headers: map[string]string{
+ 				"Content-Type": "application/json",
+@@ -86,6 +87,12 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error
+ 			return fmt.Errorf("webhook request failed with status code: %d", resp.StatusCode)
+ 		}
+ 	} else {
++		// SSRF防护：验证Webhook URL（非Worker模式）
++		fetchSetting := system_setting.GetFetchSetting()
++		if err := common.ValidateURLWithFetchSetting(webhookURL, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.WhitelistDomains, fetchSetting.WhitelistIps, fetchSetting.AllowedPorts); err != nil {
++			return fmt.Errorf("request reject: %v", err)
++		}
++
+ 		req, err = http.NewRequest(http.MethodPost, webhookURL, bytes.NewBuffer(payloadBytes))
+ 		if err != nil {
+ 			return fmt.Errorf("failed to create webhook request: %v", err)
+diff --git a/setting/system_setting/fetch_setting.go b/setting/system_setting/fetch_setting.go
+new file mode 100644
+index 0000000..6e47c3f
+--- /dev/null
++++ b/setting/system_setting/fetch_setting.go
+@@ -0,0 +1,28 @@
++package system_setting
++
++import "one-api/setting/config"
++
++type FetchSetting struct {
++	EnableSSRFProtection bool     `json:"enable_ssrf_protection"` // 是否启用SSRF防护
++	AllowPrivateIp       bool     `json:"allow_private_ip"`
++	WhitelistDomains     []string `json:"whitelist_domains"` // domain format, e.g. example.com, *.example.com
++	WhitelistIps         []string `json:"whitelist_ips"`     // CIDR format
++	AllowedPorts         []string `json:"allowed_ports"`     // port range format, e.g. 80, 443, 8000-9000
++}
++
++var defaultFetchSetting = FetchSetting{
++	EnableSSRFProtection: true, // 默认开启SSRF防护
++	AllowPrivateIp:       false,
++	WhitelistDomains:     []string{},
++	WhitelistIps:         []string{},
++	AllowedPorts:         []string{"80", "443", "8080", "8443"},
++}
++
++func init() {
++	// 注册到全局配置管理器
++	config.GlobalConfig.Register("fetch_setting", &defaultFetchSetting)
++}
++
++func GetFetchSetting() *FetchSetting {
++	return &defaultFetchSetting
++}
+diff --git a/types/error.go b/types/error.go
+index 883ee06..a42e843 100644
+--- a/types/error.go
++++ b/types/error.go
+@@ -122,6 +122,9 @@ func (e *NewAPIError) MaskSensitiveError() string {
+ 		return string(e.errorCode)
+ 	}
+ 	errStr := e.Err.Error()
++	if e.errorCode == ErrorCodeCountTokenFailed {
++		return errStr
++	}
+ 	return common.MaskSensitiveInfo(errStr)
+ }
+ 
+@@ -153,8 +156,9 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
+ 			Code:    e.errorCode,
+ 		}
+ 	}
+-
+-	result.Message = common.MaskSensitiveInfo(result.Message)
++	if e.errorCode != ErrorCodeCountTokenFailed {
++		result.Message = common.MaskSensitiveInfo(result.Message)
++	}
+ 	return result
+ }
+ 
+@@ -178,7 +182,9 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
+ 			Type:    string(e.errorType),
+ 		}
+ 	}
+-	result.Message = common.MaskSensitiveInfo(result.Message)
++	if e.errorCode != ErrorCodeCountTokenFailed {
++		result.Message = common.MaskSensitiveInfo(result.Message)
++	}
+ 	return result
+ }
+ 
+diff --git a/web/src/components/settings/SystemSetting.jsx b/web/src/components/settings/SystemSetting.jsx
+index 9c7eeaa..71dfaac 100644
+--- a/web/src/components/settings/SystemSetting.jsx
++++ b/web/src/components/settings/SystemSetting.jsx
+@@ -44,6 +44,7 @@ import { useTranslation } from 'react-i18next';
+ const SystemSetting = () => {
+   const { t } = useTranslation();
+   let [inputs, setInputs] = useState({
++    
+     PasswordLoginEnabled: '',
+     PasswordRegisterEnabled: '',
+     EmailVerificationEnabled: '',
+@@ -87,6 +88,12 @@ const SystemSetting = () => {
+     LinuxDOClientSecret: '',
+     LinuxDOMinimumTrustLevel: '',
+     ServerAddress: '',
++    // SSRF防护配置
++    'fetch_setting.enable_ssrf_protection': true,
++    'fetch_setting.allow_private_ip': '',
++    'fetch_setting.whitelist_domains': [],
++    'fetch_setting.whitelist_ips': [],
++    'fetch_setting.allowed_ports': [],
+   });
+ 
+   const [originInputs, setOriginInputs] = useState({});
+@@ -98,6 +105,9 @@ const SystemSetting = () => {
+     useState(false);
+   const [linuxDOOAuthEnabled, setLinuxDOOAuthEnabled] = useState(false);
+   const [emailToAdd, setEmailToAdd] = useState('');
++  const [whitelistDomains, setWhitelistDomains] = useState([]);
++  const [whitelistIps, setWhitelistIps] = useState([]);
++  const [allowedPorts, setAllowedPorts] = useState([]);
+ 
+   const getOptions = async () => {
+     setLoading(true);
+@@ -113,6 +123,34 @@ const SystemSetting = () => {
+           case 'EmailDomainWhitelist':
+             setEmailDomainWhitelist(item.value ? item.value.split(',') : []);
+             break;
++          case 'fetch_setting.allow_private_ip':
++          case 'fetch_setting.enable_ssrf_protection':
++            item.value = toBoolean(item.value);
++            break;
++          case 'fetch_setting.whitelist_domains':
++            try {
++              const domains = item.value ? JSON.parse(item.value) : [];
++              setWhitelistDomains(Array.isArray(domains) ? domains : []);
++            } catch (e) {
++              setWhitelistDomains([]);
++            }
++            break;
++          case 'fetch_setting.whitelist_ips':
++            try {
++              const ips = item.value ? JSON.parse(item.value) : [];
++              setWhitelistIps(Array.isArray(ips) ? ips : []);
++            } catch (e) {
++              setWhitelistIps([]);
++            }
++            break;
++          case 'fetch_setting.allowed_ports':
++            try {
++              const ports = item.value ? JSON.parse(item.value) : [];
++              setAllowedPorts(Array.isArray(ports) ? ports : []);
++            } catch (e) {
++              setAllowedPorts(['80', '443', '8080', '8443']);
++            }
++            break;
+           case 'PasswordLoginEnabled':
+           case 'PasswordRegisterEnabled':
+           case 'EmailVerificationEnabled':
+@@ -276,6 +314,38 @@ const SystemSetting = () => {
+     }
+   };
+ 
++  const submitSSRF = async () => {
++    const options = [];
++
++    // 处理域名白名单
++    if (Array.isArray(whitelistDomains)) {
++      options.push({
++        key: 'fetch_setting.whitelist_domains',
++        value: JSON.stringify(whitelistDomains),
++      });
++    }
++
++    // 处理IP白名单
++    if (Array.isArray(whitelistIps)) {
++      options.push({
++        key: 'fetch_setting.whitelist_ips',
++        value: JSON.stringify(whitelistIps),
++      });
++    }
++
++    // 处理端口配置
++    if (Array.isArray(allowedPorts)) {
++      options.push({
++        key: 'fetch_setting.allowed_ports',
++        value: JSON.stringify(allowedPorts),
++      });
++    }
++
++    if (options.length > 0) {
++      await updateOptions(options);
++    }
++  };
++
+   const handleAddEmail = () => {
+     if (emailToAdd && emailToAdd.trim() !== '') {
+       const domain = emailToAdd.trim();
+@@ -587,6 +657,136 @@ const SystemSetting = () => {
+                 </Form.Section>
+               </Card>
+ 
++              <Card>
++                <Form.Section text={t('SSRF防护设置')}>
++                  <Text extraText={t('SSRF防护详细说明')}>
++                    {t('配置服务器端请求伪造(SSRF)防护，用于保护内网资源安全')}
++                  </Text>
++                  <Row
++                    gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
++                  >
++                    <Col xs={24} sm={24} md={24} lg={24} xl={24}>
++                      <Form.Checkbox
++                        field='fetch_setting.enable_ssrf_protection'
++                        noLabel
++                        extraText={t('SSRF防护开关详细说明')}
++                        onChange={(e) =>
++                          handleCheckboxChange('fetch_setting.enable_ssrf_protection', e)
++                        }
++                      >
++                        {t('启用SSRF防护（推荐开启以保护服务器安全）')}
++                      </Form.Checkbox>
++                    </Col>
++                  </Row>
++                  
++                  <Row
++                    gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
++                    style={{ marginTop: 16 }}
++                  >
++                    <Col xs={24} sm={24} md={24} lg={24} xl={24}>
++                      <Form.Checkbox
++                        field='fetch_setting.allow_private_ip'
++                        noLabel
++                        extraText={t('私有IP访问详细说明')}
++                        onChange={(e) =>
++                          handleCheckboxChange('fetch_setting.allow_private_ip', e)
++                        }
++                      >
++                        {t('允许访问私有IP地址（127.0.0.1、192.168.x.x等内网地址）')}
++                      </Form.Checkbox>
++                    </Col>
++                  </Row>
++                  
++                  <Row
++                    gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
++                    style={{ marginTop: 16 }}
++                  >
++                    <Col xs={24} sm={24} md={24} lg={24} xl={24}>
++                      <Text strong>{t('域名白名单')}</Text>
++                      <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
++                        {t('支持通配符格式，如：example.com, *.api.example.com')}
++                      </Text>
++                      <TagInput
++                        value={whitelistDomains}
++                        onChange={(value) => {
++                          setWhitelistDomains(value);
++                          // 触发Form的onChange事件
++                          setInputs(prev => ({
++                            ...prev,
++                            'fetch_setting.whitelist_domains': value
++                          }));
++                        }}
++                        placeholder={t('输入域名后回车，如：example.com')}
++                        style={{ width: '100%' }}
++                      />
++                      <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
++                        {t('域名白名单详细说明')}
++                      </Text>
++                    </Col>
++                  </Row>
++
++                  <Row
++                    gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
++                    style={{ marginTop: 16 }}
++                  >
++                    <Col xs={24} sm={24} md={24} lg={24} xl={24}>
++                      <Text strong>{t('IP白名单')}</Text>
++                      <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
++                        {t('支持CIDR格式，如：8.8.8.8, 192.168.1.0/24')}
++                      </Text>
++                      <TagInput
++                        value={whitelistIps}
++                        onChange={(value) => {
++                          setWhitelistIps(value);
++                          // 触发Form的onChange事件
++                          setInputs(prev => ({
++                            ...prev,
++                            'fetch_setting.whitelist_ips': value
++                          }));
++                        }}
++                        placeholder={t('输入IP地址后回车，如：8.8.8.8')}
++                        style={{ width: '100%' }}
++                      />
++                      <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
++                        {t('IP白名单详细说明')}
++                      </Text>
++                    </Col>
++                  </Row>
++
++                  <Row
++                    gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
++                    style={{ marginTop: 16 }}
++                  >
++                    <Col xs={24} sm={24} md={24} lg={24} xl={24}>
++                      <Text strong>{t('允许的端口')}</Text>
++                      <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
++                        {t('支持单个端口和端口范围，如：80, 443, 8000-8999')}
++                      </Text>
++                      <TagInput
++                        value={allowedPorts}
++                        onChange={(value) => {
++                          setAllowedPorts(value);
++                          // 触发Form的onChange事件
++                          setInputs(prev => ({
++                            ...prev,
++                            'fetch_setting.allowed_ports': value
++                          }));
++                        }}
++                        placeholder={t('输入端口后回车，如：80 或 8000-8999')}
++                        style={{ width: '100%' }}
++                      />
++                      <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
++                        {t('端口配置详细说明')}
++                      </Text>
++                    </Col>
++                  </Row>
++
++                  <Button onClick={submitSSRF} style={{ marginTop: 16 }}>
++                    {t('更新SSRF防护设置')}
++                  </Button>
++                </Form.Section>
++              </Card>
++
+               <Card>
+                 <Form.Section text={t('配置登录注册')}>
+                   <Row
+diff --git a/web/src/i18n/locales/en.json b/web/src/i18n/locales/en.json
+index 73dfbeb..6759f53 100644
+--- a/web/src/i18n/locales/en.json
++++ b/web/src/i18n/locales/en.json
+@@ -2084,5 +2084,27 @@
+   "原价": "Original price",
+   "优惠": "Discount",
+   "折": "% off",
+-  "节省": "Save"
++  "节省": "Save",
++  "代理设置": "Proxy Settings",
++  "更新Worker设置": "Update Worker Settings",
++  "SSRF防护设置": "SSRF Protection Settings",
++  "配置服务器端请求伪造(SSRF)防护，用于保护内网资源安全": "Configure Server-Side Request Forgery (SSRF) protection to secure internal network resources",
++  "SSRF防护详细说明": "SSRF protection prevents malicious users from using your server to access internal network resources. Configure whitelists for trusted domains/IPs and restrict allowed ports. Applies to file downloads, webhooks, and notifications.",
++  "启用SSRF防护（推荐开启以保护服务器安全）": "Enable SSRF Protection (Recommended for server security)",
++  "SSRF防护开关详细说明": "Master switch controls whether SSRF protection is enabled. When disabled, all SSRF checks are bypassed, allowing access to any URL. ⚠️ Only disable this feature in completely trusted environments.",
++  "允许访问私有IP地址（127.0.0.1、192.168.x.x等内网地址）": "Allow access to private IP addresses (127.0.0.1, 192.168.x.x and other internal addresses)",
++  "私有IP访问详细说明": "⚠️ Security Warning: Enabling this allows access to internal network resources (localhost, private networks). Only enable if you need to access internal services and understand the security implications.",
++  "域名白名单": "Domain Whitelist",
++  "支持通配符格式，如：example.com, *.api.example.com": "Supports wildcard format, e.g.: example.com, *.api.example.com",
++  "域名白名单详细说明": "Whitelisted domains bypass all SSRF checks and are allowed direct access. Supports exact domains (example.com) or wildcards (*.api.example.com) for subdomains. When whitelist is empty, all domains go through SSRF validation.",
++  "输入域名后回车，如：example.com": "Enter domain and press Enter, e.g.: example.com",
++  "IP白名单": "IP Whitelist",
++  "支持CIDR格式，如：8.8.8.8, 192.168.1.0/24": "Supports CIDR format, e.g.: 8.8.8.8, 192.168.1.0/24",
++  "IP白名单详细说明": "Controls which IP addresses are allowed access. Use single IPs (8.8.8.8) or CIDR notation (192.168.1.0/24). Empty whitelist allows all IPs (subject to private IP settings), non-empty whitelist only allows listed IPs.",
++  "输入IP地址后回车，如：8.8.8.8": "Enter IP address and press Enter, e.g.: 8.8.8.8",
++  "允许的端口": "Allowed Ports",
++  "支持单个端口和端口范围，如：80, 443, 8000-8999": "Supports single ports and port ranges, e.g.: 80, 443, 8000-8999",
++  "端口配置详细说明": "Restrict external requests to specific ports. Use single ports (80, 443) or ranges (8000-8999). Empty list allows all ports. Default includes common web ports.",
++  "输入端口后回车，如：80 或 8000-8999": "Enter port and press Enter, e.g.: 80 or 8000-8999",
++  "更新SSRF防护设置": "Update SSRF Protection Settings"
+ }
+diff --git a/web/src/i18n/locales/zh.json b/web/src/i18n/locales/zh.json
+index 5c7904f..7177704 100644
+--- a/web/src/i18n/locales/zh.json
++++ b/web/src/i18n/locales/zh.json
+@@ -9,5 +9,27 @@
+   "语言": "语言",
+   "展开侧边栏": "展开侧边栏",
+   "关闭侧边栏": "关闭侧边栏",
+-  "注销成功!": "注销成功!"
++  "注销成功!": "注销成功!",
++  "代理设置": "代理设置",
++  "更新Worker设置": "更新Worker设置",
++  "SSRF防护设置": "SSRF防护设置",
++  "配置服务器端请求伪造(SSRF)防护，用于保护内网资源安全": "配置服务器端请求伪造(SSRF)防护，用于保护内网资源安全",
++  "SSRF防护详细说明": "SSRF防护可防止恶意用户利用您的服务器访问内网资源。您可以配置受信任域名/IP的白名单，并限制允许的端口。适用于文件下载、Webhook回调和通知功能。",
++  "启用SSRF防护（推荐开启以保护服务器安全）": "启用SSRF防护（推荐开启以保护服务器安全）",
++  "SSRF防护开关详细说明": "总开关控制是否启用SSRF防护功能。关闭后将跳过所有SSRF检查，允许访问任意URL。⚠️ 仅在完全信任环境中关闭此功能。",
++  "允许访问私有IP地址（127.0.0.1、192.168.x.x等内网地址）": "允许访问私有IP地址（127.0.0.1、192.168.x.x等内网地址）",
++  "私有IP访问详细说明": "⚠️ 安全警告：启用此选项将允许访问内网资源（本地主机、私有网络）。仅在需要访问内部服务且了解安全风险的情况下启用。",
++  "域名白名单": "域名白名单",
++  "支持通配符格式，如：example.com, *.api.example.com": "支持通配符格式，如：example.com, *.api.example.com",
++  "域名白名单详细说明": "白名单中的域名将绕过所有SSRF检查，直接允许访问。支持精确域名（example.com）或通配符（*.api.example.com）匹配子域名。白名单为空时，所有域名都需要通过SSRF检查。",
++  "输入域名后回车，如：example.com": "输入域名后回车，如：example.com",
++  "IP白名单": "IP白名单",
++  "支持CIDR格式，如：8.8.8.8, 192.168.1.0/24": "支持CIDR格式，如：8.8.8.8, 192.168.1.0/24",
++  "IP白名单详细说明": "控制允许访问的IP地址。支持单个IP（8.8.8.8）或CIDR网段（192.168.1.0/24）。空白名单允许所有IP（但仍受私有IP设置限制），非空白名单仅允许列表中的IP访问。",
++  "输入IP地址后回车，如：8.8.8.8": "输入IP地址后回车，如：8.8.8.8",
++  "允许的端口": "允许的端口",
++  "支持单个端口和端口范围，如：80, 443, 8000-8999": "支持单个端口和端口范围，如：80, 443, 8000-8999",
++  "端口配置详细说明": "限制外部请求只能访问指定端口。支持单个端口（80, 443）或端口范围（8000-8999）。空列表允许所有端口。默认包含常用Web端口。",
++  "输入端口后回车，如：80 或 8000-8999": "输入端口后回车，如：80 或 8000-8999",
++  "更新SSRF防护设置": "更新SSRF防护设置"
+ }

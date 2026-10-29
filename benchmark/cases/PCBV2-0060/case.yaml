@@ -1,0 +1,23 @@
+case_id: PCBV2-0060
+public_name: hl7-fhir-org-hl7-fhir-core-cve-2023-28465
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/hapifhir/org.hl7.fhir.core.git
+  v0: 5.6.90
+  v1: 5.6.92
+service:
+  readiness: http://127.0.0.1:8080/
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

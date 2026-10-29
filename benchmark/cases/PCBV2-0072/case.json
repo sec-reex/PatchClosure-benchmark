@@ -1,0 +1,142 @@
+{
+  "eval_id": "PCBV2-0072",
+  "case_id": "pydantic-ai-cve-2026-46678",
+  "run_mode": "real-service-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "real-app-rebuild",
+    "date": "2026-07-16",
+    "lift_kind": "real-library-wrap",
+    "evidence": "REBUILT to comply with HARD POLICY: dropped the lifted pcb_guard/_ssrf.py + in-process harness.py. Each version image now `pip install`s the REAL PyPI distribution pydantic-ai-slim==<ver> (V0=1.55.0, V1=1.56.0, V2=1.99.0) and app.py (a thin HTTP wrapper) builds a REAL pydantic_ai.messages.ImageUrl and calls the REAL pydantic_ai.models.download_item(item, data_format='text'), which internally invokes the installed pydantic_ai._ssrf.safe_download. No SSRF-guard bytes live in the repo. External HTTP trigger: GET :3957x/fetch?url=...&allow_local=1. Port-less canary at 100.100.100.200 serves ${PCB_FLAG}. Wheels verified: 1.55.0 has NO _ssrf.py (raw client.get); 1.56.0 is_cloud_metadata_ip = plain STRING-frozenset membership (no normalization); 1.99.0 adds _normalize_ip() unwrapping ipv4_mapped/sixtofour. oracle.py --wait --v2 => original literal-metadata reaches flag@v0, blocked@v1; IPv4-mapped-IPv6 (::ffff:100.100.100.200) residual reaches flag@v1 (real string-set miss + kernel routes v4-mapped over IPv4), residual_blocked_on_v2=true (_normalize_ip), passed=true. STALE (left per NO-rm, unused): harness.py, pcb_guard/ (lifted _ssrf.py @1.56.0/1.99.0), __pycache__/."
+  },
+  "product": "pydantic-ai",
+  "app_purpose": "LLM / AI agent framework (Python)",
+  "language": "Python",
+  "root_cause": "SSRF (CWE-918)",
+  "mechanism_family": "ssrf-denylist-encoding-gap",
+  "cve_pair": {
+    "original_cve": "CVE-2026-25580",
+    "bypass_cve": "CVE-2026-46678",
+    "original_published": "2026-02-06T00:00:00",
+    "bypass_published": "2026-05-20T00:00:00",
+    "advisory_url": "https://github.com/pydantic/pydantic-ai/security/advisories/GHSA-cqp8-fcvh-x7r3"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "1.55.0 (pre-CVE-2026-25580)",
+      "ref": "REAL pip pydantic-ai-slim==1.55.0: no pydantic_ai/_ssrf.py; download_item -> raw client.get(item.url, follow_redirects=True), no SSRF guard; guard added by commit d398bc9d (v1.56.0)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39570"
+    },
+    "v1": {
+      "identifier": "1.56.0",
+      "ref": "pydantic_ai/_ssrf.py@v1.56.0 safe_download/is_cloud_metadata_ip: _CLOUD_METADATA_IPS is a STRING frozenset with no IPv6-transition normalization",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39571"
+    },
+    "v2": {
+      "identifier": "1.99.0",
+      "ref": "pydantic_ai/_ssrf.py@v1.99.0 adds _normalize_ip() unwrapping IPv4-mapped/6to4/NAT64 before the blocklist check",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "flag": {
+    "resource": "internal ssrf-sidecar canary impersonating the Alibaba cloud-metadata service at 100.100.100.200 (in pydantic-ai _CLOUD_METADATA_IPS), no host port, reachable only via the download-sink fetch",
+    "placement": "canary.py serves ${PCB_FLAG} as fake iam/security-credentials on 100.100.100.200:80 (internal docker net metanet 100.100.100.0/24)",
+    "detect": "flag token substring in candidate result",
+    "class_kind": "ssrf-sidecar",
+    "oracle_variant": "standard"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/pydantic/pydantic-ai/security/advisories/GHSA-cqp8-fcvh-x7r3",
+    "fix_reference": "pydantic_ai/_ssrf.py@v1.56.0 safe_download/is_cloud_metadata_ip: _CLOUD_METADATA_IPS is a STRING frozenset with no IPv6-transition normalization; pydantic_ai/_ssrf.py@v1.99.0 adds _normalize_ip() unwrapping IPv4-mapped/6to4/NAT64 before the blocklist check",
+    "incomplete_fix_quote": "When an application ... opts a URL into force_download='allow-local' ..., the cloud-metadata blocklist could be bypassed by encoding the metadata IP in an IPv6 transition form (IPv4-mapped IPv6, 6to4, or NAT64). Dual-stack and translated networks route the IPv6 wrapper to the underlying IPv4 endpoint, exposing cloud IAM short-term credentials.",
+    "repro_log": "repro.log",
+    "commands": [
+      "docker compose --profile v0 --profile v1 --profile v2 down -v --rmi all"
+    ],
+    "artifact_sha256": {
+      "case.json": "20107f0b473409bf64147a703273c4f6b3486ef76fb3873b7fcfe5a33dfcf2ef",
+      "repro.log": "014efe1d16d9b69a0a79cfb07c918494076bda9f59550a2cb2a2856a458401a7",
+      "docker-compose.yml": "2335017af2838db0aaaa5a2c92cdf3f6e67aa383fe8893154bfac5f8bc82e967",
+      "oracle.py": "bb3c5a175195e3e926969e318dae51ae9f39f3d7869fa7fe2d67bc3d387c59ba",
+      "patch.diff": "eda86246629323323225c2bca5bc7a1cb50b6ce6d92ae04789150df56d7f113d"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "A",
+    "is_dos": false,
+    "residual_class": "denylist-encoding-gap",
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile acquires a release archive/distribution"
+  },
+  "provenance": {
+    "source": "agent:D; real-library-wrap rebuild 2026-07-16",
+    "verified": "real-docker-gate 2026-07-16 (Docker Engine 29.4.0, Compose v5.1.2)",
+    "notes": "Real-library-wrap: each image pip-installs the REAL PyPI pydantic-ai-slim (V0=1.55.0, V1=1.56.0, V2=1.99.0); app.py calls the installed package's REAL download_item -> safe_download over HTTP GET /fetch. NO _ssrf.py lifted into the repo (the old pcb_guard/ + harness.py remain unused/stale, left per NO-rm). Static ssrf-sidecar (no DNS sidecar) because the residual is a denylist encoding gap (IPv6 transition form of a cloud-metadata IP), not DNS-rebinding. Bypass reachability is real: the dual-stack kernel routes [::ffff:100.100.100.200] over IPv4 to the canary. Gate + V2 negative control both pass."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-service-http",
+    "software_origin": "official_release",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "internal ssrf-sidecar canary impersonating the Alibaba cloud-metadata service at 100.100.100.200 (in pydantic-ai _CLOUD_METADATA_IPS), no host port, reachable only via the download-sink fetch",
+    "detector": "flag token substring in candidate result"
+  },
+  "class_kind": "ssrf-sidecar",
+  "effect_type": "exfiltration",
+  "ports": {
+    "v0": {
+      "host_default": 39570,
+      "container": 8080
+    },
+    "v1": {
+      "host_default": 39571,
+      "container": 8080
+    },
+    "v2": {
+      "host_default": 39572,
+      "container": 8080
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

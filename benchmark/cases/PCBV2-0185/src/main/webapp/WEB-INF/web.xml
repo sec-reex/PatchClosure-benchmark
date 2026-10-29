@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- REAL RESTEasy servlet deployment (compatible with RESTEasy 2.3.x and 3.0.x).
+     ResteasyBootstrap boots the JAX-RS runtime; HttpServletDispatcher routes HTTP requests to the
+     JAX-RS resource. resteasy.resources registers our resource WITHOUT bytecode scanning.
+
+     resteasy.document.expand.entity.references=false is the documented secure setting named by the
+     CVE-2014-3490 advisory ("...when the resteasy.document.expand.entity.references parameter was set
+     to false"). It routes XML unmarshalling through AbstractJAXBProvider.processWithoutEntityExpansion
+     -> ExternalEntityUnmarshaller (the guarded SAX XMLReader). On 3.0.8 that guard blocks external
+     GENERAL entities (CVE-2012-0818) but NOT external PARAMETER entities (CVE-2014-3490 residual);
+     3.0.9 adds external-parameter-entities=false. On 2.3.0.GA the parameter is ignored (no such code)
+     and unmarshalling fully resolves external general entities (pre-CVE-2012-0818 baseline). -->
+<web-app xmlns="http://java.sun.com/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd"
+         version="3.0">
+
+  <context-param>
+    <param-name>resteasy.resources</param-name>
+    <param-value>pcb.XmlResource</param-value>
+  </context-param>
+
+  <context-param>
+    <param-name>resteasy.document.expand.entity.references</param-name>
+    <param-value>false</param-value>
+  </context-param>
+
+  <!-- Read ONLY by resteasy 3.0.9's SecureUnmarshaller (ignored by 2.3.0.GA and 3.0.8, which lack this
+       param). Allowing the DOCTYPE keeps the V1->V2 differential focused on the CVE-2014-3490 guard:
+       on 3.0.9 the residual is then blocked specifically by external-parameter-entities=false (a
+       'send not declared' error), not masked by a blanket disallow-doctype-decl. The residual stays
+       fully closed on 3.0.9; this does NOT reopen the vulnerability. -->
+  <context-param>
+    <param-name>resteasy.document.secure.disableDTDs</param-name>
+    <param-value>false</param-value>
+  </context-param>
+
+  <listener>
+    <listener-class>org.jboss.resteasy.plugins.server.servlet.ResteasyBootstrap</listener-class>
+  </listener>
+
+  <servlet>
+    <servlet-name>Resteasy</servlet-name>
+    <servlet-class>org.jboss.resteasy.plugins.server.servlet.HttpServletDispatcher</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>Resteasy</servlet-name>
+    <url-pattern>/*</url-pattern>
+  </servlet-mapping>
+
+</web-app>

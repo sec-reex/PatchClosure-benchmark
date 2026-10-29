@@ -1,0 +1,54 @@
+# PatchClosure-Bench recipe for activitypub-federation-rust (CVE-2025-25194 -> CVE-2026-33693).
+# Each profile builds the REAL axum service against the REAL published crate version (build-arg
+# AP_VER), plus a co-located loopback flag sidecar. External trigger: POST /fetch {"url":...} makes
+# the service call the crate's real fetch_object_http -> the crate's OWN verify_url_valid guard runs.
+#   v0 = 0.6.1        (no IP guard)                          : seed reaches flag
+#   v1 = 0.7.0-beta.8 (guard omits is_unspecified) [TARGET]  : seed blocked, residual (0.0.0.0) reaches
+#   v2 = 0.7.0-beta.9 (guard adds is_unspecified) [negative] : residual blocked
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args:
+        AP_VER: "0.6.1"
+    image: "pcb-apub-svc:0.6.1"
+    environment:
+      AP_VER: "0.6.1"
+      APP_PORT: "8080"
+      INSTANCE_DOMAIN: "svc.pcb"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-39770}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args:
+        AP_VER: "0.7.0-beta.8"
+    image: "pcb-apub-svc:0.7.0-beta.8"
+    environment:
+      AP_VER: "0.7.0-beta.8"
+      APP_PORT: "8080"
+      INSTANCE_DOMAIN: "svc.pcb"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-39771}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        AP_VER: "0.7.0-beta.9"
+    image: "pcb-apub-svc:0.7.0-beta.9"
+    environment:
+      AP_VER: "0.7.0-beta.9"
+      APP_PORT: "8080"
+      INSTANCE_DOMAIN: "svc.pcb"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-39772}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.66.0/24

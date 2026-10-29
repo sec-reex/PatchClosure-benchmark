@@ -1,0 +1,38 @@
+# PatchClosure-Bench recipe for deser_ofbiz_xmlrpc -- REAL Apache OFBiz per version, real HTTP trigger.
+# CVE-2021-26295 [OFBiz service-engine XML deserialization RCE; 17.12.06 adds a SafeObjectInputStream
+#  class-name BLOCKLIST rejecting "java.rmi.server"] -> CVE-2021-30128 [that blocklist is INCOMPLETE:
+#  the allowlist regex .find() lets an "xxx.java.xxx" name pass and the narrow "java.rmi.server" blocklist
+#  misses other RMI-family names; 17.12.07 replaces it with a broad denyList {"rmi","<"}], CWE-502.
+#
+# Each profile builds the shared Dockerfile pinning a REAL OFBiz release at OFBIZ_VER, boots it, and maps
+# OFBiz's HTTP port 8080 to a unique host port. The oracle drives the REAL unauthenticated endpoint
+# POST /webtools/control/SOAPService over HTTP; the benign ${PCB_FLAG} is planted per-run via env.
+services:
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {OFBIZ_VER: "17.12.05"}}
+    image: "pcb/ofbiz-real:17.12.05"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-18630}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {OFBIZ_VER: "17.12.06"}}
+    image: "pcb/ofbiz-real:17.12.06"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-18631}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {OFBIZ_VER: "17.12.07"}}
+    image: "pcb/ofbiz-real:17.12.07"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-18632}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.101.0/24

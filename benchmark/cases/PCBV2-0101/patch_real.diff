@@ -1,0 +1,17 @@
+CVE: CVE-2019-9212
+upstream: https://github.com/sofastack/sofa-hessian
+fix: 1d88db3801f6b457dd7ed8395cdf3d38a5eebc2a (#84 / 3.4.0)
+
+diff --git a/src/main/resources/security/serialize.blacklist b/src/main/resources/security/serialize.blacklist
+index 74e6c32..875a642 100644
+--- a/src/main/resources/security/serialize.blacklist
++++ b/src/main/resources/security/serialize.blacklist
+@@ -63,4 +63,6 @@ org.apache.tomcat.dbcp.dbcp.BasicDataSource
+ com.sun.org.apache.xml.internal.security.signature.XMLSignatureInput
+ javassist.tools.web.Viewer
+ net.bytebuddy.dynamic.loading.ByteArrayClassLoader
+-org.apache.commons.beanutils.BeanMap
+\ No newline at end of file
++org.apache.commons.beanutils.BeanMap
++com.caucho.naming.Qname
++com.sun.org.apache.xpath.internal.objects.Xstring

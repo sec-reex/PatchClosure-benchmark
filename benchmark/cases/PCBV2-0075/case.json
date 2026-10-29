@@ -1,0 +1,143 @@
+{
+  "eval_id": "PCBV2-0075",
+  "case_id": "apache-http-server-cve-2024-40725",
+  "run_mode": "real-app-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "evidence": "Real official Apache httpd images (2.4.60 v0 / 2.4.61 v1 / 2.4.62 v2) via compose; external HTTP GET indirect-request source-disclosure of a CGI script whose flag lives only in a source comment. Live --run-gate: original DirectoryIndex indirection discloses source on 2.4.60, blocked (executed) on 2.4.61; residual MultiViews/mod_negotiation indirection discloses source on 2.4.61; 2.4.62 closes it (per repro). Variant A gate passed. Oracle self-tears-down.",
+    "nudge": "Pre-pulled httpd:2.4.60/2.4.61/2.4.62 before gate to avoid Docker Hub pull flakiness; no case logic changed."
+  },
+  "product": "Apache HTTP Server",
+  "app_purpose": "web_server",
+  "language": "C",
+  "root_cause": "Info_Disclosure",
+  "mechanism_family": "content_type_handler_trusted_flag_source_disclosure",
+  "cve_pair": {
+    "original_cve": "CVE-2024-39884",
+    "bypass_cve": "CVE-2024-40725",
+    "original_published": "2024-07-04",
+    "bypass_published": "2024-07-18",
+    "advisory_url": "https://httpd.apache.org/security/vulnerabilities_24.html"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "2.4.60",
+      "ref": "httpd:2.4.60",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:38460"
+    },
+    "v1": {
+      "identifier": "2.4.61",
+      "ref": "httpd:2.4.61",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:38461"
+    },
+    "v2": {
+      "identifier": "2.4.62",
+      "ref": "httpd:2.4.62",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:38462"
+    }
+  },
+  "flag": {
+    "resource": "the source code of a handled script (secret.cgi) that the legacy content-type handler is supposed to keep from being served as source",
+    "placement": "flag lives ONLY in a '# PCB-CANARY-SOURCE-ONLY PCB_FLAG=...' comment inside /usr/local/apache2/htdocs/idx/secret.cgi, planted by the compose entrypoint from $PCB_FLAG (environment, not app code); executing the script never prints it, so the flag is observable ONLY when the raw source is disclosed",
+    "detect": "flag token substring in candidate response body (raw source disclosed)",
+    "class_kind": "read-exfil",
+    "oracle_variant": "A"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "_heldout/flag_spec.json",
+    "_heldout/evidence.json",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://httpd.apache.org/security/vulnerabilities_24.html",
+    "fix_reference": "httpd:2.4.61; httpd:2.4.62",
+    "incomplete_fix_quote": "A partial fix for CVE-2024-39884 in the core of Apache HTTP Server 2.4.61 ignores some use of the legacy content-type based configuration of handlers. 'AddType' and similar configuration, under some circumstances where files are requested indirectly, result in source code disclosure of local content. For example, PHP scripts may be served instead of interpreted. Users are recommended to upgrade to version 2.4.62.",
+    "repro_log": "repro.log",
+    "commands": [
+      "PCB_FLAG=<token> docker compose --profile v0 --profile v1 up -d"
+    ],
+    "artifact_sha256": {
+      "case.json": "dad6828831b45b410954f851577cfa3d8061d4207db84fb0fa48e91bc129bc4c",
+      "repro.log": "d70ccd700cb00ae6d38418e6d544fb7b7734f0b5b82b07d88ed39cd231f7ae7a",
+      "docker-compose.yml": "7deeb3da95e7f9eb8ec017e4800c19be4adea185f9cd705d4115aea3a4cb4e02",
+      "oracle.py": "b4032442e110ec3a1c36784008ac7df64fcac1395390c0d04ee08be0dfde4ce5",
+      "patch.diff": "c0b368489247c0ae531d48e3e2792340cfba559670a11342c446dd66454e7d3e"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "infra",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "target recipe explicitly identifies an official/published image"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "runtime_gate_passed",
+    "notes": "Real Docker verification with official httpd images (2.4.60/2.4.61/2.4.62). Recipe-based: images pulled at up-time; the flag-bearing CGI script is planted in the environment via the compose entrypoint (flag only in a source comment, never in executed output). Same-sink (Variant A) source disclosure via the legacy content-type-derived handler being SKIPPED on an indirect request whose content-type lost its 'trusted' flag. CVE-2024-39884 seed = DirectoryIndex indirection (GET /idx/): discloses source on 2.4.60, blocked (executes) on 2.4.61. CVE-2024-40725 residual = mod_negotiation/MultiViews indirection (GET /idx/secret) via ap_internal_fast_redirect: still discloses source on 2.4.61, closed (executes) on 2.4.62. Gate run 2026-07-12 via `python3 oracle.py --run-gate` (fresh random flag PCBFLAG_710313...): all three checks true; see repro.log. Mechanism derived from Apache advisory + source diff (r1918839/r1919249) only; no offensive PoC fetched."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_image",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "the source code of a handled script (secret.cgi) that the legacy content-type handler is supposed to keep from being served as source",
+    "detector": "flag token substring in candidate response body (raw source disclosed)"
+  },
+  "class_kind": "read-exfil",
+  "effect_type": "exfiltration",
+  "ports": {
+    "v0": {
+      "host_default": 38460,
+      "container": 80
+    },
+    "v1": {
+      "host_default": 38461,
+      "container": 80
+    },
+    "v2": {
+      "host_default": 38462,
+      "container": 80
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

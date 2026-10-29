@@ -1,0 +1,29 @@
+[package]
+name = "apub-ssrf-svc"
+version = "0.1.0"
+edition = "2021"
+
+# REAL service: depends on the real published `activitypub-federation` crate (crates.io).
+# The exact version is injected at image-build time (Dockerfile ARG AP_VER replaces __AP_VER__):
+#   v0 = 0.6.1          (pre-guard; verify_url_valid does no IP resolution)
+#   v1 = 0.7.0-beta.8   (CVE-2025-25194 guard present, OMITS is_unspecified -> CVE-2026-33693 target)
+#   v2 = 0.7.0-beta.9   (CVE-2026-33693 fix: v4_is_invalid adds is_unspecified()/is_broadcast())
+# default-features=false drops the crate's own actix-web/axum web-integration modules (not needed);
+# the fetch path (config::FederationConfig, fetch::fetch_object_http, verify_url_valid) is core and
+# always compiled. NO guard code is lifted -- the crate's OWN guard runs inside its real fetch.
+
+[[bin]]
+name = "service"
+path = "src/main.rs"
+
+[[bin]]
+name = "sidecar"
+path = "src/bin/sidecar.rs"
+
+[dependencies]
+activitypub_federation = { version = "=__AP_VER__", default-features = false }
+tokio = { version = "1", features = ["full"] }
+axum = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = { version = "2", features = ["serde"] }

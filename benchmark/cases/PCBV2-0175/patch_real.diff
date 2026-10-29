@@ -1,0 +1,93 @@
+# CVE: CVE-2020-7715
+# Upstream: https://github.com/acstll/deep-get-set.git
+# Fix: a127e65bc77ff5707a6a103819e140d11475c5f4
+
+diff --git a/index.js b/index.js
+index 190efbc..44fd605 100644
+--- a/index.js
++++ b/index.js
+@@ -2,6 +2,10 @@ var hasOwnProp = Object.prototype.hasOwnProperty;
+ 
+ module.exports = deep;
+ 
++function isSafeKey (key) {
++  return key !== '__proto__' && key !== 'prototype' && key !== 'constructor';
++}
++
+ function deep (obj, path, value) {
+   if (arguments.length === 3) return set.apply(null, arguments);
+   return get.apply(null, arguments);
+@@ -11,7 +15,7 @@ function get (obj, path) {
+   var keys = Array.isArray(path) ? path : path.split('.');
+   for (var i = 0; i < keys.length; i++) {
+     var key = keys[i];
+-    if (!obj || !hasOwnProp.call(obj, key)) {
++    if (!obj || !hasOwnProp.call(obj, key) || !isSafeKey(key)) {
+       obj = undefined;
+       break;
+     }
+@@ -24,6 +28,7 @@ function set (obj, path, value) {
+   var keys = Array.isArray(path) ? path : path.split('.');
+   for (var i = 0; i < keys.length - 1; i++) {
+     var key = keys[i];
++    if (!isSafeKey(key)) return;
+     if (deep.p && !hasOwnProp.call(obj, key)) obj[key] = {};
+     obj = obj[key];
+   }
+diff --git a/test.js b/test.js
+index beecbf1..73603ec 100644
+--- a/test.js
++++ b/test.js
+@@ -98,3 +98,52 @@ test('deep deletes', function (t) {
+   t.equal(deep(obj, 'bar.baz.beep'), undefined);
+   t.end();
+ });
++
++test('do not get `__proto__`, `prototype` or `constructor` properties', function (t) {
++  var obj = {
++    isAdmin: false,
++    __proto__: {
++      isAdmin: true
++    },
++    prototype: {
++      isAdmin: true
++    },
++    constructor: {
++      isAdmin: true,
++      prototype: {
++        isAdmin: true
++      }
++    }
++  };
++
++  t.equal(deep(obj, 'isAdmin'), false);
++  t.equal(deep(obj, '__proto__.isAdmin'), undefined);
++  t.equal(deep(obj, 'prototype.isAdmin'), undefined);
++  t.equal(deep(obj, 'constructor.isAdmin'), undefined);
++  t.equal(deep(obj, 'constructor.prototype.isAdmin'), undefined);
++  t.end();
++});
++
++test('do not set `__proto__`, `prototype` or `constructor` properties', function (t) {
++  var obj = {};
++
++  deep.p = true;
++
++  deep(obj, 'isAdmin', false);
++  deep(obj, '__proto__.isAdmin', true);
++  deep(obj, 'prototype.isAdmin', true);
++  deep(obj, 'constructor.isAdmin', true);
++  deep(obj, 'constructor.prototype.isAdmin', true);
++
++  t.equal(obj.isAdmin, false);
++  t.equal(obj.__proto__ && obj.__proto__.isAdmin, undefined);
++  t.equal(obj.prototype && obj.prototype.isAdmin, undefined);
++  t.equal(obj.constructor && obj.constructor.isAdmin, undefined);
++  t.equal(
++    obj.constructor &&
++    obj.constructor.prototype &&
++    obj.constructor.prototype.isAdmin,
++    undefined
++  );
++  t.end();
++});

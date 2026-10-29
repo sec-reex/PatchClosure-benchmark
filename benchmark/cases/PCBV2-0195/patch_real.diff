@@ -1,0 +1,36 @@
+CVE: CVE-2026-41894
+upstream: https://github.com/siyuan-note/siyuan
+fix: bb481e1290c4a34255652ede85a546504505d2a7 (3.6.5 /export/ IsSubPath)
+
+diff --git a/kernel/server/serve.go b/kernel/server/serve.go
+index b7f66140127..d2eb2d67bb6 100644
+--- a/kernel/server/serve.go
++++ b/kernel/server/serve.go
+@@ -319,6 +319,11 @@ func serveExport(ginServer *gin.Engine) {
+ 		}
+ 
+ 		fullPath := filepath.Join(exportBaseDir, decodedPath)
++		if !gulu.File.IsSubPath(exportBaseDir, fullPath) {
++			c.Status(http.StatusUnauthorized)
++			return
++		}
++
+ 		if util.IsSensitivePath(fullPath) {
+ 			logging.LogErrorf("refuse to export sensitive file [%s]", c.Request.URL.Path)
+ 			c.Status(http.StatusForbidden)
+diff --git a/kernel/util/path.go b/kernel/util/path.go
+index f3db6aed7d6..f59db14421a 100644
+--- a/kernel/util/path.go
++++ b/kernel/util/path.go
+@@ -459,6 +459,11 @@ func IsSensitivePath(p string) bool {
+ 		return true
+ 	}
+ 
++	// *.db/*.log
++	if strings.HasSuffix(p, ".db") || strings.HasSuffix(p, ".log") {
++		return true
++	}
++
+ 	// 用户家目录下的敏感目录（小写比较）
+ 	homePrefixes := []string{
+ 		strings.ToLower(filepath.Join(HomeDir, ".ssh")),

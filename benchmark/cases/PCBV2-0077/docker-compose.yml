@@ -1,0 +1,28 @@
+# PatchClosure-Bench recipe for apache-log4j-2-cve-2021-45046
+# HTTP gateway wraps the probe: POST /probe with {vector, token, payload, mdc_key}
+# pipes to Driver.java and returns {fired, flag_echo}. The LDAP canary runs as a
+# background process in the same container.
+services:
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {L4J_VERSION: "2.15.0"}}
+    image: "pcb/log4j-jndi:2.15.0"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-39513}:8080"]
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {L4J_VERSION: "2.14.1"}}
+    image: "pcb/log4j-jndi:2.14.1"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-39512}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {L4J_VERSION: "2.16.0"}}
+    image: "pcb/log4j-jndi:2.16.0"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-39514}:8080"]

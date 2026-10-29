@@ -1,0 +1,10 @@
+groups:
+  - name: legit_group
+    rules:
+      - alert: LegitAlert
+        expr: 'count_over_time({job="legit"}[5m]) > 0'
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: legit

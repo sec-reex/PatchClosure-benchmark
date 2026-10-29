@@ -1,0 +1,49 @@
+# PatchClosure-Bench: follow-redirects sensitive-header strip (credential leak on redirect).
+# HTTP gateway wraps the probe: GET /probe?mode=seed|residual triggers the real
+# follow-redirects client against the internal server chain and returns the
+# collector's echo of received headers (flag leaks if header not stripped).
+services:
+  victim:
+    build: ./servers
+    command: node victim.mjs
+    networks: [pcbnet]
+
+  redirector:
+    build: ./servers
+    command: node redirector.mjs
+    networks: [pcbnet]
+
+  attacker:
+    build: ./servers
+    command: node attacker.mjs
+    networks: [pcbnet]
+
+  client-v0:
+    build: { context: ./client, args: { FR_VERSION: "1.14.7" } }
+    environment: { PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}" }
+    depends_on: [victim, redirector, attacker]
+    networks: [pcbnet]
+    profiles: [v0]
+    ports: ["${PORT_V0_0:-39506}:8080"]
+    command: ["node", "/app/gateway.mjs"]
+
+  client-v1:
+    build: { context: ./client, args: { FR_VERSION: "1.14.8" } }
+    environment: { PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}" }
+    depends_on: [victim, redirector, attacker]
+    networks: [pcbnet]
+    profiles: [v1]
+    ports: ["${PORT_V1_0:-39507}:8080"]
+    command: ["node", "/app/gateway.mjs"]
+
+  client-v2:
+    build: { context: ./client, args: { FR_VERSION: "1.15.6" } }
+    environment: { PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}" }
+    depends_on: [victim, redirector, attacker]
+    networks: [pcbnet]
+    profiles: [v2]
+    ports: ["${PORT_V2_0:-39508}:8080"]
+    command: ["node", "/app/gateway.mjs"]
+
+networks:
+  pcbnet: {}

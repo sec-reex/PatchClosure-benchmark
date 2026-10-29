@@ -1,0 +1,43 @@
+PCBV2-0073 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 2515698a53899b8c761d43ac342d6a6271c852ad
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0073/
+
+diff --git a/src/form_fields.ts b/src/form_fields.ts
+index b1252f5..1b34fd9 100644
+--- a/src/form_fields.ts
++++ b/src/form_fields.ts
+@@ -14,7 +14,7 @@ import lodash from '@poppinss/utils/lodash'
+  * array gracefully
+  */
+ export class FormFields {
+-  #fields: any = {}
++  #fields: any = Object.create(null)
+   #config: { convertEmptyStringsToNull: boolean }
+ 
+   constructor(config: { convertEmptyStringsToNull: boolean }) {
+diff --git a/tests/form_fields.spec.ts b/tests/form_fields.spec.ts
+index 35bcd3b..5b0591d 100644
+--- a/tests/form_fields.spec.ts
++++ b/tests/form_fields.spec.ts
+@@ -81,4 +81,20 @@ test.group('Form Fields Parser', () => {
+     formFields.add('user[0].username', '')
+     assert.deepEqual(formFields.get(), { user: [{ username: null }] })
+   })
++
++  test('should not pollute Object.prototype via __proto__', ({ assert }) => {
++    const formFields = new FormFields({ convertEmptyStringsToNull: false })
++    formFields.add('__proto__.polluted', 'yes')
++
++    const clean: Record<string, any> = {}
++    assert.isUndefined(clean['polluted'])
++  })
++
++  test('should not pollute Object.prototype via constructor.prototype', ({ assert }) => {
++    const formFields = new FormFields({ convertEmptyStringsToNull: false })
++    formFields.add('constructor.prototype.polluted2', 'yes')
++
++    const clean: Record<string, any> = {}
++    assert.isUndefined(clean['polluted2'])
++  })
+ })

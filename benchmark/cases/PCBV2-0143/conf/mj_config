@@ -1,0 +1,38 @@
+$VAR1 = {
+          'cgi_url' => '/cgi-bin/',
+          'startperl' => '/usr/bin/perl',
+          'majordomocf' => '/etc/majordomo/majordomo.cf',
+          'tmpdir' => '/usr/local/majordomo/tmp',
+          'wrappers' => 0,
+          'umask' => '077',
+          'cgi_link' => 0,
+          'database_backend' => 'text',
+          'save_passwords' => 1,
+          'install_dir' => '/usr/local/majordomo',
+          'lockdir' => '/usr/local/majordomo/tmp/locks',
+          'gid' => 'majordom',
+          'site_password' => 'sitepass',
+          'version' => 13,
+          'uid' => 'majordom',
+          'wtmpdir' => '/tmp',
+          'sepclear' => 0,
+          'domain' => {
+                        'lists.pcb.test' => {
+                                              'old_lists' => 0,
+                                              'owner' => 'postmaster',
+                                              'whoami' => 'majordomo',
+                                              'master_password' => 'domainpass',
+                                              'site_name' => '',
+                                              'addr_strict_domain_check' => 0,
+                                              'whereami' => 'lists.pcb.test'
+                                            }
+                      },
+          'domains' => [
+                         'lists.pcb.test'
+                       ],
+          'queue_mode' => 0,
+          'ignore_case' => 1,
+          'lists_dir' => '/usr/local/majordomo/lists',
+          'mta' => 'none',
+          'cgi_bin' => '/usr/local/majordomo/cgi-bin'
+        };

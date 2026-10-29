@@ -1,0 +1,23 @@
+case_id: PCBV2-0099
+public_name: deser_mina_objser
+run_mode: real-app-tcp
+oracle_family: tcp_cli_extension
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: maven
+  repo: org.apache.mina:mina-core
+  v0: 2.2.3
+  v1: 2.2.6
+service:
+  readiness: tcp://127.0.0.1:9009
+  exposed_ports: [9009]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

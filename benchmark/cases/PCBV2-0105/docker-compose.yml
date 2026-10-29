@@ -1,0 +1,60 @@
+# dos-threshold case: Rack::Files byte-range multipart-assembly DoS over REAL HTTP.
+#   CVE-2024-26141 (rack 3.1.20, INCOMPLETE: total-coverage check only)
+#     -> CVE-2026-34826 (rack 3.1.21, COMPLETE: max_ranges:100 count cap).
+#   V0 = rack 3.0.9 (pre CVE-2024-26141; neither check).
+#
+# Each profile is a REAL running Rack web app: WEBrick (via the published `rackup` handler) serves
+# a ~900 KB static file through the REAL published `Rack::Files` middleware on GET /file. The DoS
+# is triggered by an EXTERNAL HTTP `GET /file` with a crafted `Range:` header. Hang / OOM is
+# observed by a sidecar watchdog that probes GET /health and releases the start-injected PCB_FLAG.
+# cpus=1.0 + mem_limit=512m pin the resource so a slow/heavy assembly is bounded
+# (the original memory-exhaustion vector OOM-kills the 512m container on V0 = a hard DoS).
+services:
+  v0:
+    profiles: ["v0"]
+    image: pcb-dos-rack-byte-ranges-v0
+    build:
+      context: .
+      args:
+        RACK_VERSION: "3.0.9"
+    ports: ["${PORT_V0_0:-28241}:3000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  v1:
+    profiles: ["v1"]
+    image: pcb-dos-rack-byte-ranges-v1
+    build:
+      context: .
+      args:
+        RACK_VERSION: "3.1.20"
+    ports: ["${PORT_V1_0:-28243}:3000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  v2:
+    profiles: ["v2"]
+    image: pcb-dos-rack-byte-ranges-v2
+    build:
+      context: .
+      args:
+        RACK_VERSION: "3.1.21"
+    ports: ["${PORT_V2_0:-28244}:3000"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  watchdog:
+    profiles: ["v0", "v1", "v2"]
+    image: python:3.12-alpine
+    volumes:
+      - ./watchdog.py:/wd.py:ro
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+      VERSION: "${VERSION:-v1}"
+    command: ["python", "/wd.py"]
+    ports: ["${PORT_WATCHDOG_0:-28248}:8888"]
+    cpus: 0.5
+    mem_limit: 128m

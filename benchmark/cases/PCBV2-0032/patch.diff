@@ -1,0 +1,79 @@
+PCBV2-0032 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: af79036c07aa9a457971c0f4136e37c85dc20978 (1.648)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0032/
+
+diff --git a/ChangeLog b/ChangeLog
+index 0fd5d3da..f4006106 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -5,6 +5,7 @@
+     * Fix possible stack overflow (old issue already noted by Tim)
+     * Do not allow table source locations outside explicit given folders
+     * DBD::Sponge PRECISION handling (pr#12, pilcrow)
++    * Fix possible buffer overflow in preparse
+ 
+ 1.647 - 2025-01-20, H.Merijn Brand
+     * Spellcheck
+diff --git a/DBI.xs b/DBI.xs
+index b68a1601..80dce14d 100644
+--- a/DBI.xs
++++ b/DBI.xs
+@@ -4203,7 +4203,7 @@ preparse(SV *dbh, const char *statement, IV ps_return, IV ps_accept, void *foo)
+     }
+ 
+     /* XXX this allocation strategy won't work when we get to more advanced stuff */
+-    new_stmt_sv = newSV(strlen(statement) * 3);
++    new_stmt_sv = newSV(strlen(statement) * 6 + 16);
+     sv_setpv(new_stmt_sv,"");
+     src  = statement;
+     dest = SvPVX(new_stmt_sv);
+diff --git a/dbixs_rev.h b/dbixs_rev.h
+index f92c473f..1dfbd367 100644
+--- a/dbixs_rev.h
++++ b/dbixs_rev.h
+@@ -1,4 +1,4 @@
+-/* Thu May 28 13:43:39 2026 */
++/* Thu May 28 14:07:26 2026 */
+ #define DBIXS_RELEASE  1
+ #define DBIXS_VERSION  648
+-#define DBIXS_REVISION 1735
++#define DBIXS_REVISION 1737
+diff --git a/doc/DBI.3 b/doc/DBI.3
+index 21645713..74378a93 100644
+--- a/doc/DBI.3
++++ b/doc/DBI.3
+@@ -58,7 +58,7 @@
+ .\" ========================================================================
+ .\"
+ .IX Title "DBI 3"
+-.TH DBI 3 2026-05-27 "perl v5.42.2" "User Contributed Perl Documentation"
++.TH DBI 3 2026-05-28 "perl v5.42.2" "User Contributed Perl Documentation"
+ .\" For nroff, turn off justification.  Always turn off hyphenation; it makes
+ .\" way too many mistakes in technical documents.
+ .if n .ad l
+diff --git a/doc/DBI.man b/doc/DBI.man
+index cfd54d93..763b8fd8 100644
+--- a/doc/DBI.man
++++ b/doc/DBI.man
+@@ -6435,4 +6435,4 @@ TODO
+        installed_methods
+        setup_driver
+ 
+-perl v5.42.2                      2026-05-27                            DBI(3)
++perl v5.42.2                      2026-05-28                            DBI(3)
+diff --git a/lib/DBI/Changes.pm b/lib/DBI/Changes.pm
+index b3387f52..9b614a08 100644
+--- a/lib/DBI/Changes.pm
++++ b/lib/DBI/Changes.pm
+@@ -40,6 +40,10 @@ Do not allow table source locations outside explicit given folders
+ 
+ DBD::Sponge PRECISION handling (pr#12, pilcrow)
+ 
++=item *
++
++Fix possible buffer overflow in preparse
++
+ =back
+ 
+ =head2 Changes in DBI 1.647 - 20 Jan 2025

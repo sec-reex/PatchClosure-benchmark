@@ -1,0 +1,39 @@
+# PatchClosure-Bench recipe for deser_sofahessian_blacklist -- REAL sofa-hessian per version behind a REAL
+# Java HTTP service, deserialization triggered by an EXTERNAL HTTP request.
+# CVE-2019-9212 [SOFA Hessian deserialization class-name BLACKLIST adds com.caucho.naming.Qname +
+#  com.sun.org.apache.xpath.internal.objects.Xstring (case-typo'd) to security/serialize.blacklist]
+#  -> CVE-2024-46983 [the SAME blacklist still misses the correctly-cased XString / a JDK-only gadget; fixed by
+#  replacing the narrow enumeration with broad package PREFIXES incl. com.sun. in 3.5.5], CWE-184 + CWE-502.
+#
+# Each profile builds the shared Dockerfile pinning the REAL com.alipay.sofa:hessian jar at SH_VER, boots the
+# HTTP service, and maps its port 8080 to a unique host port. The oracle drives POST /deser over real external
+# HTTP with the benign Hessian-serialized shadow-class bytes; ${PCB_FLAG} is planted per-run via env.
+services:
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SH_VER: "3.3.13"}}
+    image: "pcb/sofahessian-http:3.3.13"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-18790}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SH_VER: "3.5.4"}}
+    image: "pcb/sofahessian-http:3.5.4"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-18791}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {SH_VER: "3.5.5"}}
+    image: "pcb/sofahessian-http:3.5.5"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-18792}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.102.0/24

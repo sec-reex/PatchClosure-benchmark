@@ -1,0 +1,55 @@
+PCBV2-0042 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: Fix: 1ee6360cbdbea5d09705909a150df7963a88efd6
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0042/
+
+diff --git a/src/Knp/Snappy/AbstractGenerator.php b/src/Knp/Snappy/AbstractGenerator.php
+index dba9873..643376f 100644
+--- a/src/Knp/Snappy/AbstractGenerator.php
++++ b/src/Knp/Snappy/AbstractGenerator.php
+@@ -625,6 +625,10 @@ abstract class AbstractGenerator implements GeneratorInterface, LoggerAwareInter
+      */
+     protected function prepareOutput($filename, $overwrite)
+     {
++        if (\strpos($filename, 'phar://') === 0) {
++            throw new InvalidArgumentException('The output file cannot be a phar archive.');
++        }
++
+         $directory = \dirname($filename);
+ 
+         if ($this->fileExists($filename)) {
+diff --git a/tests/Knp/Snappy/AbstractGeneratorTest.php b/tests/Knp/Snappy/AbstractGeneratorTest.php
+index 803ccd8..55d5fe4 100644
+--- a/tests/Knp/Snappy/AbstractGeneratorTest.php
++++ b/tests/Knp/Snappy/AbstractGeneratorTest.php
+@@ -938,6 +938,30 @@ class AbstractGeneratorTest extends TestCase
+         );
+     }
+ 
++    public function testFailingGenerateWithOutputContainingPharPrefix(): void
++    {
++        $media = $this->getMockBuilder(AbstractGenerator::class)
++            ->setMethods([
++                'configure',
++                'prepareOutput',
++            ])
++            ->setConstructorArgs(['the_binary', [], ['PATH' => '/usr/bin']])
++            ->getMock()
++        ;
++
++        $media->setTimeout(2000);
++
++        $media
++            ->expects($this->once())
++            ->method('prepareOutput')
++            ->with($this->equalTo('phar://the_output_file'))
++        ;
++
++        $this->expectException(InvalidArgumentException::class);
++
++        $media->generate('the_input_file', 'phar://the_output_file', ['foo' => 'bar']);
++    }
++
+     /**
+      * @return null|string
+      */

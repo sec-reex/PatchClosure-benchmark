@@ -1,0 +1,68 @@
+CVE: CVE-2026-32812 first-fix (HTTPS + gethostbyname private-IP check before fetch)
+upstream: https://github.com/Admidio/admidio
+fix: v5.0.6..v5.0.7  modules/sso/fetch_metadata.php (+ composer ext-curl)
+
+diff --git a/composer.json b/composer.json
+index 337607ca4..c5b4412c6 100644
+--- a/composer.json
++++ b/composer.json
+@@ -16,6 +16,7 @@
+     },
+     "require": {
+         "php": "^8.2",
++        "ext-curl": "*",
+         "ext-gd": "*",
+         "ext-iconv": "*",
+         "ext-json": "*",
+diff --git a/modules/sso/fetch_metadata.php b/modules/sso/fetch_metadata.php
+index ddeb78a05..b6c7abb19 100644
+--- a/modules/sso/fetch_metadata.php
++++ b/modules/sso/fetch_metadata.php
+@@ -12,21 +12,41 @@
+         exit;
+     }
+ 
+-    $url = filter_var($_GET['url'], FILTER_VALIDATE_URL);
++    $rawUrl = $_GET['url'];
++
++    // Only allow https:// scheme
++    if (!preg_match('#^https://#i', $rawUrl)) {
++        http_response_code(400);
++        echo "Only HTTPS URLs are permitted";
++        exit;
++    }
++
++    $url = filter_var($rawUrl, FILTER_VALIDATE_URL);
+     if (!$url) {
+         http_response_code(400);
+         echo "Invalid URL";
+         exit;
+     }
+ 
+-    // Fetch metadata from external server
+-    $metadata = file_get_contents($url);
+-    if ($metadata === false) {
+-        http_response_code(500);
+-        echo "Failed to fetch metadata";
++    // Resolve hostname and block internal/private IP ranges
++    $host = parse_url($url, PHP_URL_HOST);
++    $ip = gethostbyname($host);
++    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
++        http_response_code(400);
++        echo "URL resolves to a private or reserved IP address";
+         exit;
+     }
+ 
++    // Fetch metadata from external server
++    $ch = curl_init($url);
++    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
++    curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
++    curl_setopt($ch, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
++    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
++    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
++    $metadata = curl_exec($ch);
++    curl_close($ch);
++
+     // Allow CORS only for your frontend
+     header("Access-Control-Allow-Origin: " . ADMIDIO_URL);
+     header("Content-Type: application/xml");

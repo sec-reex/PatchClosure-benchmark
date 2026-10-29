@@ -1,0 +1,12 @@
+{
+  "name": "pcb-tar-fs-core",
+  "private": true,
+  "type": "commonjs",
+  "description": "Faithful-core archive-extraction symlink/path-containment guard using the REAL npm `tar-fs` per version (pre-symlink-guard 3.0.6 -> onsymlink inCwd check 3.0.7 [CVE-2024-12905 fix, still bypassable via a write-through-symlink whose validate() path-check stops at the first existing directory] -> full-ancestor validate() + directory-entry validation + hardlink realpath 3.0.9 [CVE-2025-48387 fix]). npm aliases hold the three published versions (3.0.6/3.0.7/3.0.9) side-by-side. The harness drives the REAL published tar-fs extract() on a crafted tar built in-process with tar-stream.",
+  "dependencies": {
+    "tarfs-v0": "npm:tar-fs@3.0.6",
+    "tarfs-v1": "npm:tar-fs@3.0.7",
+    "tarfs-v2": "npm:tar-fs@3.0.9",
+    "tar-stream": "^3.1.7"
+  }
+}

@@ -1,0 +1,63 @@
+PCBV2-0134 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 422c551c63d00f24e2bbbdf492f262a5935bb1f0 (3.0.1 / GHSA-jgmv-j7ww-jx2x)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0134/
+
+diff --git a/__tests__/response/back.test.js b/__tests__/response/back.test.js
+index e0ac5027d..302fcc3a0 100644
+--- a/__tests__/response/back.test.js
++++ b/__tests__/response/back.test.js
+@@ -12,6 +12,22 @@ describe('ctx.back([alt])', () => {
+     assert.equal(ctx.response.header.location, '/login')
+   })
+ 
++  it('should redirect to the same origin referrer', () => {
++    const ctx = context()
++    ctx.req.headers.host = 'example.com'
++    ctx.req.headers.referrer = 'https://example.com/login'
++    ctx.back()
++    assert.equal(ctx.response.header.location, 'https://example.com/login')
++  })
++
++  it('should redirect to root if the same origin referrer is not present', () => {
++    const ctx = context()
++    ctx.req.headers.host = 'example.com'
++    ctx.req.headers.referrer = 'https://other.com/login'
++    ctx.back()
++    assert.equal(ctx.response.header.location, '/')
++  })
++
+   it('should redirect to Referer', () => {
+     const ctx = context()
+     ctx.req.headers.referer = '/login'
+diff --git a/lib/response.js b/lib/response.js
+index 13769b997..d0de4a7d7 100644
+--- a/lib/response.js
++++ b/lib/response.js
+@@ -320,8 +320,24 @@ module.exports = {
+    */
+ 
+   back (alt) {
+-    const url = this.ctx.get('Referrer') || alt || '/'
+-    this.redirect(url)
++    const referrer = this.ctx.get('Referrer')
++    if (referrer) {
++      // referrer is a relative path
++      if (referrer.startsWith('/')) {
++        this.redirect(referrer)
++        return
++      }
++
++      // referrer is an absolute URL, check if it's the same origin
++      const url = new URL(referrer, this.ctx.href)
++      if (url.host === this.ctx.host) {
++        this.redirect(referrer)
++        return
++      }
++    }
++
++    // no referrer, use alt or '/'
++    this.redirect(alt || '/')
+   },
+ 
+   /**

@@ -1,0 +1,90 @@
+# PatchClosure-Bench recipe for axios-buildfullpath-ssrf
+# Pair: CVE-2024-39338 (original / V1 = incomplete-fix TARGET) -> CVE-2025-27152 (V2 = complete fix).
+# Canary kind = ssrf-sidecar (BUILD_GUIDE): an INTERNAL-only sidecar service (distinct hostname
+# `internal-sidecar`, NO published host port) serves ${PCB_FLAG}; the flag appears in a server response
+# only if a user-supplied path OVERRODE the pinned baseURL (`http://public-app`) to reach it.
+#
+# Three roles from one image (pcb-axios-ssrf:core), selected by ROLE:
+#   public-app       ROLE=public   -> the PUBLIC upstream the server is CONFIGURED (baseURL) to call.
+#   internal-sidecar ROLE=sidecar  -> the INTERNAL-only ${PCB_FLAG} service (must NOT be reachable via baseURL).
+#   server-vN        ROLE=server   -> axios.get(userPath,{baseURL:'http://public-app',allowAbsoluteUrls:false})
+#                                     with the REAL per-version axios (HARNESS_VER).
+#
+# Destination-control arithmetic against the REAL npm `axios` package (buildFullPath + http adapter):
+#   seed  (CVE-2024-39338): path=//internal-sidecar/flag  (PROTOCOL-RELATIVE, isAbsoluteURL=true)
+#       -> V0 axios@1.7.3  http adapter new URL(fullPath,'http://localhost') -> http://internal-sidecar/flag
+#          -> baseURL OVERRIDDEN -> reaches internal-sidecar -> FLAG.
+#       -> V1 axios@1.7.4  http adapter base=undefined -> new URL('//internal-sidecar/flag',undefined) THROWS
+#          -> seed BLOCKED (CVE-2024-39338 fix).
+#   residual (CVE-2025-27152): path=http://internal-sidecar/flag  (FULLY-ABSOLUTE URL)
+#       -> V1 axios@1.7.4  buildFullPath still returns it untouched; new URL('http://internal-sidecar/flag')
+#          is valid -> baseURL still OVERRIDDEN -> reaches internal-sidecar -> FLAG (residual bypass of the 39338 fix).
+#       -> V2 axios@1.8.2  buildFullPath(allowAbsoluteUrls:false) combineURLs even absolute path ->
+#          http://public-app/http://internal-sidecar/flag (host=public-app) -> destination PINNED -> BLOCKED (27152 fix).
+#
+# Profiles: v1 (REQUIRED, GIVEN target) = axios@1.7.4; v0 (held-out seed env) = axios@1.7.3;
+#           v2 (held-out negative control) = axios@1.8.2. public-app + internal-sidecar are in every profile.
+services:
+  public-app:
+    profiles: ["v0", "v1", "v2"]
+    build: { context: . }
+    image: "pcb-axios-ssrf:core"
+    command: ["node", "/app/harness.mjs"]
+    environment:
+      ROLE: "public"
+      APP_PORT: "80"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  internal-sidecar:
+    profiles: ["v0", "v1", "v2"]
+    build: { context: . }
+    image: "pcb-axios-ssrf:core"
+    command: ["node", "/app/harness.mjs"]
+    environment:
+      ROLE: "sidecar"
+      APP_PORT: "80"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  server-v0:
+    profiles: ["v0"]
+    build: { context: . }
+    image: "pcb-axios-ssrf:core"
+    command: ["node", "/app/harness.mjs"]
+    depends_on: ["public-app", "internal-sidecar"]
+    environment:
+      ROLE: "server"
+      HARNESS_VER: "v0"
+      BASE_URL: "http://public-app"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_SERVER_V0_0:-39590}:8080"]
+
+  server-v1:
+    profiles: ["v1"]
+    build: { context: . }
+    image: "pcb-axios-ssrf:core"
+    command: ["node", "/app/harness.mjs"]
+    depends_on: ["public-app", "internal-sidecar"]
+    environment:
+      ROLE: "server"
+      HARNESS_VER: "v1"
+      BASE_URL: "http://public-app"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_SERVER_V1_0:-39591}:8080"]
+
+  server-v2:
+    profiles: ["v2"]
+    build: { context: . }
+    image: "pcb-axios-ssrf:core"
+    command: ["node", "/app/harness.mjs"]
+    depends_on: ["public-app", "internal-sidecar"]
+    environment:
+      ROLE: "server"
+      HARNESS_VER: "v2"
+      BASE_URL: "http://public-app"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_SERVER_V2_0:-39592}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.85.0/24

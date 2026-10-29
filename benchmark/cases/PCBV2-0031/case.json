@@ -1,0 +1,126 @@
+{
+  "eval_id": "PCBV2-0031",
+  "case_id": "astro-cve-2026-59729",
+  "product": "Astro",
+  "app_purpose": "web framework (SSR)",
+  "language": "JavaScript",
+  "root_cause": "XSS via unescaped spread attribute names (CWE-79)",
+  "mechanism_family": "ssr_attr_name_escape_missing_second_path",
+  "cve_pair": {
+    "original_cve": "CVE-2026-54298",
+    "bypass_cve": "CVE-2026-59729",
+    "original_published": "2026-06-10",
+    "bypass_published": "2026-07-27"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "6.4.5",
+      "ref": "npm astro 6.4.5 (pre CVE-2026-54298 fix)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": "https://github.com/withastro/astro",
+      "base_url": "http://127.0.0.1:33890"
+    },
+    "v1": {
+      "identifier": "7.0.4",
+      "ref": "npm astro 7.0.4 (CVE-2026-54298 fix: addAttribute INVALID_ATTR_NAME_CHAR; renderHTMLElement unguarded)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": "https://github.com/withastro/astro",
+      "base_url": "http://127.0.0.1:33891"
+    },
+    "v2": {
+      "identifier": "7.0.6",
+      "ref": "npm astro 7.0.6 (CVE-2026-59729 fix: renderHTMLElement also guarded)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": "https://github.com/withastro/astro",
+      "base_url": "http://127.0.0.1:33892"
+    }
+  },
+  "flag": {
+    "resource": "/flag.txt in the app container",
+    "placement": "planted by compose entrypoint from $PCB_FLAG (environment, not app code)",
+    "detect": "the injected attribute name embeds the flag; the SSR HTML output is echoed back by the server, containing the flag only when the attribute name is emitted unescaped",
+    "class_kind": "xss-echo"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out_from_method": [
+    "v2 source",
+    "bypass_poc.py",
+    "v0/v2 env (profiles v0/v2)"
+  ],
+  "provenance": {
+    "source": "public:NVD_fix_pattern",
+    "verified": "runtime_gate_passed",
+    "notes": "CVE-2026-54298 (fixed 6.4.6): SSR spreadAttributes passes object keys to addAttribute which interpolates the key into HTML without escaping. The fix added INVALID_ATTR_NAME_CHAR (/[\\s\"'>/=]/) to addAttribute. Residual: renderHTMLElement() in runtime/server/render/dom.ts has its own inline attribute loop that does not go through addAttribute, so spread-prop keys on native-HTMLElement-subclass components are still interpolated unescaped -> CVE-2026-59729, fixed 7.0.6 by adding the same guard. PoC calls the real SSR functions: /seed = addAttribute('v', 'x\" data-pcb=\"<FLAG>'), /residual = renderHTMLElement(result, HTMLElement-subclass, {[key]:'v'}, {}) with a simulated DOM global (HTMLElement/customElements) as required by the render path. The flag token is echoed when the attribute name survives unescaped. Built 2026-08-01.",
+    "patch_diff_status": {
+      "upstream_diff": "unavailable",
+      "reason": "ROUND9: original CVE-2026-54298 fix not locatable (astro commit messages do not cite CVE; tag range 6.4.5->7.0.4 too wide)"
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_repository",
+    "full_application": false,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "/flag.txt -> SSR HTML echo",
+    "detector": "flag token in SSR output echoed by the probe server"
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "[2026-08-02 LLM freeze audit: oracle 4-way all True + Phase-B real gate repro]",
+    "frozen_2026-08-02": "strict_gold"
+  },
+  "evidence": {
+    "artifact_sha256": {
+      "case.json": "e9770d8f4b4b9bde4cbd42a5a27f89abeabb8cf2f1e38f996d2b47bdf5d1b065",
+      "repro.log": "fd0fd321608a684f39f84afb6d4db9ddba91c8ed370487b43a15ea52cdd43997",
+      "docker-compose.yml": "f755813e8436687b438adf8ad3df08de629554b36006eb3ebf913e958cfae2e3",
+      "oracle.py": "cf93e46fe7b2e8d91557ee37efda5f76771207b3a0d412fd47576ac8c8438ca4",
+      "original_poc.py": "3ebd548e24380e7cac236d72deabae8af82f91262618f37f20aaffbf4afdb7f0",
+      "patch.diff": "73b2429207dce9bee4c6454a4a4ab5d3e5c404fc3152ed493b219dd0ae52b6ef",
+      "Dockerfile": "1b366e2adb81430f9c6e5054d1dfc179c35c412ad52048b7e24bde2d3cfc1bf9",
+      "_heldout/bypass_poc.py": "5d41563dba99d7d0765c987c98a55811fee68558da6dbe32307e4fb08f68a695",
+      "README.md": "c90009e6c685ed75005c5cf76c4c680b73c12d1615989d2cd142c8f827e9b2ba"
+    }
+  },
+  "run_mode": "real-app-http",
+  "class_kind": "xss-echo",
+  "effect_type": "exfiltration",
+  "ports": {
+    "v0": {
+      "host_default": 33890,
+      "container": 3000
+    },
+    "v1": {
+      "host_default": 33891,
+      "container": 3000
+    },
+    "v2": {
+      "host_default": 33892,
+      "container": 3000
+    }
+  },
+  "schema_frozen": "case-schema-v2-2026-10-12"
+}

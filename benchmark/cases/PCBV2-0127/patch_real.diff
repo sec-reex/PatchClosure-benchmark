@@ -1,0 +1,173 @@
+# CVE-2020-28477
+# https://github.com/immerjs/immer.git
+# fix: da2bd4fa0edc9335543089fe7d290d6a346c40c5
+diff --git a/__tests__/patch.js b/__tests__/patch.js
+index 1d013b9..f9ca9f3 100644
+--- a/__tests__/patch.js
++++ b/__tests__/patch.js
+@@ -12,6 +12,8 @@ enableAllPlugins()
+ 
+ jest.setTimeout(1000)
+ 
++const isProd = process.env.NODE_ENV === "production"
++
+ function runPatchTest(base, producer, patches, inversePathes) {
+ 	let resultProxies, resultEs5
+ 
+@@ -1147,3 +1149,110 @@ test("#676 patching Date objects", () => {
+ 	)
+ 	expect(rebuilt.date).toEqual(new Date("2020-11-10T08:08:08.003Z"))
+ })
++
++test("do not allow __proto__ polution - 738", () => {
++	const obj = {}
++
++	// @ts-ignore
++	expect(obj.polluted).toBe(undefined)
++	expect(() => {
++		applyPatches({}, [
++			{op: "add", path: ["__proto__", "polluted"], value: "yes"}
++		])
++	}).toThrow(
++		isProd
++			? "24"
++			: "Patching reserved attributes like __proto__, prototype and constructor is not allowed"
++	)
++	// @ts-ignore
++	expect(obj.polluted).toBe(undefined)
++})
++
++test("do not allow __proto__ polution using arrays - 738", () => {
++	const obj = {}
++	const ar = []
++
++	// @ts-ignore
++	expect(obj.polluted).toBe(undefined)
++	// @ts-ignore
++	expect(ar.polluted).toBe(undefined)
++	expect(() => {
++		applyPatches(
++			[],
++			[{op: "add", path: ["__proto__", "polluted"], value: "yes"}]
++		)
++	}).toThrow(
++		isProd
++			? "24"
++			: "Patching reserved attributes like __proto__, prototype and constructor is not allowed"
++	)
++	// @ts-ignore
++	expect(obj.polluted).toBe(undefined)
++	// @ts-ignore
++	expect(ar.polluted).toBe(undefined)
++})
++
++test("do not allow prototype polution - 738", () => {
++	const obj = {}
++
++	// @ts-ignore
++	expect(obj.polluted).toBe(undefined)
++	expect(() => {
++		applyPatches(Object, [
++			{op: "add", path: ["prototype", "polluted"], value: "yes"}
++		])
++	}).toThrow(
++		isProd
++			? "24"
++			: "Patching reserved attributes like __proto__, prototype and constructor is not allowed"
++	)
++	// @ts-ignore
++	expect(obj.polluted).toBe(undefined)
++})
++
++test("do not allow constructor polution - 738", () => {
++	const obj = {}
++
++	// @ts-ignore
++	expect(obj.polluted).toBe(undefined)
++	const t = {}
++	applyPatches(t, [{op: "replace", path: ["constructor"], value: "yes"}])
++	expect(typeof t.constructor).toBe("function")
++	// @ts-ignore
++	expect(Object.polluted).toBe(undefined)
++})
++
++test("do not allow constructor.prototype polution - 738", () => {
++	const obj = {}
++
++	// @ts-ignore
++	expect(obj.polluted).toBe(undefined)
++	expect(() => {
++		applyPatches({}, [
++			{op: "add", path: ["constructor", "prototype", "polluted"], value: "yes"}
++		])
++	}).toThrow(
++		isProd
++			? "24"
++			: "Patching reserved attributes like __proto__, prototype and constructor is not allowed"
++	)
++	// @ts-ignore
++	expect(Object.polluted).toBe(undefined)
++})
++
++test("maps can store __proto__, prototype and constructor props", () => {
++	const obj = {}
++	const map = new Map()
++	map.set("__proto__", {})
++	map.set("constructor", {})
++	map.set("prototype", {})
++	const newMap = applyPatches(map, [
++		{op: "add", path: ["__proto__", "polluted"], value: "yes"},
++		{op: "add", path: ["constructor", "polluted"], value: "yes"},
++		{op: "add", path: ["prototype", "polluted"], value: "yes"}
++	])
++	expect(newMap.get("__proto__").polluted).toBe("yes")
++	expect(newMap.get("constructor").polluted).toBe("yes")
++	expect(newMap.get("prototype").polluted).toBe("yes")
++	expect(obj.polluted).toBe(undefined)
++})
+diff --git a/src/plugins/patches.ts b/src/plugins/patches.ts
+index 998627f..a06a526 100644
+--- a/src/plugins/patches.ts
++++ b/src/plugins/patches.ts
+@@ -26,7 +26,8 @@ import {
+ 	ArchtypeArray,
+ 	die,
+ 	isDraft,
+-	isDraftable
++	isDraftable,
++	ArchtypeObject
+ } from "../internal"
+ 
+ export function enablePatches() {
+@@ -211,7 +212,16 @@ export function enablePatches() {
+ 
+ 			let base: any = draft
+ 			for (let i = 0; i < path.length - 1; i++) {
+-				base = get(base, path[i])
++				const parentType = getArchtype(base)
++				const p = path[i]
++				// See #738, avoid prototype pollution
++				if (
++					(parentType === ArchtypeObject || parentType === ArchtypeArray) &&
++					(p === "__proto__" || p === "constructor")
++				)
++					die(24)
++				if (typeof base === "function" && p === "prototype") die(24)
++				base = get(base, p)
+ 				if (typeof base !== "object") die(15, path.join("/"))
+ 			}
+ 
+diff --git a/src/utils/errors.ts b/src/utils/errors.ts
+index b73e2aa..8cab0f9 100644
+--- a/src/utils/errors.ts
++++ b/src/utils/errors.ts
+@@ -38,7 +38,8 @@ const errors = {
+ 	},
+ 	23(thing: string) {
+ 		return `'original' expects a draft, got: ${thing}`
+-	}
++	},
++	24: "Patching reserved attributes like __proto__, prototype and constructor is not allowed"
+ } as const
+ 
+ export function die(error: keyof typeof errors, ...args: any[]): never {

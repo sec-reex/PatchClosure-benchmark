@@ -1,0 +1,395 @@
+{
+ "admin-and-site-enhancements-ase-wordpress-plugin-cve-2026-12083": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['classes/class-view-admin-as-role.php', 'bootstrap.php'])"
+ },
+ "aiohttp-cve-2024-23829": {
+  "kind": "",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 15058,
+  "clues": [
+   "aiohttp/http_parser.py",
+   "re.c",
+   "msg.h"
+  ]
+ },
+ "apache-dolphinscheduler-cve-2024-23320": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['dolphinscheduler-master/.../server/master/utils/SwitchTaskUtils.java', 'Pattern.c'])"
+ },
+ "apache-dubbo-serializer-switch-cve-2021-25641": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['com/alibaba/com/caucho/hessian/io/ClassFactory.c', 'com/alibaba/com/caucho/hessian/io/ClassFactory.java', 'HashMap.c', '.../hessian2/dubbo/Hessian2FactoryInitializer.java', 'dubbo.application.h', '.../hessian2/dubbo/WhitelistHessian2FactoryInitializer.java', '-Ddubbo.application.h', '.../hessian/Hessian2ObjectInput.java', 'com.caucho.h', 'CodecSupport.c', '.../remoting/transport/CodecSupport.java', '...c', '.../rpc/protocol/dubbo/DecodeableRpcInvocation.java', 'serialization.security.c', '-Dserialization.security.c'])"
+ },
+ "apache-mina-cve-2026-42778": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['org.apache.mina.c'])"
+ },
+ "apache-shiro-cve-2020-13933": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['web/src/main/java/org/apache/shiro/web/util/WebUtils.java', 'web/src/main/java/org/apache/shiro/web/filter/InvalidRequestFilter.java', 'support/spring/src/main/java/org/apache/shiro/spring/web/ShiroFilterFactoryBean.java', 'org.apache.sh', 'StringUtils.h'])"
+ },
+ "astro-image-isremotepath": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['astrojs/internal-helpers/dist/path.js', 'astro/dist/assets/endpoint/generic.js', 'ih-0.7.1/dist/path.js', 'ih-0.7.2/dist/path.js', 'ih-0.7.3/dist/path.js'])"
+ },
+ "codeinj_pyyaml_fullloader": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 5694,
+  "clues": []
+ },
+ "cpython-urllib-crlf-header-injection-cve-2019-18348": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['Lib/http/client.py', 'raw.githubusercontent.c', 're.c', 'self.h'])"
+ },
+ "deno-cve-2026-32260": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['ext/node/polyfills/internal/child_process.ts'])"
+ },
+ "deser_jenkins_remoting": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['github.c', 'src/main/java/hudson/remoting/ObjectInputStreamEx.java', 'this.c', 'filter.c', 'hudson/remoting/ClassFilter.java', 'org.c', 'org.apache.commons.c', 'name.c', 'ClassFilter.DEFAULT.c'])"
+ },
+ "deser_keras_safe_mode": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['keras/src/saving/serialization_lib.py', 'config.js', 'keras.c', 'serialization_lib.py'])"
+ },
+ "deser_mina_objser": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['org.apache.mina.c', 'AbstractIoBuffer.java'])"
+ },
+ "deser_sofahessian_blacklist": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['org.apache.c', 'com.c'])"
+ },
+ "fast-jwt-cve-2026-34950": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 4221,
+  "clues": []
+ },
+ "fastify-static-cve-2026-15074": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['reply.c'])"
+ },
+ "fastify-static-cve-2026-7120": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['reply.c'])"
+ },
+ "follow-redirects-header-strip": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 977,
+  "clues": [
+   "index.js",
+   "redirectUrlParts.h",
+   "this._options.h",
+   "redirectUrl.h"
+  ]
+ },
+ "glpi-search-constructsql-sqli": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['ajax/map.php', '/ajax/map.php'])"
+ },
+ "gnu-bash-shellshock-cve-2014-7169": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['stephane.c', 'gmail.c', '../bash-4.3-patched/builtins/common.h', 'builtins/common.h', '../bash-4.3-patched/builtins/evalstring.c', 'builtins/evalstring.c', '../bash-4.3-patched/variables.c', 'variables.c', '../bash-4.3-patched/subst.c', 'subst.c', '../bash-4.3/patchlevel.h', 'patchlevel.h'])"
+ },
+ "gogs-cve-2025-64111": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 11659,
+  "clues": []
+ },
+ "goshs-cve-2026-54719": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['fs.h'])"
+ },
+ "hapi-fhir-org-hl7-fhir-core-cve-2026-55470": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['org.hl7.fhir.dstu2/src/main/java/org/hl7/fhir/dstu2/utils/FHIRPathEngine.java', 'org.hl7.fhir.c', 'org.hl7.fhir.utilities/.../regex/RegexTimeout.java'])"
+ },
+ "jetty-uri-canonicalize-before-authz-webinf": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 7298,
+  "clues": [],
+  "method": "fix_commit_patch",
+  "fix_commit": "e412c8a15"
+ },
+ "js-help-desk-wordpress-plugin-cve-2023-7337": {
+  "kind": "concept_desc",
+  "patch_files": [
+   "modules/ticket/model.php"
+  ],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['modules/ticket/model.php', 'a/modules/ticket/model.php', 'b/modules/ticket/model.php', '...js'])"
+ },
+ "lodash-cve-2026-2950": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 2095,
+  "clues": [
+   "lodash.js",
+   "//github.c",
+   "hasOwnProperty.c"
+  ]
+ },
+ "lodash-cve-2026-4800": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=[])"
+ },
+ "lodash-merge-cve-2018-16487": {
+  "kind": "",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 10996,
+  "clues": [
+   "lodash.js",
+   "4.17.4/lodash.js",
+   "4.17.5/lodash.js",
+   "4.17.11/lodash.js"
+  ]
+ },
+ "mlflow-cve-2024-3848": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['mlflow/utils/uri.py', 'mlflow/server/handlers.py'])"
+ },
+ "netmask-octal-ssrf": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['lib/netmask.js', '/tmp/v1_ip2long.js', '/tmp/v2_ip2long.js', 'b.c'])"
+ },
+ "nextjs-cve-2026-45109": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['Next.js', '.next/server/middleware-manifest.js', 'middleware-manifest.js'])"
+ },
+ "nukesentinel-php-nuke-security-addon-cve-2007-1493": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['includes/nukesentinel.php', 'a/nukesentinel-2.5.05.php', 'a/nukesentinel-2.5.06.php', 'index.php', '/backend.php', '/modules.php'])"
+ },
+ "nuxt-og-image-isblockedurl": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 8171,
+  "clues": []
+ },
+ "object-path-cve-2021-23434": {
+  "kind": "",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 1139,
+  "clues": [
+   "0.11.5",
+   "index.js",
+   "a/index.js",
+   "b/index.js",
+   "options.inc"
+  ]
+ },
+ "pgadmin-cve-2026-17351": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['web/pgadmin/llm/tools/database.py', 'conn.c'])"
+ },
+ "pimcore-cve-2026-23492": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['bundles/SimpleBackendSearchBundle/src/Controller/SearchController.php', 'harness/lib.php'])"
+ },
+ "pp2-deep-get-set": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['index.js/index.c', 'a/index.js', 'b/index.js', 'hasOwnProp.c'])"
+ },
+ "qdpm-cve-2020-7246": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['core/apps/qdPM/modules/myAccount/actions/actions.class.php', 'core/lib/model/app.class.php'])"
+ },
+ "redos_adobe_css_tools": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['dist/index.c'])"
+ },
+ "shell-quote-cve-2026-9277": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 242,
+  "clues": [
+   "quote.js",
+   "s.c"
+  ],
+  "method": "git_tree_diff"
+ },
+ "simple-git-cve-2026-28291": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['simple-git/src/lib/plugins/block-unsafe-operations-plugin.ts'])"
+ },
+ "simple-git-cve-2026-6951": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['src/lib/plugins/block-unsafe-operations-plugin.ts', 'vulnerability.c', 'v1/package.js', 'dist/index.c', 'core.h', 'filter.c', 'credential.h', 'diff.c', 'mergetool.c'])"
+ },
+ "siyuan-cve-2026-31807": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=[])"
+ },
+ "siyuan-cve-2026-31809": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=[])"
+ },
+ "siyuan-double-url-encode-assets-traversal": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['kernel/server/serve.go', 'kernel/model/assets.go', 'serve.go'])"
+ },
+ "spring-framework-cve-2022-22965": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['class.c', 'class.module.c'])"
+ },
+ "spring-uricomponentsbuilder-openredirect-cve-2024-22259": {
+  "kind": "concept_desc",
+  "patch_files": [
+   "spring-web/src/main/java/org/springframework/web/util/UriComponentsBuilder.java"
+  ],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['a/spring-web/src/main/java/org/springframework/web/util/UriComponentsBuilder.java', 'b/spring-web/src/main/java/org/springframework/web/util/UriComponentsBuilder.java'])"
+ },
+ "ssti_angular_expressions_constructor": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 4224,
+  "clues": []
+ },
+ "ssti_n8n_expression_sandbox": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['fn.c'])"
+ },
+ "ssti_thymeleaf_spel_sandbox": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['case.js', 'lib/thymeleaf/src/main/java/org/thymeleaf/util/ExpressionUtils.java', 'expression.c', 'com.squareup.java', 'ALLOWED_JAVA_CLASS_NAMES.c', 'ALLOWED_JAVA_SUPERS_NAMES.c', 'ALLOWED_JAVA_CLASSES.c', 'ALLOWED_CLASS_METHODS.c', 'BLOCKED_CLASS_METHODS.c', 'lib/thymeleaf-spring6/src/main/java/org/thymeleaf/spring6/util/SpringStandardExpressionUtils.java', 'exp.c'])"
+ },
+ "twiki-cve-2009-4898": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=[])"
+ },
+ "undertow-jboss-wildfly-web-server-cve-2018-1067": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['core/src/main/java/io/undertow/server/protocol/http/HttpResponseConduit.java', 'HttpResponseConduit.java', 'string.c'])"
+ },
+ "vite-cve-2025-31125": {
+  "kind": "",
+  "patch_files": [],
+  "result": "success",
+  "error": "diff too large/empty (0 file-sections, clues=['packages/vite/src/node/server/middlewares/transform.ts'])",
+  "method": "git_tree_diff"
+ },
+ "wordpress-wp-super-cache-plugin-cve-2013-2011": {
+  "kind": "",
+  "patch_files": [],
+  "result": "concept_only",
+  "error": "diff too large/empty (0 file-sections, clues=['wp-cache.php', 'wp-cache-phase2.php'])"
+ },
+ "xstream-cve-2020-26217": {
+  "kind": "concept_desc",
+  "patch_files": [],
+  "result": "success",
+  "diff_bytes": 3741,
+  "clues": []
+ },
+ "pgadmin-cve-2026-17346": {
+  "kind": "manual_round18",
+  "result": "success",
+  "method": "git_tree_diff"
+ },
+ "n8n-cve-2026-44791": {
+  "kind": "manual_round18",
+  "result": "success",
+  "method": "git_tree_diff"
+ },
+ "admidio-cve-2026-42194": {
+  "kind": "manual_round18",
+  "result": "success",
+  "method": "git_tree_diff"
+ }
+}

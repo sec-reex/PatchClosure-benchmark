@@ -1,0 +1,154 @@
+PCBV2-0087 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: 071b1b09d6d61ab02a5960b1ccafd9d9c2155a3e
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0087/
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 798d46d..7e613cf 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,6 +8,8 @@
+ - **Security fix:** Mitigate arbitrary path write in uploader (GHSL-2024-182)
+   - Thanks [Peter Stöckli](https://github.com/p-) for reporting and providing clear reproduction steps
+ - Add Rails 7.2 to stable testing on CI, point rails_edge to main branch
++- **Security fix:** Mitigate arbitrary path traversal in download_private_file (GHSL-2024-183)
++  - Thanks [Peter Stöckli](https://github.com/p-) for reporting and providing clear reproduction steps
+ 
+ ## [2.8.0](https://github.com/owen2345/camaleon-cms/tree/2.8.0) (2024-07-26)
+ - Use jQuery 2.x - 2.2.4
+diff --git a/Gemfile b/Gemfile
+index 0e6f8b8..4f6a26b 100644
+--- a/Gemfile
++++ b/Gemfile
+@@ -1,9 +1,9 @@
+ source 'https://rubygems.org'
+ 
+ gemspec
+-gem 'non-digest-assets'
++gem 'non-digest-assets', git: 'https://github.com/mvz/non-digest-assets'
+ gem 'oj'
+-gem 'rails', '~> 7.1.0'
++gem 'rails', '~> 7.2.0'
+ gem 'selenium-webdriver'
+ gem 'sprockets-rails', '>= 3.5.1'
+ 
+diff --git a/app/controllers/camaleon_cms/admin/media_controller.rb b/app/controllers/camaleon_cms/admin/media_controller.rb
+index 1833fc5..241558b 100644
+--- a/app/controllers/camaleon_cms/admin/media_controller.rb
++++ b/app/controllers/camaleon_cms/admin/media_controller.rb
+@@ -30,6 +30,8 @@ module CamaleonCms
+ 
+         file = cama_uploader.fetch_file("private/#{params[:file]}")
+ 
++        return render plain: helpers.sanitize(file[:error]) if file.is_a?(Hash) && file[:error].present?
++
+         send_file file, disposition: 'inline'
+       end
+ 
+diff --git a/app/uploaders/camaleon_cms_aws_uploader.rb b/app/uploaders/camaleon_cms_aws_uploader.rb
+index cbc47d0..bffe161 100644
+--- a/app/uploaders/camaleon_cms_aws_uploader.rb
++++ b/app/uploaders/camaleon_cms_aws_uploader.rb
+@@ -36,11 +36,11 @@ class CamaleonCmsAwsUploader < CamaleonCmsUploader
+   end
+ 
+   def fetch_file(file_name)
+-    bucket.object(file_name).download_file(file_name) unless file_exists?(file_name)
++    return file_name if file_exists?(file_name)
+ 
+-    raise ActionController::RoutingError, 'File not found' unless file_exists?(file_name)
++    return file_name if bucket.object(file_name).download_file(file_name) && file_exists?(file_name)
+ 
+-    file_name
++    { error: 'File not found' }
+   end
+ 
+   # parse an AWS file into custom file_object
+diff --git a/app/uploaders/camaleon_cms_local_uploader.rb b/app/uploaders/camaleon_cms_local_uploader.rb
+index a074808..c9be051 100644
+--- a/app/uploaders/camaleon_cms_local_uploader.rb
++++ b/app/uploaders/camaleon_cms_local_uploader.rb
+@@ -25,9 +25,11 @@ class CamaleonCmsLocalUploader < CamaleonCmsUploader
+   end
+ 
+   def fetch_file(file_name)
+-    raise ActionController::RoutingError, 'File not found' unless file_exists?(file_name)
++    return { error: 'Invalid file path' } if file_name.include?('..')
+ 
+-    file_name
++    return file_name if file_exists?(file_name)
++
++    { error: 'File not found' }
+   end
+ 
+   def file_parse(key)
+diff --git a/spec/dummy/config/environments/test.rb b/spec/dummy/config/environments/test.rb
+index 6be2816..bbb98a4 100644
+--- a/spec/dummy/config/environments/test.rb
++++ b/spec/dummy/config/environments/test.rb
+@@ -25,7 +25,11 @@ Rails.application.configure do
+   config.assets.check_precompiled_asset = false
+ 
+   # Raise exceptions instead of rendering exception templates.
+-  config.action_dispatch.show_exceptions = false
++  config.action_dispatch.show_exceptions = if ::Rails::VERSION::STRING < '7.2.0'
++                                             false
++                                           else
++                                             :none
++                                           end
+ 
+   # Disable request forgery protection in test environment.
+   config.action_controller.allow_forgery_protection = false
+diff --git a/spec/requests/download_private_file_spec.rb b/spec/requests/download_private_file_spec.rb
+new file mode 100644
+index 0000000..3381891
+--- /dev/null
++++ b/spec/requests/download_private_file_spec.rb
+@@ -0,0 +1,47 @@
++# frozen_string_literal: true
++
++require 'rails_helper'
++
++RSpec.describe 'Media requests', type: :request do
++  init_site
++
++  describe 'Download private file' do
++    let(:current_site) { Cama::Site.first.decorate }
++
++    before do
++      allow_any_instance_of(CamaleonCms::Admin::MediaController).to receive(:cama_authenticate)
++      allow_any_instance_of(CamaleonCms::Admin::MediaController).to receive(:current_site).and_return(current_site)
++    end
++
++    context 'when the file path is valid and file exists' do
++      before do
++        allow_any_instance_of(CamaleonCmsLocalUploader).to receive(:fetch_file).and_return('some_file')
++
++        allow_any_instance_of(CamaleonCms::Admin::MediaController).to receive(:send_file)
++        allow_any_instance_of(CamaleonCms::Admin::MediaController).to receive(:default_render)
++      end
++
++      it 'allows the file to be downloaded' do
++        expect_any_instance_of(CamaleonCms::Admin::MediaController).to receive(:send_file).with('some_file', disposition: 'inline')
++
++        get '/admin/media/download_private_file', params: { file: 'some_file' }
++      end
++    end
++
++    context 'when file path is invalid' do
++      it 'returns invalid file path error' do
++        get '/admin/media/download_private_file', params: { file: './../../../../../etc/passwd' }
++
++        expect(response.body).to include('Invalid file path')
++      end
++    end
++
++    context 'when the file is not found' do
++      it 'returns file not found error' do
++        get '/admin/media/download_private_file', params: { file: 'passwd' }
++
++        expect(response.body).to include('File not found')
++      end
++    end
++  end
++end

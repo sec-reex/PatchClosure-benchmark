@@ -1,0 +1,25 @@
+case_id: PCBV2-0130
+public_name: jenkins-cve-2025-31721
+run_mode: real-app-http
+oracle_family: state_auth_mutation
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: jenkins/jenkins
+  v0: 2.492.1-lts
+  v1: 2.492.2-lts
+service:
+  # Compose publishes ${PORT_V*_0}:8080. start.sh waits until init.groovy.d
+  # has finished (admin can read agentA). Platform HTTP on :8080 would miss.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

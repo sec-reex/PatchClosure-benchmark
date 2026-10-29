@@ -1,0 +1,28 @@
+PCBV2-0007 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: fix: official vtigercrm6.3.0.tar.gz -> vtigercrm6.4.0.tar.gz  modules/Settings/Vtiger/actions/CompanyDetailsSave.php
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0007/
+
+diff --git a/modules/Settings/Vtiger/actions/CompanyDetailsSave.php b/modules/Settings/Vtiger/actions/CompanyDetailsSave.php
+--- a/modules/Settings/Vtiger/actions/CompanyDetailsSave.php
++++ b/modules/Settings/Vtiger/actions/CompanyDetailsSave.php
+@@ -23,9 +23,16 @@
+                 $fileType = explode('/', $logoDetails['type']);
+                 $fileType = $fileType[1];
+ 
+-                if (!$logoDetails['size'] || !in_array($fileType, Settings_Vtiger_CompanyDetails_Model::$logoSupportedFormats)) {
+-                    $saveLogo = false;
+-                }
++                if (!$logoDetails['size'] || !in_array($fileType, Settings_Vtiger_CompanyDetails_Model::$logoSupportedFormats)) { 
++                    $saveLogo = false; 
++                } 
++
++                //mime type check 
++                $mimeType = mime_content_type($logoDetails['tmp_name']); 
++                $mimeTypeContents = explode('/', $mimeType); 
++                if (!$logoDetails['size'] || $mimeTypeContents[0] != 'image' || !in_array($mimeTypeContents[1], Settings_Vtiger_CompanyDetails_Model::$logoSupportedFormats)) { 
++                    $saveLogo = false; 
++                } 
+ 				// Check for php code injection
+ 				$imageContents = file_get_contents($_FILES["logo"]["tmp_name"]);
+ 				if (preg_match('/(<\?php?(.*?))/i', $imageContents) == 1) {

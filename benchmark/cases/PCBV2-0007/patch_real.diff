@@ -1,0 +1,27 @@
+CVE: CVE-2015-6000 first-fix (server-side mime_content_type), as shipped in 6.4.0
+upstream: https://sourceforge.net/projects/vtigercrm/files/vtiger%20CRM%206.4.0/Core%20Product/vtigercrm6.4.0.tar.gz
+fix: official vtigercrm6.3.0.tar.gz -> vtigercrm6.4.0.tar.gz  modules/Settings/Vtiger/actions/CompanyDetailsSave.php
+
+diff --git a/modules/Settings/Vtiger/actions/CompanyDetailsSave.php b/modules/Settings/Vtiger/actions/CompanyDetailsSave.php
+--- a/modules/Settings/Vtiger/actions/CompanyDetailsSave.php
++++ b/modules/Settings/Vtiger/actions/CompanyDetailsSave.php
+@@ -23,9 +23,16 @@
+                 $fileType = explode('/', $logoDetails['type']);
+                 $fileType = $fileType[1];
+ 
+-                if (!$logoDetails['size'] || !in_array($fileType, Settings_Vtiger_CompanyDetails_Model::$logoSupportedFormats)) {
+-                    $saveLogo = false;
+-                }
++                if (!$logoDetails['size'] || !in_array($fileType, Settings_Vtiger_CompanyDetails_Model::$logoSupportedFormats)) { 
++                    $saveLogo = false; 
++                } 
++
++                //mime type check 
++                $mimeType = mime_content_type($logoDetails['tmp_name']); 
++                $mimeTypeContents = explode('/', $mimeType); 
++                if (!$logoDetails['size'] || $mimeTypeContents[0] != 'image' || !in_array($mimeTypeContents[1], Settings_Vtiger_CompanyDetails_Model::$logoSupportedFormats)) { 
++                    $saveLogo = false; 
++                } 
+ 				// Check for php code injection
+ 				$imageContents = file_get_contents($_FILES["logo"]["tmp_name"]);
+ 				if (preg_match('/(<\?php?(.*?))/i', $imageContents) == 1) {

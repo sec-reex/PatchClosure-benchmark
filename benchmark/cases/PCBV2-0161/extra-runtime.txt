@@ -1,0 +1,6 @@
+# Extra deps discovered while importing the installed Kilo Glance tree.
+# Separate layer so the heavy requirements-runtime.txt wheel build stays cached.
+# Only packages actually imported by glance.common.store_utils's load path.
+# Do NOT add oslo.messaging / oslo.service here: they pull pika/yappi that
+# need setuptools>=61, which does not exist on Python 2.7.
+osprofiler==1.4.0

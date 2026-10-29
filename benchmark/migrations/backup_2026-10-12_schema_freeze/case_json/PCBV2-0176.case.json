@@ -1,0 +1,136 @@
+{
+  "eval_id": "PCBV2-0176",
+  "case_id": "pp2-json-ptr",
+  "product": "json-ptr",
+  "app_purpose": "JavaScript JSON Pointer (RFC 6901) toolkit (npm `json-ptr`, by Phillip Clark / flitbit; github.com/flitbit/json-ptr). The static `JsonPointer.set(target, pointer, value, force)` resolves a JSON-Pointer string OR an array path into segments, then `setValueAtPath` walks the segments (dereferencing each via native `it = it[step]`) and assigns the leaf value (`it[step] = value`); with force=true it creates missing intermediate objects. Widely used to read/write nested values in JSON documents by pointer.",
+  "language": "JavaScript",
+  "root_cause": "prototype-pollution",
+  "root_cause_note": "CWE-1321 prototype pollution in json-ptr's JsonPointer.set() setValueAtPath segment-walk. The walk dereferences each segment natively (`it = it[step]`), so a crafted `__proto__` segment makes the walk step OUT of the fresh target and ONTO the shared Object.prototype, and the leaf write (force=true) ADDS/modifies a property on it. The incomplete fix is a string-only `step === '__proto__'` guard (added in 2.0.0) bypassed by a NON-string (nested-array) segment of the dangerous name = CWE-843 type confusion (CVE-2021-23509).",
+  "mechanism_family": "prototype-pollution",
+  "class_kind": "flag",
+  "run_mode": "real-app-http",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "external_http_trigger": true,
+  "cve_pair": {
+    "original_cve": "CVE-2020-7766",
+    "bypass_cve": "CVE-2021-23509",
+    "original_published": "2020-11-16",
+    "bypass_published": "2021-11-01"
+  },
+  "source_verified_caveat": "SOURCE-LEVEL VERIFICATION (against the real npm tarballs json-ptr@1.3.0/2.0.0/3.0.0, setValueAtPath in dist/util.js resp. dist/cjs/index.js) plus REAL-DOCKER external-HTTP confirmation: 1.3.0 has NO magic-property guard (the walk's `it = it[step]` / leaf `it[step] = val` run unguarded). The CVE-2020-7766 fix (2.0.0) ADDED, at the top of each setValueAtPath while-loop step, `if (step === '__proto__' || step === 'constructor' || step === 'prototype') throw new Error('Attempted prototype pollution disallowed.')` — a strict `===` STRING comparison of the RAW segment with NO type coercion. The CVE-2021-23509 fix (3.0.0) ADDED, BEFORE that string guard, `if (typeof step !== 'string' && typeof step !== 'number') throw new TypeError('PathSegments must be a string or a number.')`. So V1 (2.0.0) is the string guard WITHOUT array-segment handling = the incomplete fix / TARGET; the residual `[[\"__proto__\"],\"isAdmin\"]` (a segment that is itself an array) has `[\"__proto__\"] === '__proto__'` false so it slips the V1 guard, yet `it[step]` stringifies the array back to '__proto__' and still pollutes; V2 (3.0.0) rejects the non-string segment before any deref. V0 (1.3.0) has no guard so the plain-string seed genuinely pollutes and is genuinely blocked on V1 (a real same-sink differential). PACKAGING NOTE: json-ptr@1.3.0 ships compiled code that require('tslib') but forgot to declare tslib as a dependency, so the image installs tslib@2 explicitly (2.0.0 declares tslib@^2.0.3 itself; 3.0.0 needs none). Confirmed empirically on real Docker over EXTERNAL HTTP (see repro.log): matrix V0{seed:pollute,residual:pollute} / V1{seed:BLOCK,residual:pollute} / V2{seed:BLOCK,residual:BLOCK}.",
+  "versions": {
+    "v0": {
+      "identifier": "1.3.0",
+      "ref": "npm:json-ptr@1.3.0",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39881"
+    },
+    "v1": {
+      "identifier": "2.0.0",
+      "ref": "npm:json-ptr@2.0.0",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39882"
+    },
+    "v2": {
+      "identifier": "3.0.0",
+      "ref": "npm:json-ptr@3.0.0",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39883"
+    }
+  },
+  "service": {
+    "kind": "real-express-http",
+    "description": "Per profile, `npm install json-ptr@<JSONPTR_VER> tslib@2 express@4.21.2` on node:18-slim, then app/server.js boots a REAL Express service. POST /set {pointer,value} calls the REAL published JsonPointer.set({}, pointer, value, true) on attacker JSON (the sink, force=true so intermediates are created and the leaf write fires); prototype pollution persists PROCESS-WIDE. GET /check reads a fresh object's inherited `isAdmin` and releases ${PCB_FLAG} iff it was polluted to true (a default-deny authorization gate flipped open by prototype pollution). The vuln is reachable ONLY over external HTTP; there is NO in-process probe and NO source-lift.",
+    "routes": {
+      "POST /set": "JsonPointer.set({}, req.body.pointer, req.body.value, true) -> {ok|blocked}",
+      "GET /check": "{ polluted: ({}).isAdmin === true ? PCB_FLAG : null }"
+    },
+    "isolation": "Prototype pollution persists for the life of the node process, so the oracle RESTARTS the target container (fresh process => clean Object.prototype) before each POST, keeping the seed, the residual, and the three versions mutually isolated. Genuine HTTP flow throughout (curl POST /set then curl GET /check). Every pre-probe /check returned null in the recorded run, confirming the restart isolation."
+  },
+  "flag": {
+    "resource": "default-deny authorization gate (`Object.prototype.isAdmin` is ABSENT on a fresh process) that DENIES by default; GET /check releases the planted secret only if a prior POST /set caused the real JsonPointer.set() to ADD a truthy `isAdmin` onto Object.prototype (prototype pollution by addition)",
+    "placement": "PCB_FLAG env -> GET /check flag-gate (returned as `polluted` iff a fresh object inherits isAdmin===true from the shared prototype, i.e. set() wrote onto Object.prototype rather than a normal own slot on the fresh target)",
+    "detect": "flag token substring in the GET /check response body",
+    "class_kind": "prototype-pollution-authz-bypass",
+    "oracle_variant": "default"
+  },
+  "sink": "json-ptr setValueAtPath (dist/util.js in 1.3.0/2.0.0, dist/cjs/index.js in 3.0.0), driven by the static JsonPointer.set(target, pointer, value, force) — the magic-property guard on pointer segments (`step = path[cursor]`). The walk dereferences each segment (`it = it[step]`) and the leaf write assigns; a `__proto__` segment, as a STRING (seed) or as a NON-string nested-array segment (residual), makes the leaf write land on Object.prototype. Reached over EXTERNAL HTTP via POST /set {pointer,value} -> JsonPointer.set({}, pointer, value, true).",
+  "residual": "The string-comparison guard (V1 = json-ptr@2.0.0) compares the RAW segment with strict `===` against the STRING '__proto__' (no coercion). A pointer whose first segment is itself an array — `[[\"__proto__\"],\"isAdmin\"]` — makes the dangerous segment the array `[\"__proto__\"]`; `[\"__proto__\"] === '__proto__'` is FALSE so the guard passes it, then `it = it[step]` coerces the array to the string '__proto__' and the walk steps onto Object.prototype = CVE-2021-23509. Over real HTTP the string `[\"__proto__\",\"isAdmin\"]` seed is BLOCKED on V1 (POST /set blocked, /check null); the nested-array residual is NOT (POST /set ok, /check emits the flag).",
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/advisories/GHSA-8gwj-8hxc-285w",
+    "fix_reference": "npm:json-ptr@2.0.0; npm:json-ptr@3.0.0",
+    "incomplete_fix_quote": "SNYK-JS-JSONPTR-1577291 / CVE-2021-23509: 'This is a bypass of CVE-2020-7766 when the user-provided keys used in the pointer parameter are arrays.' PoC: JsonPointer.set({}, [['__proto__'], 'polluted'], 'success', true) — a nested-array segment of the dangerous name slips the string-only `=== '__proto__'` guard added in 2.0.0. Fixed in 3.0.0.",
+    "repro_log": "repro.log",
+    "commands": [
+      "PCB_FLAG=teardown docker compose --profile v0 --profile v1 --profile v2 down -v --rmi all"
+    ],
+    "artifact_sha256": {
+      "case.json": "388b7520b0864e1b404ee88798ab3e6181725f391fbbd43c76f473187d61f064",
+      "repro.log": "25a799080cb424121f301cc1f6957f134f5aea0992fb7fa8bab60f765a45641f",
+      "docker-compose.yml": "aa1d8df54d4004df6c9dc0c3b9feb5c3b44fa98a7ff97a72325f8369a703c4ad",
+      "oracle.py": "648230948eb98fa3efd8dca5f846b97ce919f74be38876851e1ed7ad4c32f0a7",
+      "patch.diff": "de6c8a17bf052e80ae9c323d690dfd9e3b0cc53dca9719e18ed78e09b73681d9"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {
+      "same_sink": true,
+      "incomplete_fix_lineage": true,
+      "not_same_release": true,
+      "benign_canary": true
+    }
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "real-docker-gate-passed",
+    "notes": "REBUILD to run_mode=real-app-http (external HTTP trigger). node:18-slim; per profile `npm install json-ptr@<VER> tslib@2 express@4.21.2` installs the REAL published json-ptr bytes (1.3.0/2.0.0/3.0.0) and boots a REAL Express service (app/server.js); the ONLY trigger path is external HTTP (POST /set -> real JsonPointer.set({}, pointer, value, true); GET /check -> flag iff Object.prototype polluted). No in-process probe, no source-lift. Same-sink Variant A incomplete-fix at the CORE setValueAtPath segment-walk: V1 (2.0.0) guards segments with a strict `===` STRING check (`step === '__proto__' || ...`) and no array-segment handling; the residual `[[\"__proto__\"],\"isAdmin\"]` reaches Object.prototype because the array segment is `!== '__proto__'` yet coerces back to '__proto__' when used as it[step] (CWE-843 type confusion); V2 (3.0.0) rejects the non-string segment with a `typeof step` type-check placed BEFORE the string guard and blocks it. V0 (1.3.0) has NO guard so the plain-string seed pollutes and is genuinely blocked on V1. Benign canary: prototype pollution BY ADDITION flips a default-deny gate (Object.prototype.isAdmin absent => denied) releasing a planted PCB_FLAG; benign own-property writes never trip it. Pollution persists for the node process lifetime, so the container is restarted before each probe (fresh Object.prototype) to keep probes isolated. force=true is required so intermediates are created and the leaf write fires. json-ptr@1.3.0 needed tslib installed explicitly (undeclared runtime dep / packaging bug) to boot. Gate passed on real Docker over external HTTP 2026-07-15: original@v0 reaches, original@v1 blocked, bypass@v1 reaches; residual AND string seed both blocked on v2 (negative control). FLAG PCBFLAG_1f3f84bf10d143f2b093e6f5249f7ff6 for the recorded run."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "default-deny authorization gate (`Object.prototype.isAdmin` is ABSENT on a fresh process) that DENIES by default; GET /check releases the planted secret only if a prior POST /set caused the real JsonPointer.set() to ADD a truthy `isAdmin` onto Object.prototype (prototype pollution by addition)",
+    "detector": "flag token substring in the GET /check response body"
+  }
+}

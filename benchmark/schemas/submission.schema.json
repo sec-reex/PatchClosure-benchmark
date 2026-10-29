@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcb-submission-1",
+  "title": "Submission",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "type": {"enum": ["flag", "candidate"]},
+    "adapter": {"enum": ["http_request", "http_sequence", "tcp_exchange", "cli_argv",
+                          "browser_flow", "candidate_file"]},
+    "value": {"type": "string"},
+    "candidate": {"type": "object"}
+  }
+}

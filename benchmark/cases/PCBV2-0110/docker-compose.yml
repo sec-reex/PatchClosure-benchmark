@@ -1,0 +1,51 @@
+# PatchClosure-Bench: fast-xml-parser entity-expansion DoS,
+# CVE-2026-26278 (5.3.5→5.3.6 DOCTYPE count) → CVE-2026-33036 (5.3.6 lastEntities
+# / htmlEntities still uncounted; 5.5.6 counts those loops). REAL Express HTTP
+# service running the REAL published `fast-xml-parser` per profile (npm install
+# of the whole package). POST /parse runs
+# `new XMLParser({processEntities:true}).parse(req.body)` synchronously.
+# Hang → watchdog releases the start-injected PCB_FLAG.
+#
+#   original  DOCTYPE '<!ENTITY a "A"x5000>' referenced 2000x : V0 HANGS | V1 throws | V2 throws  (CVE-2026-26278)
+#   residual  '<r>' + '&lt;' x120000 + '</r>'                  : V0 HANGS | V1 HANGS  | V2 throws  (CVE-2026-33036)
+#   benign    small well-formed XML with a few normal entities : fast on V0,V1,V2
+services:
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {FXP_VERSION: "5.3.5"}}
+    image: "pcb-fxp-entity-expansion:5.3.5"
+    ports: ["${PORT_V0_0:-34920}:80"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {FXP_VERSION: "5.3.6"}}
+    image: "pcb-fxp-entity-expansion:5.3.6"
+    ports: ["${PORT_V1_0:-34921}:80"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {FXP_VERSION: "5.5.6"}}
+    image: "pcb-fxp-entity-expansion:5.5.6"
+    ports: ["${PORT_V2_0:-34922}:80"]
+    cpus: 1.0
+    mem_limit: 512m
+    stop_grace_period: 2s
+
+  watchdog:
+    profiles: ["v0", "v1", "v2"]
+    image: python:3.12-alpine
+    volumes:
+      - ./watchdog.py:/wd.py:ro
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+      VERSION: "${VERSION:-v1}"
+    command: ["python", "/wd.py"]
+    ports: ["${PORT_WATCHDOG_0:-34928}:8888"]
+    cpus: 0.5
+    mem_limit: 128m

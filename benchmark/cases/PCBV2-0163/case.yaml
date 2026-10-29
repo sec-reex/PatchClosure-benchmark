@@ -1,0 +1,27 @@
+case_id: PCBV2-0163
+public_name: owasp_java_html_sanitizer_noscript_style
+run_mode: real-app-http
+oracle_family: browser_xss
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  # Runtime is Maven Central owasp-java-html-sanitizer (whole jar).
+  # Do not clone java-html-sanitizer.git.
+  type: maven
+  repo: com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer
+  v0: "20200713.1"
+  v1: "20211018.1"
+service:
+  # Compose publishes ${PORT_*_0}:80/8070/9000. Platform HTTP on :80 would miss.
+  # start.sh waits until app :80, victim :8070, callback :9000, and grid answer.
+  readiness: none
+  exposed_ports: [80, 8070, 9000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

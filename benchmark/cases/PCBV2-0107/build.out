@@ -1,0 +1,170 @@
+ Image pcb-faraday-ssrf:v0 Building 
+ Image pcb-faraday-ssrf:v1 Building 
+ Image pcb-faraday-ssrf:v2 Building 
+ Image pcb-faraday-ssrf:v1 Building 
+ Image pcb-faraday-ssrf:v1 Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 3.29kB done
+#1 DONE 0.0s
+
+#2 [trusted-base internal] load build definition from Dockerfile
+#2 DONE 0.0s
+
+#2 [trusted-base internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.36kB done
+#2 DONE 0.1s
+
+#3 [server-v2 internal] load metadata for docker.io/library/ruby:3.3-slim
+#3 ...
+
+#4 [auth] library/ruby:pull token for registry-1.docker.io
+#4 DONE 0.0s
+
+#3 [server-v2 internal] load metadata for docker.io/library/ruby:3.3-slim
+#3 DONE 5.0s
+
+#5 [server-v2 internal] load .dockerignore
+#5 transferring context: 2B done
+#5 DONE 0.1s
+
+#6 [server-v1 1/4] FROM docker.io/library/ruby:3.3-slim@sha256:fb6613e39db7b37efb7976390f0fcd4da2ea018a74770ae4a01d21a4c441f637
+#6 resolve docker.io/library/ruby:3.3-slim@sha256:fb6613e39db7b37efb7976390f0fcd4da2ea018a74770ae4a01d21a4c441f637 0.0s done
+#6 ...
+
+#7 [attacker internal] load build context
+#7 transferring context: 7.32kB done
+#7 DONE 0.1s
+
+#6 [server-v1 1/4] FROM docker.io/library/ruby:3.3-slim@sha256:fb6613e39db7b37efb7976390f0fcd4da2ea018a74770ae4a01d21a4c441f637
+#6 resolve docker.io/library/ruby:3.3-slim@sha256:fb6613e39db7b37efb7976390f0fcd4da2ea018a74770ae4a01d21a4c441f637 0.0s done
+#6 sha256:2f0de5f07317055f545fe42fad50aad59dfd13ff259cdddc033b39801d89dd7c 1.93kB / 1.93kB done
+#6 sha256:bc549363392868c783f5b5282b7434ff5ebaa7a6a42e34493f7a6b7c48a9f4b6 5.92kB / 5.92kB done
+#6 sha256:a649ca471b7138831d46db5b1a8e4bdce28aa15184ab2dafe26d22f779f84b95 0B / 1.26MB 0.1s
+#6 sha256:639bdb518f70fb12e56f211debc6e458f9dd533c2f0dcda48aab5a487fa3ec97 0B / 190B 0.1s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 0B / 38.36MB 0.1s
+#6 sha256:fb6613e39db7b37efb7976390f0fcd4da2ea018a74770ae4a01d21a4c441f637 10.32kB / 10.32kB done
+#6 sha256:2f0de5f07317055f545fe42fad50aad59dfd13ff259cdddc033b39801d89dd7c 1.93kB / 1.93kB done
+#6 sha256:bc549363392868c783f5b5282b7434ff5ebaa7a6a42e34493f7a6b7c48a9f4b6 5.92kB / 5.92kB done
+#6 sha256:fb6613e39db7b37efb7976390f0fcd4da2ea018a74770ae4a01d21a4c441f637 10.32kB / 10.32kB done
+#6 sha256:a649ca471b7138831d46db5b1a8e4bdce28aa15184ab2dafe26d22f779f84b95 1.26MB / 1.26MB 0.6s done
+#6 extracting sha256:a649ca471b7138831d46db5b1a8e4bdce28aa15184ab2dafe26d22f779f84b95 0.1s done
+#6 sha256:3fa319658ee0d2d7e635c26a99362ed6f757da55bfc156687e4cb15443c13b6a 0B / 144B 0.7s
+#6 sha256:a649ca471b7138831d46db5b1a8e4bdce28aa15184ab2dafe26d22f779f84b95 1.26MB / 1.26MB 0.6s done
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 2.10MB / 38.36MB 1.0s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 4.19MB / 38.36MB 1.2s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 6.29MB / 38.36MB 1.4s
+#6 extracting sha256:639bdb518f70fb12e56f211debc6e458f9dd533c2f0dcda48aab5a487fa3ec97
+#6 sha256:639bdb518f70fb12e56f211debc6e458f9dd533c2f0dcda48aab5a487fa3ec97 190B / 190B 1.4s done
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 8.39MB / 38.36MB 1.6s
+#6 sha256:3fa319658ee0d2d7e635c26a99362ed6f757da55bfc156687e4cb15443c13b6a 144B / 144B 1.4s done
+#6 extracting sha256:639bdb518f70fb12e56f211debc6e458f9dd533c2f0dcda48aab5a487fa3ec97 done
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 10.49MB / 38.36MB 1.9s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 13.63MB / 38.36MB 2.2s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 15.73MB / 38.36MB 2.4s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 17.83MB / 38.36MB 2.6s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 19.92MB / 38.36MB 2.8s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 22.02MB / 38.36MB 3.1s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 25.17MB / 38.36MB 3.4s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 28.31MB / 38.36MB 3.7s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 30.41MB / 38.36MB 4.0s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 33.55MB / 38.36MB 4.3s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 36.70MB / 38.36MB 4.6s
+#6 sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 38.36MB / 38.36MB 4.8s done
+#6 extracting sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd
+#6 extracting sha256:169fce77057bacaff277093c98a720b8124d9d3a59cbdfdd3808cb7a4af204cd 0.7s done
+#6 extracting sha256:3fa319658ee0d2d7e635c26a99362ed6f757da55bfc156687e4cb15443c13b6a
+#6 extracting sha256:3fa319658ee0d2d7e635c26a99362ed6f757da55bfc156687e4cb15443c13b6a done
+#6 DONE 5.8s
+
+#8 [attacker 2/4] RUN gem install faraday -v 2.14.1 --no-document
+#8 1.640 Successfully installed net-http-0.9.1
+#8 1.640 Successfully installed faraday-net_http-3.4.4
+#8 1.640 Successfully installed faraday-2.14.1
+#8 1.640 3 gems installed
+#8 ...
+
+#9 [server-v0 2/4] RUN gem install faraday -v 2.14.0 --no-document
+#9 1.728 Successfully installed net-http-0.9.1
+#9 1.728 Successfully installed faraday-net_http-3.4.4
+#9 1.728 Successfully installed faraday-2.14.0
+#9 1.728 3 gems installed
+#9 DONE 2.0s
+
+#8 [server-v1 2/4] RUN gem install faraday -v 2.14.1 --no-document
+#8 DONE 2.0s
+
+#10 [server-v2 2/4] RUN gem install faraday -v 2.14.2 --no-document
+#10 1.732 Successfully installed net-http-0.9.1
+#10 1.732 Successfully installed faraday-net_http-3.4.4
+#10 1.732 Successfully installed faraday-2.14.2
+#10 1.732 3 gems installed
+#10 DONE 2.0s
+
+#11 [server-v0 3/4] WORKDIR /app
+#11 DONE 0.1s
+
+#12 [attacker 3/4] WORKDIR /app
+#12 DONE 0.1s
+
+#13 [server-v2 3/4] WORKDIR /app
+#13 DONE 0.1s
+
+#14 [server-v0 4/4] COPY app.rb /app/
+#14 DONE 0.1s
+
+#15 [attacker 4/4] COPY app.rb /app/
+#15 DONE 0.1s
+
+#16 [server-v2 4/4] COPY app.rb /app/
+#16 DONE 0.2s
+
+#17 [server-v2] exporting to image
+#17 exporting layers
+#17 exporting layers 0.1s done
+#17 writing image sha256:f1941f3d3929749d0cae5bd298fd96bd2de9b7ff150385e6489fb7dfa0543ad2 done
+#17 naming to docker.io/library/pcb-faraday-ssrf:v2 0.0s done
+#17 DONE 0.2s
+
+#18 [server-v0] exporting to image
+#18 exporting layers 0.1s done
+#18 writing image sha256:1190889a355bfc3de2210380d1da94ed98914ea8607b0e496efc7de4647b8ff5 done
+#18 naming to docker.io/library/pcb-faraday-ssrf:v0 done
+#18 DONE 0.1s
+
+#19 [trusted-base] exporting to image
+#19 exporting layers 0.1s done
+#19 writing image sha256:7a70e777b95014bfe2a5777728a0500a2a46ced575c24fb3ae7a7765084d43b8 done
+#19 naming to docker.io/library/pcb-faraday-ssrf:v1 done
+#19 DONE 0.2s
+
+#20 [attacker] exporting to image
+#20 exporting layers 0.1s done
+#20 writing image sha256:6225b0a37beb3293204d0698eabeda3d78fc35c7f91af15d48a4e548bfdc5acf done
+#20 naming to docker.io/library/pcb-faraday-ssrf:v1 0.0s done
+#20 DONE 0.2s
+
+#21 [server-v1] exporting to image
+#21 exporting layers 0.1s done
+#21 writing image sha256:409bcff3c3d68bf850d473d8cacf95a6d7dc110b5228e1fdb32092a7d2ecf04c done
+#21 naming to docker.io/library/pcb-faraday-ssrf:v1 0.0s done
+#21 DONE 0.2s
+
+#22 [server-v0] resolving provenance for metadata file
+#22 DONE 0.2s
+
+#23 [trusted-base] resolving provenance for metadata file
+#23 DONE 0.2s
+
+#24 [server-v2] resolving provenance for metadata file
+#24 DONE 0.0s
+
+#25 [attacker] resolving provenance for metadata file
+#25 DONE 0.1s
+
+#26 [server-v1] resolving provenance for metadata file
+#26 DONE 0.1s
+ Image pcb-faraday-ssrf:v1 Built 
+ Image pcb-faraday-ssrf:v1 Built 
+ Image pcb-faraday-ssrf:v0 Built 
+ Image pcb-faraday-ssrf:v1 Built 
+ Image pcb-faraday-ssrf:v2 Built 

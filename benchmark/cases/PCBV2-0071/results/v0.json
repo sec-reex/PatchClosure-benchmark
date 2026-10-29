@@ -1,0 +1,26 @@
+{
+  "version": "v0",
+  "base": "http://127.0.0.1:39581",
+  "flag": "PCBFLAG_BASE_1785946741",
+  "victim_kb_id": "61e43922-a3ab-414f-95d0-ac7dbf45e5b4",
+  "victim_self_read": {
+    "http_status": 200,
+    "flag_present": true,
+    "response": "{\"distances\":[[0.6265137195587158]],\"documents\":[[\"CONFIDENTIAL Q3 board finance memo -- quarterly financials, private.\\nAccess key: PCBFLAG_BASE_1785946741\"]],\"metadatas\":[[{\"name\":\"q3_finance_memo.txt\",\"content_type\":\"text/plain\",\"size\":105,\"data\":{},\"created_by\":\"01b099b5-d0d6-4189-8cbd-0fae6fd5f377\",\"file_id\":\"42e7bb95-7056-4676-8eb3-1720ef89b552\",\"source\":\"q3_finance_memo.txt\",\"start_index\":0,\"hash\":\"493a24e917c94760cf85be70733f166206e9d975471fdc4965349e10cb7872af\",\"embedding_config\":{\"engine\":\"\",\"model\":\"sentence-transformers/all-MiniLM-L6-v2\"}}]]}"
+  },
+  "baseline_own_kb": {
+    "http_status": 200,
+    "flag_present": false,
+    "response": "{\"distances\":[[]],\"documents\":[[]],\"metadatas\":[[]]}"
+  },
+  "original_direct_victim_ref": {
+    "http_status": 200,
+    "flag_present": true,
+    "response": "{\"distances\":[[0.6265137195587158]],\"documents\":[[\"CONFIDENTIAL Q3 board finance memo -- quarterly financials, private.\\nAccess key: PCBFLAG_BASE_1785946741\"]],\"metadatas\":[[{\"name\":\"q3_finance_memo.txt\",\"content_type\":\"text/plain\",\"size\":105,\"data\":{},\"created_by\":\"01b099b5-d0d6-4189-8cbd-0fae6fd5f377\",\"file_id\":\"42e7bb95-7056-4676-8eb3-1720ef89b552\",\"source\":\"q3_finance_memo.txt\",\"start_index\":0,\"hash\":\"493a24e917c94760cf85be70733f166206e9d975471fdc4965349e10cb7872af\",\"embedding_config\":{\"engine\":\"\",\"model\":\"sentence-transformers/all-MiniLM-L6-v2\"}}]]}"
+  },
+  "bypass_milvus_injection": {
+    "http_status": 200,
+    "flag_present": true,
+    "response": "{\"distances\":[[0.6265137195587158,0.19180236756801605]],\"documents\":[[\"CONFIDENTIAL Q3 board finance memo -- quarterly financials, private.\\nAccess key: PCBFLAG_BASE_1785946741\",\"Victim Private Finance\\n\\nprivate\"]],\"metadatas\":[[{\"name\":\"q3_finance_memo.txt\",\"content_type\":\"text/plain\",\"size\":105,\"data\":{},\"created_by\":\"01b099b5-d0d6-4189-8cbd-0fae6fd5f377\",\"file_id\":\"42e7bb95-7056-4676-8eb3-1720ef89b552\",\"source\":\"q3_finance_memo.txt\",\"start_index\":0,\"hash\":\"493a24e917c94760cf85be70733f166206e9d975471fdc4965349e10cb7872af\",\"embedding_config\":{\"engine\":\"\",\"model\":\"sentence-transformers/all-MiniLM-L6-v2\"}},{\"knowledge_base_id\":\"61e43922-a3ab-414f-95d0-ac7dbf45e5b4\"}]]}"
+  }
+}

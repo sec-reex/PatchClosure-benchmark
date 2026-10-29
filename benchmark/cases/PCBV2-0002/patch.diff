@@ -1,0 +1,66 @@
+PCBV2-0002 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: # Fix: 98246aa96079dad5f7b20521bbc0142a04f1c5e7
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0002/
+
+diff --git a/changes-entries/normalize_unreserved.txt b/changes-entries/normalize_unreserved.txt
+new file mode 100644
+index 0000000..4782967
+--- /dev/null
++++ b/changes-entries/normalize_unreserved.txt
+@@ -0,0 +1,2 @@
++  *) core: AP_NORMALIZE_DECODE_UNRESERVED should normalize the second dot in
++     the uri-path when it's preceded by a dot.  [Yann Ylavic]
+\ No newline at end of file
+diff --git a/server/util.c b/server/util.c
+index 2a7fdda..896574b 100644
+--- a/server/util.c
++++ b/server/util.c
+@@ -502,7 +502,8 @@ static char x2c(const char *what);
+ AP_DECLARE(int) ap_normalize_path(char *path, unsigned int flags)
+ {
+     int ret = 1;
+-    apr_size_t l = 1, w = 1;
++    apr_size_t l = 1, w = 1, n;
++    int decode_unreserved = (flags & AP_NORMALIZE_DECODE_UNRESERVED) != 0;
+ 
+     if (!IS_SLASH(path[0])) {
+         /* Besides "OPTIONS *", a request-target should start with '/'
+@@ -529,7 +530,7 @@ AP_DECLARE(int) ap_normalize_path(char *path, unsigned int flags)
+          *  be decoded to their corresponding unreserved characters by
+          *  URI normalizers.
+          */
+-        if ((flags & AP_NORMALIZE_DECODE_UNRESERVED)
++        if (decode_unreserved
+                 && path[l] == '%' && apr_isxdigit(path[l + 1])
+                                   && apr_isxdigit(path[l + 2])) {
+             const char c = x2c(&path[l + 1]);
+@@ -567,8 +568,17 @@ AP_DECLARE(int) ap_normalize_path(char *path, unsigned int flags)
+                     continue;
+                 }
+ 
+-                /* Remove /xx/../ segments */
+-                if (path[l + 1] == '.' && IS_SLASH_OR_NUL(path[l + 2])) {
++                /* Remove /xx/../ segments (or /xx/.%2e/ when
++                 * AP_NORMALIZE_DECODE_UNRESERVED is set since we
++                 * decoded only the first dot above).
++                 */
++                n = l + 1;
++                if ((path[n] == '.' || (decode_unreserved
++                                        && path[n] == '%'
++                                        && path[++n] == '2'
++                                        && (path[++n] == 'e'
++                                            || path[n] == 'E')))
++                        && IS_SLASH_OR_NUL(path[n + 1])) {
+                     /* Wind w back to remove the previous segment */
+                     if (w > 1) {
+                         do {
+@@ -585,7 +595,7 @@ AP_DECLARE(int) ap_normalize_path(char *path, unsigned int flags)
+                     }
+ 
+                     /* Move l forward to the next segment */
+-                    l += 2;
++                    l = n + 1;
+                     if (path[l]) {
+                         l++;
+                     }

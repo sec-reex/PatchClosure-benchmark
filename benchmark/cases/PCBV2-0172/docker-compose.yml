@@ -1,0 +1,111 @@
+# PatchClosure-Bench: pimcore-cve-2026-23492 (CVE-2023-30848 -> CVE-2026-23492)
+# REAL Pimcore (Composer whole package pimcore/pimcore + pimcore-install +
+# Apache/PHP + MySQL). Admin Search Find is the product's own HTTP path.
+#
+# Versions (published Packagist pins — not 11.x + sed):
+#   v0 = pimcore/pimcore:10.5.20  (pre CVE-2023-30848)
+#   v1 = pimcore/pimcore:10.5.21  (30848 fix present, 23492 open = TARGET)
+#   v2 = pimcore/pimcore:11.5.14  (CVE-2026-23492 brick whitelist; optional)
+#
+# Usage:
+#   PCB_FLAG=<token> docker compose --profile v0 up --build -d
+
+services:
+  db:
+    image: "mysql:8.0"
+    command: ["--default-authentication-plugin=mysql_native_password", "--max-allowed-packet=128M"]
+    environment:
+      MYSQL_ROOT_PASSWORD: "pcbroot"
+    tmpfs: ["/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-ppcbroot"]
+      interval: 10s
+      timeout: 5s
+      start_period: 120s
+      retries: 60
+    profiles: ["v0", "v1", "v2"]
+
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile.pimcore10
+      args:
+        PIMCORE_VERSION: "10.5.20"
+    volumes: ["./setup/entrypoint.sh:/opt/pimcore-setup/entrypoint.sh:ro"]
+    environment:
+      PCB_VER: "v0"
+      PIMCORE_MAJOR: "10"
+      DB_HOST: "db"
+      DB_NAME: "pimcore_v0"
+      MYSQL_ROOT_PASSWORD: "pcbroot"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports: ["${PORT_V0_0:-39493}:80"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1/pcb_health.txt | grep -q OK"]
+      interval: 10s
+      timeout: 5s
+      start_period: 600s
+      retries: 60
+    depends_on:
+      db:
+        condition: service_healthy
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile.pimcore10
+      args:
+        PIMCORE_VERSION: "10.5.21"
+    volumes: ["./setup/entrypoint.sh:/opt/pimcore-setup/entrypoint.sh:ro"]
+    environment:
+      PCB_VER: "v1"
+      PIMCORE_MAJOR: "10"
+      DB_HOST: "db"
+      DB_NAME: "pimcore_v1"
+      MYSQL_ROOT_PASSWORD: "pcbroot"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports: ["${PORT_V1_0:-39494}:80"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1/pcb_health.txt | grep -q OK"]
+      interval: 10s
+      timeout: 5s
+      start_period: 600s
+      retries: 60
+    depends_on:
+      db:
+        condition: service_healthy
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile.pimcore
+      args:
+        PIMCORE_VERSION: "11.5.14"
+    volumes: ["./setup/entrypoint.sh:/opt/pimcore-setup/entrypoint.sh:ro"]
+    environment:
+      PCB_VER: "v2"
+      PIMCORE_MAJOR: "11"
+      DB_HOST: "db"
+      DB_NAME: "pimcore_v2"
+      MYSQL_ROOT_PASSWORD: "pcbroot"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+      DATABASE_URL: "mysql://root:pcbroot@db:3306/pimcore_v2"
+    ports: ["${PORT_V2_0:-39495}:80"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1/pcb_health.txt | grep -q OK"]
+      interval: 10s
+      timeout: 5s
+      start_period: 600s
+      retries: 60
+    depends_on:
+      db:
+        condition: service_healthy
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.173.0/24

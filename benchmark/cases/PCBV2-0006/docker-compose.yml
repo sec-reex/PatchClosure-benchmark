@@ -1,0 +1,77 @@
+# PatchClosure-Bench recipe for cpython-urllib-crlf-header-injection-cve-2019-18348
+# Pair: CVE-2019-9947 (original, control-char check on the URL PATH only)
+#    -> CVE-2019-18348 (incomplete-fix target: the same control-char check was NOT
+#       applied to the URL HOST component, so CRLF/obs-fold in the host still injects
+#       headers into the outgoing request).
+#
+# Canary kind = ssrf-sidecar: an INTERNAL-ONLY raw-socket HTTP server (no host port)
+# that returns ${PCB_FLAG} iff the outgoing request carries a smuggled
+# `X-PCB-Auth: <PCB_AUTH_SECRET>` header -- a header the legitimate urllib client
+# never sends. Observing the flag proves the CRLF was accepted into the request.
+#
+# Faithful-core: each client is the OFFICIAL python:3.7.x-slim-stretch image running
+# UNMODIFIED urllib.request.urlopen. The version's own http.client guards
+# (_validate_path for CVE-2019-9947, _validate_host for CVE-2019-18348) decide
+# whether the injection is accepted. Nothing in the stdlib is modified.
+#
+# stretch (Debian 9, glibc 2.24) base is REQUIRED and faithful: the advisory states
+# CVE-2019-18348 "can be exploited only when glibc flaw CVE-2016-10739 is not fixed,
+# as it requires getaddrinfo() to resolve an invalid hostname". stretch's glibc is
+# pre-CVE-2016-10739, so getaddrinfo leniently resolves "<ip>\r\n...\t:port" to <ip>,
+# letting the connection reach the sidecar with the injected header on the wire.
+# (On buster+/modern glibc the connect fails at getaddrinfo -- the documented
+# non-exploitable configuration; this is the real environment the CVE targets.)
+#
+#   V0 = python:3.7.2-slim-stretch  (pre-CVE-2019-9947: no _validate_path)   [seed env]
+#   V1 = python:3.7.4-slim-stretch  (CVE-2019-9947 fix: _validate_path on the
+#                                     PATH only; HOST unchecked)  <- TARGET, GIVEN
+#   V2 = python:3.7.8-slim-stretch  (CVE-2019-18348 fix: adds _validate_host)  [negative]
+#
+# Clients just sleep; the oracle drives each attack via `docker compose exec`.
+services:
+  sidecar:
+    profiles: ["v0", "v1", "v2"]
+    image: python:3.7.8-slim-stretch
+    command: ["python", "/sidecar.py"]
+    volumes:
+      - ./sidecar.py:/sidecar.py:ro
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      PCB_AUTH_SECRET: "PCB-AUTH-7f3a"
+      SIDECAR_PORT: "80"
+    networks:
+      pcbnet:
+        ipv4_address: 10.89.0.2
+
+  client-v0:
+    profiles: ["v0"]
+    image: python:3.7.2-slim-stretch
+    command: ["sleep", "infinity"]
+    volumes:
+      - ./client.py:/client.py:ro
+    networks: ["pcbnet"]
+    depends_on: ["sidecar"]
+
+  client-v1:
+    profiles: ["v1"]
+    image: python:3.7.4-slim-stretch
+    command: ["sleep", "infinity"]
+    volumes:
+      - ./client.py:/client.py:ro
+    networks: ["pcbnet"]
+    depends_on: ["sidecar"]
+
+  client-v2:
+    profiles: ["v2"]
+    image: python:3.7.8-slim-stretch
+    command: ["sleep", "infinity"]
+    volumes:
+      - ./client.py:/client.py:ro
+    networks: ["pcbnet"]
+    depends_on: ["sidecar"]
+
+networks:
+  pcbnet:
+    ipam:
+      config:
+        - subnet: 10.89.0.0/24

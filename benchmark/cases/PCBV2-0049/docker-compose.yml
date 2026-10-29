@@ -1,0 +1,62 @@
+# PatchClosure-Bench REAL-SERVER-TCP recipe for apache-mina-cve-2026-42778
+# (CVE-2024-52046 [MINA getObject() unbounded Java deserialization -> RCE; fix ADDS the acceptMatchers
+#  allowlist, enforced in resolveClass()] -> CVE-2026-42778 [the allowlist is applied TOO LATE: the
+#  decoder's readClassDescriptor() calls Class.forName(name, /*initialize*/ true) BEFORE the allowlist,
+#  so a non-allowlisted class's STATIC INITIALIZER already ran by the time resolveClass() rejects it],
+#  CWE-502). Genuine incomplete fix.
+#
+# Apache MINA is a NETWORK framework. v0/v1/v2 each run a REAL MINA NioSocketAcceptor TCP server
+# (app/Server.java) built from the shared Dockerfile against the EXACT published mina-core at a pinned
+# version. The `client` service runs the EXTERNAL attacker TCP client (app/Client.java) as a SEPARATE
+# container that connects to a server over the docker network -- a real external network trigger.
+#
+# Profiles:
+#   v1 (REQUIRED, GIVEN, target) = mina-core 2.2.4. CVE-2024-52046 allowlist present (resolveClass) ->
+#        the SEED (PcbSeed, readObject flag) is BLOCKED before construction. But INCOMPLETELY:
+#        readClassDescriptor() calls Class.forName(name, TRUE) BEFORE the allowlist, so a non-allowlisted
+#        class's STATIC INITIALIZER (PcbCanary) still runs -> the CVE-2026-42778 residual stays OPEN.
+#   v0 (gate)     = mina-core 2.2.3. Pre-CVE-2024-52046: NO allowlist -> getObject deserializes any class
+#        -> the seed fully reconstructs (readObject runs) -> flag read.
+#   v2 (negative) = mina-core 2.2.7. CVE-2026-42778 FIXED: readClassDescriptor() applies acceptMatchers
+#        BEFORE Class.forName -> the non-allowlisted class rejected before initialization -> residual blocked.
+#   client (tools) = external TCP client image (reuses the 2.2.4 build; pure java.io, version-agnostic).
+#
+# Canary = rce-oob (read): ${PCB_FLAG} (random per-run token) is written to /canary/flag.txt OUTSIDE the
+# app dir at server-container start; PcbSeed.readObject() (readObject channel) or PcbCanary's static
+# initializer (static-init channel) reads it during getObject(), and the server echoes it back over the
+# SAME TCP connection. SUCCESS = token in the client's received bytes.
+services:
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {MINA_VERSION: "2.2.4"}}
+    image: "pcb/mina-staticinit:2.2.4"
+    ports: ["${PORT_V1_0:-19204}:9009"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {MINA_VERSION: "2.2.3"}}
+    image: "pcb/mina-staticinit:2.2.3"
+    ports: ["${PORT_V0_0:-19203}:9009"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {MINA_VERSION: "2.2.7"}}
+    image: "pcb/mina-staticinit:2.2.7"
+    ports: ["${PORT_V2_0:-19207}:9009"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  # External TCP attacker client. Not auto-started (profile "client"); invoked one-off via
+  #   docker compose run --rm --no-deps client java -cp "$(cat /work/cp.txt)" Client <v0|v1|v2> 9009 <mode>
+  # It joins the compose network and connects to the running server by service name over real TCP.
+  client:
+    profiles: ["client"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {MINA_VERSION: "2.2.4"}}
+    image: "pcb/mina-staticinit:client"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:-noflag}"
+    command: ["true"]

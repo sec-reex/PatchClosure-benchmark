@@ -1,0 +1,26 @@
+case_id: PCBV2-0113
+public_name: freescout-cve-2026-40497
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/freescout-help-desk/freescout.git
+  v0: 1.8.179
+  v1: 1.8.212
+service:
+  # Compose publishes ${PORT_V*_0}:80. start.sh waits until artisan migrate
+  # + create-user + seed finish, /login answers, and victim/callback are up.
+  # Platform HTTP on container :80 would miss the published host port.
+  readiness: none
+  exposed_ports: [80, 8070, 9000]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

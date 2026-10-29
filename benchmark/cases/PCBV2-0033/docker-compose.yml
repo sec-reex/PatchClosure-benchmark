@@ -1,0 +1,88 @@
+services:
+  canary:
+    image: python:3.11-alpine
+
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    volumes:
+      - ./canary.py:/srv/canary.py:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "$PCB_FLAG" > /flag.txt
+        exec python /srv/canary.py
+
+  attacker:
+    image: python:3.11-alpine
+
+    volumes:
+      - ./attacker.py:/srv/attacker.py:ro
+    ports:
+      - "${PORT_33690_0:-33690}:8000"
+    entrypoint: ["python", "/srv/attacker.py"]
+
+  v0:
+    profiles: ["v0"]
+    image: gogs/gogs:0.12.7
+
+    depends_on:
+      - canary
+      - attacker
+    ports:
+      - "${PORT_33670_0:-33670}:3000"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        exec /app/gogs/docker/start.sh /bin/s6-svscan /app/gogs/docker/s6/
+
+  v1:
+    profiles: ["v1"]
+    image: gogs/gogs:0.14.2
+
+    depends_on:
+      - canary
+      - attacker
+    ports:
+      - "${PORT_33671_0:-33671}:3000"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        exec /app/gogs/docker/start.sh /usr/bin/s6-svscan /app/gogs/docker/s6/ &
+        # Wait for first-run install to finish (app.ini written by install wizard)
+        while [ ! -f /data/gogs/conf/app.ini ]; do sleep 2; done
+        sleep 10
+        # Trust our webhook receiver service (CVE-2022-1285 localCIDR block, allowlist override)
+        if ! grep -q "LOCAL_NETWORK_ALLOWLIST" /data/gogs/conf/app.ini; then
+          sed -i 's|^DEFAULT_BRANCH = .*|DEFAULT_BRANCH = master|' /data/gogs/conf/app.ini
+          printf '\n[security]\nLOCAL_NETWORK_ALLOWLIST = attacker\n' >> /data/gogs/conf/app.ini
+          s6-svc -r /app/gogs/docker/s6/gogs 2>/dev/null || true
+        fi
+        wait
+
+  v2:
+    profiles: ["v2"]
+    image: gogs/gogs:0.14.3
+
+    depends_on:
+      - canary
+      - attacker
+    ports:
+      - "${PORT_33672_0:-33672}:3000"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        exec /app/gogs/docker/start.sh /usr/bin/s6-svscan /app/gogs/docker/s6/ &
+        while [ ! -f /data/gogs/conf/app.ini ]; do sleep 2; done
+        sleep 10
+        if ! grep -q "LOCAL_NETWORK_ALLOWLIST" /data/gogs/conf/app.ini; then
+          sed -i 's|^DEFAULT_BRANCH = .*|DEFAULT_BRANCH = master|' /data/gogs/conf/app.ini
+          printf '\n[security]\nLOCAL_NETWORK_ALLOWLIST = attacker\n' >> /data/gogs/conf/app.ini
+          s6-svc -r /app/gogs/docker/s6/gogs 2>/dev/null || true
+        fi
+        wait
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.34.0/24

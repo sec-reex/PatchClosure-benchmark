@@ -1,0 +1,49 @@
+# PatchClosure-Bench recipe for mlflow-cve-2024-3848.
+# Whole published mlflow from PyPI (pip install mlflow==<pin> in the image).
+# v0 = 2.9.1 (CVE-2023-6909 open); v1 = 2.11.0 (query patched, fragment residual);
+# v2 = 2.12.1 (fully fixed). Canary at /canary.txt from ${PCB_FLAG}.
+x-mlflow: &mlflow
+  working_dir: /work
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:5000/health').read()"]
+    interval: 5s
+    timeout: 4s
+    retries: 30
+    start_period: 10s
+
+services:
+  v1:
+    <<: *mlflow
+    profiles: ["v1"]
+    image: pcb-mlflow-3848:2.11.0
+    build:
+      context: .
+      args:
+        MLFLOW_VERSION: "2.11.0"
+    ports: ["${PORT_V1_0:-40291}:5000"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  v0:
+    <<: *mlflow
+    profiles: ["v0"]
+    image: pcb-mlflow-3848:2.9.1
+    build:
+      context: .
+      args:
+        MLFLOW_VERSION: "2.9.1"
+    ports: ["${PORT_V0_0:-40290}:5000"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+
+  v2:
+    <<: *mlflow
+    profiles: ["v2"]
+    image: pcb-mlflow-3848:2.12.1
+    build:
+      context: .
+      args:
+        MLFLOW_VERSION: "2.12.1"
+    ports: ["${PORT_V2_0:-40292}:5000"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"

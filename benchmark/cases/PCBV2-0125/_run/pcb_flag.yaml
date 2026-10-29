@@ -1,0 +1,10 @@
+groups:
+  - name: PCBFLAG_40b27ab12b_1ad2e7f7ba6e5bc56622925d
+    rules:
+      - alert: PcbCanary
+        expr: 'count_over_time({job="pcb"}[5m]) > 0'
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: pcb canary

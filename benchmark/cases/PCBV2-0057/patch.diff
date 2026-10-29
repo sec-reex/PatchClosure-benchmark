@@ -1,0 +1,126 @@
+PCBV2-0057 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 85327e19ae7e72028c30917247238d638ce56d0b
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0057/
+
+diff --git a/httplib.h b/httplib.h
+index 3152218..e55d14b 100644
+--- a/httplib.h
++++ b/httplib.h
+@@ -2524,6 +2524,17 @@ inline bool expect_content(const Request &req) {
+   return false;
+ }
+ 
++inline bool has_crlf(const char* s) {
++  auto p = s;
++  while (*p) {
++    if (*p == '\r' || *p == '\n') {
++      return true;
++    }
++    p++;
++  }
++  return false;
++}
++
+ #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+ template <typename CTX, typename Init, typename Update, typename Final>
+ inline std::string message_digest(const std::string &s, Init init,
+@@ -2710,11 +2721,15 @@ inline size_t Request::get_header_value_count(const char *key) const {
+ }
+ 
+ inline void Request::set_header(const char *key, const char *val) {
+-  headers.emplace(key, val);
++  if (!detail::has_crlf(key) && !detail::has_crlf(val)) {
++    headers.emplace(key, val);
++  }
+ }
+ 
+ inline void Request::set_header(const char *key, const std::string &val) {
+-  headers.emplace(key, val);
++  if (!detail::has_crlf(key) && !detail::has_crlf(val.c_str())) {
++    headers.emplace(key, val);
++  }
+ }
+ 
+ inline bool Request::has_param(const char *key) const {
+@@ -2764,16 +2779,22 @@ inline size_t Response::get_header_value_count(const char *key) const {
+ }
+ 
+ inline void Response::set_header(const char *key, const char *val) {
+-  headers.emplace(key, val);
++  if (!detail::has_crlf(key) && !detail::has_crlf(val)) {
++    headers.emplace(key, val);
++  }
+ }
+ 
+ inline void Response::set_header(const char *key, const std::string &val) {
+-  headers.emplace(key, val);
++  if (!detail::has_crlf(key) && !detail::has_crlf(val.c_str())) {
++    headers.emplace(key, val);
++  }
+ }
+ 
+ inline void Response::set_redirect(const char *url) {
+-  set_header("Location", url);
+-  status = 302;
++  if (!detail::has_crlf(url)) {
++    set_header("Location", url);
++    status = 302;
++  }
+ }
+ 
+ inline void Response::set_content(const char *s, size_t n,
+diff --git a/test/test.cc b/test/test.cc
+index 9043939..83cfe51 100644
+--- a/test/test.cc
++++ b/test/test.cc
+@@ -697,6 +697,36 @@ protected:
+              [&](const Request & /*req*/, Response &res) {
+                res.set_content("Hello World!", "text/plain");
+              })
++        .Get("/http_response_splitting",
++             [&](const Request & /*req*/, Response &res) {
++               res.set_header("a", "1\r\nSet-Cookie: a=1");
++               EXPECT_EQ(0, res.headers.size());
++               EXPECT_FALSE(res.has_header("a"));
++
++               res.set_header("a", "1\nSet-Cookie: a=1");
++               EXPECT_EQ(0, res.headers.size());
++               EXPECT_FALSE(res.has_header("a"));
++
++               res.set_header("a", "1\rSet-Cookie: a=1");
++               EXPECT_EQ(0, res.headers.size());
++               EXPECT_FALSE(res.has_header("a"));
++
++               res.set_header("a\r\nb", "0");
++               EXPECT_EQ(0, res.headers.size());
++               EXPECT_FALSE(res.has_header("a"));
++
++               res.set_header("a\rb", "0");
++               EXPECT_EQ(0, res.headers.size());
++               EXPECT_FALSE(res.has_header("a"));
++
++               res.set_header("a\nb", "0");
++               EXPECT_EQ(0, res.headers.size());
++               EXPECT_FALSE(res.has_header("a"));
++
++               res.set_redirect("1\r\nSet-Cookie: a=1");
++               EXPECT_EQ(0, res.headers.size());
++               EXPECT_FALSE(res.has_header("Location"));
++             })
+         .Get("/slow",
+              [&](const Request & /*req*/, Response &res) {
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+@@ -1685,6 +1715,12 @@ TEST_F(ServerTest, GetMethodRemoteAddr) {
+   EXPECT_TRUE(res->body == "::1" || res->body == "127.0.0.1");
+ }
+ 
++TEST_F(ServerTest, HTTPResponseSplitting) {
++  auto res = cli_.Get("/http_response_splitting");
++  ASSERT_TRUE(res != nullptr);
++  EXPECT_EQ(200, res->status);
++}
++
+ TEST_F(ServerTest, SlowRequest) {
+   request_threads_.push_back(
+       std::thread([=]() { auto res = cli_.Get("/slow"); }));

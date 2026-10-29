@@ -1,0 +1,49 @@
+# PatchClosure-Bench recipe for apache-ofbiz-cve-2023-51467 -- REAL Apache OFBiz per
+# version, REAL external HTTP trigger. CVE-2023-49070 (18.12.10 REMOVES the pre-auth
+# XML-RPC endpoint) -> CVE-2023-51467 (18.12.11 fixes the LoginWorker auth bypass that
+# the 49070 fix left open), CWE-306.
+#
+# Each profile builds the shared Dockerfile pinning a REAL release18.12 commit at
+# OFBIZ_REF, boots OFBiz, and maps its HTTP port 8080 to a unique host port. The oracle
+# drives the REAL endpoints over HTTP; ${PCB_FLAG} is planted per-run via env and served
+# only behind OFBiz's own LoginWorker.checkLogin guard.
+#
+#   v0 (gate helper) = pre-CVE-2023-49070: xmlrpc endpoint LIVE + auth bypass present.
+#   v1 (TARGET)      = 18.12.10 (49070 fix): xmlrpc REMOVED, auth bypass STILL OPEN.
+#   v2 (negative)    = 18.12.11 (51467 fix): login() returns "error", bypass CLOSED.
+#
+# No official Docker Hub image pins 7935a146 / c59336f6 / 1dcfa071 (Apache ships a
+# source Dockerfile only). Keep the full-repo build. Default bridge — no pinned subnet.
+services:
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {OFBIZ_REF: "7935a14627a86325440516ac6b892a5f9d635e4d"}}
+    image: "pcb/ofbiz-real:v0-pre49070"
+    pull_policy: never
+    restart: on-failure
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      JAVA_OPTS: "-Xms256m -Xmx1536m"
+    ports: ["${PORT_V0_0:-18120}:8080", "${PORT_V0_1:-18420}:8443"]
+
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {OFBIZ_REF: "c59336f604f503df5b2f7c424fd5e392d5923a27"}}
+    image: "pcb/ofbiz-real:v1-18.12.10"
+    pull_policy: never
+    restart: on-failure
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      JAVA_OPTS: "-Xms256m -Xmx1536m"
+    ports: ["${PORT_V1_0:-18121}:8080", "${PORT_V1_1:-18421}:8443"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile", args: {OFBIZ_REF: "1dcfa071804a5b717b9b579aa44f3a8d39592d55"}}
+    image: "pcb/ofbiz-real:v2-18.12.11"
+    pull_policy: never
+    restart: on-failure
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+      JAVA_OPTS: "-Xms256m -Xmx1536m"
+    ports: ["${PORT_V2_0:-18122}:8080", "${PORT_V2_1:-18422}:8443"]

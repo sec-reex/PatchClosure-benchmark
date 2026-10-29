@@ -1,0 +1,41 @@
+# PatchClosure-Bench :: koa open-redirect incomplete fix (CVE-2025-54420 -> CVE-2025-62595)
+# Three profiles, each running REAL npm koa bytes wrapped by the same tiny app.
+#   v0 = koa 3.0.0  (pre-fix: back() redirects to any Referrer)
+#   v1 = koa 3.0.1  (CVE-2025-54420 fix = TARGET; startsWith('/') branch skips origin check)
+#   v2 = koa 3.0.3  (CVE-2025-62595 fix = complete; all referrers get origin check)
+services:
+  v0:
+    build:
+      context: .
+      args:
+        KOA_VERSION: "3.0.0"
+    environment:
+      - PORT=3000
+      - KOA_VERSION=3.0.0
+    ports:
+      - "${PORT_V0_0:-41310}:3000"
+    profiles: ["v0"]
+
+  v1:
+    build:
+      context: .
+      args:
+        KOA_VERSION: "3.0.1"
+    environment:
+      - PORT=3000
+      - KOA_VERSION=3.0.1
+    ports:
+      - "${PORT_V1_0:-41311}:3000"
+    profiles: ["v1"]
+
+  v2:
+    build:
+      context: .
+      args:
+        KOA_VERSION: "3.0.3"
+    environment:
+      - PORT=3000
+      - KOA_VERSION=3.0.3
+    ports:
+      - "${PORT_V2_0:-41312}:3000"
+    profiles: ["v2"]

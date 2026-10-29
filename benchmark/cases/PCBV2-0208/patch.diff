@@ -1,0 +1,63 @@
+PCBV2-0208 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: # Fix: 2ab93c754c60bad61a2da23cb783b8885884ecc7
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0208/
+
+diff --git a/typo3/sysext/core/Classes/Resource/ResourceStorage.php b/typo3/sysext/core/Classes/Resource/ResourceStorage.php
+index 6269bac..dc71135 100644
+--- a/typo3/sysext/core/Classes/Resource/ResourceStorage.php
++++ b/typo3/sysext/core/Classes/Resource/ResourceStorage.php
+@@ -943,6 +943,9 @@ class ResourceStorage {
+ 			// Check if $file is writable
+ 		if (!$this->checkFileActionPermission('write', $file)) {
+ 			throw new Exception\InsufficientFileWritePermissionsException('Writing to file "' . $file->getIdentifier() . '" is not allowed.', 1330121088);
++		}
++		if ($this->checkFileExtensionPermission($file->getName()) === FALSE) {
++			throw new Exception\IllegalFileExtensionException('You are not allowed to edit a file with extension "' . $file->getExtension() . '"', 1366711933);
+ 		}
+ 			// Call driver method to update the file and update file properties afterwards
+ 		$result = $this->driver->setFileContents($file, $contents);
+@@ -965,6 +968,9 @@ class ResourceStorage {
+ 	 * @return FileInterface The file object
+ 	 */
+ 	public function createFile($fileName, Folder $targetFolderObject) {
++		if ($this->checkFileExtensionPermission($fileName) === FALSE) {
++			throw new Exception\IllegalFileExtensionException('You are not allowed to create a file with this extension on storage "' . $targetFolderObject->getCombinedIdentifier() . '"', 1366711745);
++		}
+ 		if (!$this->checkFolderActionPermission('add', $targetFolderObject)) {
+ 			throw new Exception\InsufficientFolderWritePermissionsException('You are not allowed to create directories on this storage "' . $targetFolderObject->getIdentifier() . '"', 1323059807);
+ 		}
+@@ -1249,6 +1255,10 @@ class ResourceStorage {
+ 		if ($file->getIdentifier() == $targetFileName) {
+ 			return $file;
+ 		}
++		// Check if file extension is allowed
++		if ($this->checkFileExtensionPermission($targetFileName) === FALSE) {
++			throw new Exception\IllegalFileExtensionException('You are not allowed to rename a file with to this extension', 1371466663);
++		}
+ 		// Check if user is allowed to rename
+ 		if (!$this->checkUserActionPermission('rename', 'File')) {
+ 			throw new Exception\InsufficientUserPermissionsException('You are not allowed to rename files."', 1319219349);
+diff --git a/typo3/sysext/core/Classes/Utility/File/ExtendedFileUtility.php b/typo3/sysext/core/Classes/Utility/File/ExtendedFileUtility.php
+index c2cd887..9678714 100644
+--- a/typo3/sysext/core/Classes/Utility/File/ExtendedFileUtility.php
++++ b/typo3/sysext/core/Classes/Utility/File/ExtendedFileUtility.php
+@@ -795,6 +795,8 @@ class ExtendedFileUtility extends \TYPO3\CMS\Core\Utility\File\BasicFileUtility
+ 			$fileName = $cmds['data'];
+ 			$resultObject = $targetFolderObject->createFile($fileName);
+ 			$this->writelog(8, 0, 1, 'File created: "%s"', array($fileName));
++		} catch (\TYPO3\CMS\Core\Resource\Exception\IllegalFileExtensionException $e) {
++			$this->writeLog(8, 1, 106, 'Extension of file "%s" was not allowed!', array($fileName));
+ 		} catch (\TYPO3\CMS\Core\Resource\Exception\InsufficientFolderWritePermissionsException $e) {
+ 			$this->writelog(8, 1, 103, 'You are not allowed to create files!', '');
+ 		} catch (\TYPO3\CMS\Core\Resource\Exception\NotInMountPointException $e) {
+@@ -846,6 +848,9 @@ class ExtendedFileUtility extends \TYPO3\CMS\Core\Utility\File\BasicFileUtility
+ 		} catch (\TYPO3\CMS\Core\Resource\Exception\InsufficientFileWritePermissionsException $e) {
+ 			$this->writelog(9, 1, 100, 'File "%s" was not saved! Write-permission problem?', array($fileObject->getIdentifier()));
+ 			return FALSE;
++		} catch (\TYPO3\CMS\Core\Resource\Exception\IllegalFileExtensionException $e) {
++			$this->writelog(9, 1, 100, 'File "%s" was not saved! File extension rejected!', array($fileObject->getIdentifier()));
++			return FALSE;
+ 		}
+ 	}
+ 

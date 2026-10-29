@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Shared, UNMODIFIED across V0/V1/V2. This is the exact "non-default Pattern Layout with a
+     Context Lookup" that Apache's CVE-2021-45046 advisory names: the pattern references the
+     Thread Context Map via $${ctx:pcbctx}. At each log event the $$ collapses to a single $,
+     leaving ${ctx:pcbctx}, which log4j evaluates at runtime -> fetches the MDC value the caller
+     put under key "pcbctx" and (on 2.14.1 and 2.15.0) recursively interpolates it. If that MDC
+     value is attacker-controlled and contains ${jndi:...}, the JNDI lookup fires. -->
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="Console" target="SYSTEM_OUT">
+      <PatternLayout pattern="%d %p %c{1.} [%t] $${ctx:pcbctx} %m%n"/>
+    </Console>
+  </Appenders>
+  <Loggers>
+    <Root level="info">
+      <AppenderRef ref="Console"/>
+    </Root>
+  </Loggers>
+</Configuration>

@@ -1,0 +1,73 @@
+# Real Pimcore 10.5 image for pimcore-cve-2026-23492 (V0/V1 = real pre/post CVE-2023-30848).
+FROM php:8.1-apache
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libicu-dev libzip-dev libpng-dev libjpeg-dev libfreetype6-dev \
+        unzip git default-mysql-client libxml2-dev libcurl4-openssl-dev \
+        locales \
+    && sed -i '/en_US.UTF-8/s/^# //' /etc/locale.gen && locale-gen \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) \
+        intl zip gd pdo pdo_mysql mysqli opcache curl exif
+
+RUN a2enmod rewrite headers
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+RUN { \
+      echo "memory_limit=1G"; \
+      echo "max_execution_time=600"; \
+      echo "display_errors=On"; \
+      echo "error_reporting=E_ALL"; \
+    } > /usr/local/etc/php/conf.d/pimcore-pcb.ini
+
+WORKDIR /var/www/html
+
+# Packagist 10.x skeleton is 10.0.8 (10.2.x-dev is not a release). Pin it.
+RUN COMPOSER_ALLOW_SUPERUSER=1 \
+    composer create-project "pimcore/skeleton:10.0.8" . \
+    --no-interaction --no-install --prefer-dist 2>&1
+
+ARG PIMCORE_VERSION=10.5.20
+RUN COMPOSER_ALLOW_SUPERUSER=1 \
+    composer require "pimcore/pimcore:${PIMCORE_VERSION}" \
+    --no-update --no-interaction 2>&1
+
+RUN COMPOSER_ALLOW_SUPERUSER=1 \
+    composer config policy.advisories.block false 2>&1 || true
+RUN COMPOSER_ALLOW_SUPERUSER=1 \
+    composer config --global policy.advisories.block false 2>&1 || true
+
+RUN COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_NO_AUDIT=1 \
+    composer update --no-interaction --no-scripts --prefer-dist 2>&1
+
+RUN COMPOSER_ALLOW_SUPERUSER=1 composer dump-autoload 2>&1
+
+RUN echo '<VirtualHost *:80>\n\
+    DocumentRoot /var/www/html/public\n\
+    <Directory /var/www/html/public>\n\
+        AllowOverride All\n\
+        Options FollowSymLinks\n\
+        Require all granted\n\
+    </Directory>\n\
+    ErrorLog ${APACHE_LOG_DIR}/error.log\n\
+    CustomLog ${APACHE_LOG_DIR}/access.log combined\n\
+</VirtualHost>' > /etc/apache2/sites-available/000-default.conf
+
+RUN mkdir -p var/cache var/log var/tmp var/config var/email var/recyclebin \
+             var/versions var/admin var/classes public/var \
+    && chown -R www-data:www-data var public/var
+
+COPY setup/ /opt/pimcore-setup/
+RUN chmod +x /opt/pimcore-setup/entrypoint.sh
+
+# PatchClosure: readiness marker is written by entrypoint.sh AFTER install (not baked here), so
+# /pcb_health.txt reflects real readiness instead of returning "OK" before the DB is configured.
+RUN rm -f /var/www/html/public/pcb_health.txt
+
+EXPOSE 80
+CMD ["/opt/pimcore-setup/entrypoint.sh"]

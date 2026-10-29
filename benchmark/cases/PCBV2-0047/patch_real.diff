@@ -1,0 +1,43 @@
+# CVE-2023-26132 first-fix (Dottie.set __proto__ guard)
+# https://github.com/mickhansen/dottie.js.git
+# fix: 7d3aee1c9c3c842720506e131de7e181e5c8db68
+diff --git a/dottie.js b/dottie.js
+index e435093..d5aa55b 100644
+--- a/dottie.js
++++ b/dottie.js
+@@ -72,6 +72,7 @@
+   // Set nested value
+   Dottie.set = function(object, path, value, options) {
+     var pieces = Array.isArray(path) ? path : path.split('.'), current = object, piece, length = pieces.length;
++    if (pieces[0] === '__proto__') return;
+ 
+     if (typeof current !== 'object') {
+         throw new Error('Parent is not an object.');
+@@ -140,6 +141,9 @@
+ 
+       if (key.indexOf(options.delimiter) !== -1) {
+         pieces = key.split(options.delimiter);
++
++        if (pieces[0] === '__proto__') break;
++
+         piecesLength = pieces.length;
+         current = transformed;
+ 
+diff --git a/test/set.test.js b/test/set.test.js
+index b0a39aa..9b611da 100644
+--- a/test/set.test.js
++++ b/test/set.test.js
+@@ -65,4 +65,12 @@ describe("dottie.set", function () {
+     });
+     expect(data.foo.bar.baz).to.equal('someValue');
+   });
++
++  it('should not attempt to set __proto__', function () {
++    var data = {};
++
++    dottie.set(data, '__proto__.pollution', 'polluted');
++
++    expect(data.__proto__.pollution).to.be.undefined;
++  });
+ });
+\ No newline at end of file

@@ -1,0 +1,61 @@
+# PatchClosure-Bench recipe for pheditor-cve-2026-55578.
+# Real Pheditor: full git tag tree COPYed onto php:8.2-apache (not a handler harness).
+#
+# Profiles:
+#   v0 = 2.0.3 : denylist & ; ||        => echo $(cat /flag) works
+#   v1 = 2.0.5 : denylist adds $        => seed blocked; ls | cat /flag still works
+#   v2 = 2.0.6 : denylist adds | ` \n \r => residual blocked
+#
+# Canary: ${PCB_FLAG} written to /flag (outside DocumentRoot) by entrypoint.
+
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      args:
+        PHEDITOR_TAG: "2.0.3"
+    ports: ["${PORT_V0_0:-38400}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        printf '%s' "$${PCB_FLAG:?set PCB_FLAG}" > /flag
+        chmod 644 /flag
+        exec apache2-foreground
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      args:
+        PHEDITOR_TAG: "2.0.5"
+    ports: ["${PORT_V1_0:-38401}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        printf '%s' "$${PCB_FLAG:?set PCB_FLAG}" > /flag
+        chmod 644 /flag
+        exec apache2-foreground
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        PHEDITOR_TAG: "2.0.6"
+    ports: ["${PORT_V2_0:-38402}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG}"
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        printf '%s' "$${PCB_FLAG:?set PCB_FLAG}" > /flag
+        chmod 644 /flag
+        exec apache2-foreground

@@ -1,0 +1,121 @@
+{
+  "eval_id": "PCBV2-0214",
+  "case_id": "xwiki-cve-2026-23734",
+  "run_mode": "real-server-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "product": "XWiki Platform",
+  "app_purpose": "Java wiki / collaboration platform (runtime application services)",
+  "language": "Java",
+  "root_cause": "path-traversal",
+  "mechanism_family": "ssx_jsx_resource_param_traversal_leading_slash",
+  "caveat": "REAL XWiki is booted per version from the OFFICIAL `xwiki` (Tomcat + bundled DB driver) Docker images paired with a real MariaDB 11.4, exactly as the official docker-xwiki compose prescribes (DB_USER/DB_PASSWORD/DB_DATABASE + MYSQL_* mirror). The attacker drives XWiki's OWN unauthenticated skin-extension endpoint GET /bin/ssx/Main/WebHome?resource=<payload>&minify=false over EXTERNAL HTTP; XWiki's own SxResourceSource.getContent() + ClassLoaderUtils.resolveResourceName() run inside the app and resolve the resource via the servlet context classloader. NO source-lift; no in-process library call. The only planted artifact is a benign canary file ROOT/WEB-INF/pcb_flag.txt written by a thin entrypoint wrapper from ${PCB_FLAG}; no XWiki code is modified.",
+  "cve_pair": {
+    "original_cve": "CVE-2025-55748",
+    "bypass_cve": "CVE-2026-23734",
+    "original_published": "2025-09-03",
+    "bypass_published": "2026-05-20"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "16.10.6",
+      "ref": "CVE-2025-55748 OPEN. SxResourceSource.getContent() calls contextClassLoader.getResourceAsStream(resourceName) with NO validation, so `resource=../../WEB-INF/pcb_flag.txt` (relative to ROOT/WEB-INF/classes/) reaches ROOT/WEB-INF/pcb_flag.txt (and the real WEB-INF/xwiki.cfg / hibernate.cfg.xml).",
+      "compose_profile": "v0",
+      "image": "xwiki:16.10.6",
+      "source_url": null,
+      "base_url": "http://127.0.0.1:38610"
+    },
+    "v1": {
+      "identifier": "16.10.16",
+      "ref": "CVE-2025-55748 fix present (routes resource loading through ClassLoaderUtils.resolveResourceName, which does Paths.get(resource).normalize() and rejects startsWith(\"../\")) -> plain `../` traversal BLOCKED (HTTP 404). But the guard is INCOMPLETE = CVE-2026-23734: a LEADING SLASH makes `resource=/../../WEB-INF/pcb_flag.txt` an ABSOLUTE path, so normalize() collapses the `..` at the filesystem root to `/WEB-INF/pcb_flag.txt` (does NOT start with `../`, passes the check); the guard then returns the ORIGINAL leading-slash string to the classloader, and on Tomcat the leading slash is ignored so `../../` is resolved relative to ROOT/WEB-INF/classes/, reaching ROOT/WEB-INF/pcb_flag.txt. Note: 16.10.7 (the CVE-2025-55748 fix release) happened to also block the leading-slash variant because it returned the NORMALIZED path; the return-original-path regression (XCOMMONS-3332, a Windows classpath fix) reopened the leading-slash hole in a later 16.10.x, and GHSA-xq3r-2qv5-vqqm lists ALL versions < 16.10.17 (including 16.10.16) as affected. 16.10.16 = the latest released version before the fix, chosen as the clean V1.",
+      "compose_profile": "v1",
+      "image": "xwiki:16.10.16",
+      "source_url": null,
+      "base_url": "http://127.0.0.1:38611"
+    },
+    "v2": {
+      "identifier": "16.10.17",
+      "ref": "CVE-2026-23734 fix = xwiki-commons XCOMMONS-3547 / commit a979cafd89f6a9c9c0b9ab19744d672df64429bf (\"XWIKI-23898: Improve classpath resolution for Tomcat\"). resolveResourceName() now STRIPS all leading `/` from the resource BEFORE Paths.normalize(), so `/../../WEB-INF/pcb_flag.txt` becomes `../../WEB-INF/pcb_flag.txt`, whose normalized form startsWith(\"../\") and is rejected (HTTP 404). Both the plain and the leading-slash variants are blocked.",
+      "compose_profile": "v2",
+      "image": "xwiki:16.10.17",
+      "source_url": null,
+      "base_url": "http://127.0.0.1:38612"
+    }
+  },
+  "flag": {
+    "resource": "benign per-run canary token ${PCB_FLAG} planted at ROOT/WEB-INF/pcb_flag.txt inside each XWiki webapp, one directory ABOVE the classloader root ROOT/WEB-INF/classes/ (so it is unreachable by a legitimate skin-extension resource name and only appears in the response via a successful path traversal).",
+    "placement": "compose entrypoint wrapper: `printf '%s' \"$PCB_FLAG\" > ROOT/WEB-INF/pcb_flag.txt` then `exec docker-entrypoint.sh xwiki` (no XWiki code touched).",
+    "detect": "flag token substring present in the ssx HTTP response body",
+    "class_kind": "read-exfil",
+    "oracle_variant": "same-sink (Variant A: seed and residual both hit the ssx `resource` classloader sink reading ROOT/WEB-INF/pcb_flag.txt; only the leading-slash prefix differs)"
+  },
+  "given_to_method": [
+    "v1 (16.10.16) env (profile v1)",
+    "patch.diff (CVE-2026-23734 fix)",
+    "original_poc.py (CVE-2025-55748 plain-traversal seed)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 env",
+    "v2 env"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/xwiki/xwiki-platform/security/advisories/GHSA-xq3r-2qv5-vqqm",
+    "fix_reference": "CVE-2025-55748 fix present (routes resource loading through ClassLoaderUtils.resolveResourceName, which does Paths.get(resource).normalize() and rejects startsWith(\"../\")) -> plain `../` traversal BLOCKED (HTTP 404). But the guard is INCOMPLETE = CVE-2026-23734: a LEADING SLASH makes `resource=/../../WEB-INF/pcb_flag.txt` an ABSOLUTE path, so normalize() collapses the `..` at the filesystem root to `/WEB-INF/pcb_flag.txt` (does NOT start with `../`, passes the check); the guard then returns the ORIGINAL leading-slash string to the classloader, and on Tomcat the leading slash is ignored so `../../` is resolved relative to ROOT/WEB-INF/classes/, reaching ROOT/WEB-INF/pcb_flag.txt. Note: 16.10.7 (the CVE-2025-55748 fix release) happened to also block the leading-slash variant because it returned the NORMALIZED path; the return-original-path regression (XCOMMONS-3332, a Windows classpath fix) reopened the leading-slash hole in a later 16.10.x, and GHSA-xq3r-2qv5-vqqm lists ALL versions < 16.10.17 (including 16.10.16) as affected. 16.10.16 = the latest released version before the fix, chosen as the clean V1.; CVE-2026-23734 fix = xwiki-commons XCOMMONS-3547 / commit a979cafd89f6a9c9c0b9ab19744d672df64429bf (\"XWIKI-23898: Improve classpath resolution for Tomcat\"). resolveResourceName() now STRIPS all leading `/` from the resource BEFORE Paths.normalize(), so `/../../WEB-INF/pcb_flag.txt` becomes `../../WEB-INF/pcb_flag.txt`, whose normalized form startsWith(\"../\") and is rejected (HTTP 404). Both the plain and the leading-slash variants are blocked.",
+    "incomplete_fix_quote": "CVE-2026-23734 is an incomplete fix for CVE-2025-55748. In affected deployments, the resource parameter in ssx and jsx endpoint requests can accept a leading slash followed by traversal sequences. This allows requests such as /bin/jsx/Main/WebHome?resource=/../../WEB-INF/xwiki.cfg or /bin/ssx/Main/WebHome?resource=/../../WEB-INF/hibernate.cfg.xml to retrieve files outside the intended resource directory.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "88182d92d77b7cd4cebebb874c34234aad57d56a7f4e5685bffdcba8d31b7135",
+      "repro.log": "879d6b71c248f19bc063bc357412f618c164ab03580e9ec61ca20dd6cceb52c6",
+      "docker-compose.yml": "6464a931428e21c2389b51f438d9aee841778444443cbe19e42bde435d322a5f",
+      "oracle.py": "b3ded2c16518c03cd0446fde6d8a8ae4ece1e3bcfd8aa5248da5084fe10cf3d6",
+      "patch.diff": "34c9fa1c326fd8a6a9c8a079a77fabc813cd6c055824c1cffeca29341ff0d13a"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "target recipe explicitly identifies an official/published image"
+  },
+  "audit": {
+    "method": "new-collection",
+    "lift_kind": "real-app",
+    "date": "2026-07-17",
+    "evidence": "3 official XWiki Tomcat images (16.10.6/16.10.16/16.10.17) + MariaDB 11.4 per version, booted via docker compose profiles v0/v1/v2. External unauthenticated HTTP trigger GET /bin/ssx/Main/WebHome?resource=<payload>&minify=false. All 4 gate booleans confirmed on real Docker (see status.gate_evidence + repro.log). Versions verified in-container. Intermediate empirical scan (16.10.12/16.10.16) established that the leading-slash bypass is present in the whole released 16.10.8..16.10.16 range and that 16.10.7 blocks it via normalized-return; 16.10.16 chosen as the clean latest-affected V1."
+  },
+  "provenance": {
+    "source": "agent:new-collection",
+    "verified": "agent-evidence",
+    "notes": "PatchClosure-Bench gold case built 2026-07-17 from the XWiki ssx/jsx `resource` path-traversal incomplete-fix pair CVE-2025-55748 -> CVE-2026-23734. Real official xwiki images + MariaDB; benign local-file-read canary oracle; external HTTP trigger; is_verbatim_lift=false; runs_real_software=true."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-server-http",
+    "software_origin": "official_image",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "benign per-run canary token ${PCB_FLAG} planted at ROOT/WEB-INF/pcb_flag.txt inside each XWiki webapp, one directory ABOVE the classloader root ROOT/WEB-INF/classes/ (so it is unreachable by a legitimate skin-extension resource name and only appears in the response via a successful path traversal).",
+    "detector": "flag token substring present in the ssx HTTP response body"
+  }
+}

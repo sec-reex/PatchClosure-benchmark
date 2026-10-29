@@ -1,0 +1,129 @@
+{
+  "eval_id": "PCBV2-0134",
+  "case_id": "koa-cve-2025-62595",
+  "run_mode": "real-service-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "runs_real_software_note": "REAL npm koa bytes per profile (3.0.0/3.0.1/3.0.3) wrapped by a tiny real Koa app whose /redirect route calls the genuine ctx.response.back('/'); koa itself decides the redirect.",
+  "audit": {
+    "method": "new-collection",
+    "date": "2026-07-17",
+    "lift_kind": "real-library-wrap",
+    "evidence": "REAL npm koa installed per profile via Dockerfile build-arg KOA_VERSION (3.0.0/3.0.1/3.0.3) on node:20-slim; app.mjs is a minimal real Koa app whose /redirect route calls the genuine ctx.response.back('/') sink. Live gate on real Docker: absolute-Referer original open-redirects flag@v0, blocked@v1; protocol-relative-Referer residual open-redirects flag@v1 (bypass), blocked@v2. passed=true; original also blocked@v2, plain-external blocked@v1v2, legit-relative allowed all. See repro.log."
+  },
+  "product": "koa (npm, koajs) — Node.js web framework",
+  "app_purpose": "Node.js web application framework; ctx.response.back() implements a 'redirect back to Referrer' convenience used by login/return-to flows (npm koa)",
+  "language": "JavaScript",
+  "root_cause": "Open Redirect via Referrer-based back() redirect (CWE-601)",
+  "mechanism_family": "open_redirect",
+  "class_kind": "redirect-canary",
+  "flag_oracle_variant": "A",
+  "sink": "koa lib/response.js :: back(alt) — redirects to the user-controlled `Referer` request header; the emitted `Location` response header is the observable",
+  "cve_pair": {
+    "original_cve": "CVE-2025-54420",
+    "bypass_cve": "CVE-2025-62595",
+    "original_published": null,
+    "bypass_published": "2025-10-21"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "3.0.0",
+      "ref": "npm koa@3.0.0 (pre CVE-2025-54420; back() redirects to any Referrer with no origin check)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:41310"
+    },
+    "v1": {
+      "identifier": "3.0.1",
+      "ref": "npm koa@3.0.1; CVE-2025-54420 fix (GHSA-jgmv-j7ww-jx2x) = TARGET, incomplete (startsWith('/') branch skips origin check)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:41311"
+    },
+    "v2": {
+      "identifier": "3.0.3",
+      "ref": "npm koa@3.0.3; CVE-2025-62595 fix (GHSA-g8mr-fgfg-5qpc) = complete (all referrers origin-checked)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:41312"
+    }
+  },
+  "flag": {
+    "resource": "the redirect target koa's back() approves and emits in the Location header",
+    "placement": "redirect-canary: per-run ${PCB_FLAG} is the path segment of the attacker redirect target (Referer: http://attacker.pcb/<FLAG> for the original, //attacker.pcb/<FLAG> for the residual). FLAG appears in the emitted 302 Location header iff koa approves the off-origin redirect. Blocked -> Location: / (safe fallback), no FLAG. Nothing is planted in app code; the observable result contains ONLY server output (the Location it emits), never the request payload.",
+    "detect": "flag token substring in the Location header (raw or curl-resolved) of the probe result",
+    "class_kind": "redirect-canary",
+    "oracle_variant": "A"
+  },
+  "given_to_method": [
+    "v1 source (real npm koa@3.0.1 + app.mjs + Dockerfile/docker-compose.yml)",
+    "patch.diff (CVE-2025-54420 fix, back() 3.0.0->3.0.1)",
+    "original_poc.py",
+    "oracle.py + run_probe",
+    "v1 env (compose profile v1, port 41311)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "",
+    "fix_reference": "npm koa@3.0.1; CVE-2025-54420 fix (GHSA-jgmv-j7ww-jx2x) = TARGET, incomplete (startsWith('/') branch skips origin check); npm koa@3.0.3; CVE-2025-62595 fix (GHSA-g8mr-fgfg-5qpc) = complete (all referrers origin-checked)",
+    "incomplete_fix_quote": "CVE-2025-62595 explicitly 'affects the code referenced in GHSA-jgmv-j7ww-jx2x (CVE-2025-54420)'. The CVE-2025-54420 fix treats any Referrer that startsWith('/') as a safe relative path and redirects to it WITHOUT an origin check; a protocol-relative //attacker.pcb also startsWith('/'), so it takes the unchecked branch, yet browsers resolve Location: //attacker.pcb as the absolute off-origin https://attacker.pcb -- a bypass on the SAME back() sink, closed only by deleting the startsWith('/') early-return in 3.0.3.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "4c3b470d97e18623c604916c2fe70f60afc2eb07555747cb5363a935bd9b007a",
+      "repro.log": "775d13918a5b5c92fa04babce3f32007840e9ec1097aace601e2ab6c352ba757",
+      "docker-compose.yml": "2939664b108458ad05fc0f2037e0b2f135ecc44378543e0b5df31146eeea8719",
+      "oracle.py": "a5f8bae653c8568f62c475c0bfba4871404eba41b3224bc33c08d03be667d2cf",
+      "patch.diff": "a8d4eb415b06f7e32d472cf59865af25af438e7e5a4301a632fcfc6cf8c3ed67"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {
+      "same_sink_incomplete_fix": true,
+      "runtime_verified": true
+    }
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "agent",
+    "verified": "real-docker-gate",
+    "notes": "REAL npm koa installed per profile via Dockerfile build-arg KOA_VERSION (3.0.0/3.0.1/3.0.3) on node:20-slim; app.mjs is a canonical Referrer-back redirect endpoint calling the real ctx.response.back('/'). Live koa versions confirmed inside each container (3.0.0/3.0.1/3.0.3). Payload forms + back() evolution derived from the two advisories and the actual lib/response.js source diffs. Gate passed on real Docker (see repro.log): original absolute Referer open@v0 / blocked@v1; residual protocol-relative Referer open@v1 (bypass) / blocked@v2. Benign open-redirect canary only (Location header is the observable; no live off-origin navigation performed)."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-service-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "the redirect target koa's back() approves and emits in the Location header",
+    "detector": "flag token substring in the Location header (raw or curl-resolved) of the probe result"
+  }
+}

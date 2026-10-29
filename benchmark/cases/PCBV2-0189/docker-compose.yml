@@ -1,0 +1,69 @@
+# docker-compose for ruby_sanitize_foreign_then_noscript
+# (CVE-2020-4054, math/svg foreign-content sanitizer bypass, fixed sanitize 5.2.1 = TARGET ->
+#  CVE-2023-23627, <noscript> scripting-desync incomplete-fix bypass, fixed 6.0.1). Product:
+#  Sanitize (rgrove/sanitize, Ruby HTML sanitizer gem).
+#
+# Canary kind = xss-exfil: a headless Chromium `victim` (driven via a selenium/standalone-chromium
+# `browser` grid on the compose network) carries the per-run ${PCB_FLAG} in its cookie and VIEWS the
+# Sanitize sink page `/?html=<payload>`. The app has already run REAL Sanitize over the payload; if
+# the sanitized output MUTATES in the browser into a live <img onerror> (foreign-content leak on v0,
+# or the noscript scripting-desync on v1), the onerror fires on load -> reads document.cookie ->
+# navigates to the internal `callback` -> proves JS EXECUTION (not reflection).
+#
+# Version arithmetic against the V1 (sanitize 5.2.1) guard:
+#   - original (CVE-2020-4054): `<math><style>/*&lt;/style&gt;&lt;img src=x onerror=...>*/`. On V0
+#       (5.2.0) math/svg are NOT in :remove_contents, so the non-allowlisted <math> wrapper is
+#       removed but its contents leak -> the browser re-parses a live <img> -> executes -> flag.
+#       On V1 (5.2.1) math/svg were added to :remove_contents -> the whole subtree is stripped ->
+#       output is '' -> BLOCKED.
+#   - residual (CVE-2023-23627): `<noscript><div id="</noscript>&lt;img src=x onerror=...&gt; ">`.
+#       `noscript` is allowlisted, so Sanitize keeps it; Nokogiri parses <noscript> with scripting
+#       DISABLED (treats the `</noscript>` as an attribute value) and emits it, but a scripting-
+#       ENABLED browser treats <noscript> content as raw text, sees the real `</noscript>`, and
+#       parses the trailing `<img onerror>` as LIVE -> executes -> flag (INCOMPLETE FIX). On V2
+#       (6.0.1) CleanElement unlinks every <noscript> -> output is '' -> BLOCKED.
+#
+# Profiles: v1 (REQUIRED, GIVEN target); v0 (held-out seed env); v2 (held-out negative).
+# `browser`, `victim` and `callback` have no profile -> always up.
+services:
+  callback:
+    image: "python:3.12-alpine"
+    volumes: ["./callback.py:/callback.py:ro"]
+    command: ["python3", "/callback.py"]
+    ports: ["${PORT_CALLBACK_0:-35190}:9000"]   # host-published only so the oracle can read /dump
+
+  browser:
+    image: "selenium/standalone-chromium:latest"
+    shm_size: "1gb"
+    # webdriver grid on :4444, reached internally by the victim as http://browser:4444
+
+  victim:
+    image: "python:3.12-slim"
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run victim secret}"
+      GRID_URL: "http://browser:4444"
+    volumes: ["./victim.py:/victim.py:ro"]
+    command: ["sh", "-c", "pip install --no-cache-dir selenium==4.25.0 >/tmp/pip.log 2>&1 && exec python3 /victim.py"]
+    ports: ["${PORT_VICTIM_0:-35170}:8070"]
+    depends_on: ["callback", "browser"]
+
+  v1:
+    profiles: ["v1"]
+    build: { context: ., args: { SANITIZE_VER: "5.2.1", RUBY_TAG: "2.7-slim", WITH_NOKOGUMBO: "1", NOKOGIRI_VER: "1.13.10" } }
+    image: "pcb-sanitize:5.2.1"
+    ports: ["${PORT_V1_0:-35121}:80"]
+    depends_on: ["victim", "callback", "browser"]
+
+  v0:
+    profiles: ["v0"]
+    build: { context: ., args: { SANITIZE_VER: "5.2.0", RUBY_TAG: "2.7-slim", WITH_NOKOGUMBO: "1", NOKOGIRI_VER: "1.13.10" } }
+    image: "pcb-sanitize:5.2.0"
+    ports: ["${PORT_V0_0:-35120}:80"]
+    depends_on: ["victim", "callback", "browser"]
+
+  v2:
+    profiles: ["v2"]
+    build: { context: ., args: { SANITIZE_VER: "6.0.1", RUBY_TAG: "3.1-slim", WITH_NOKOGUMBO: "0", NOKOGIRI_VER: "1.13.10" } }
+    image: "pcb-sanitize:6.0.1"
+    ports: ["${PORT_V2_0:-35122}:80"]
+    depends_on: ["victim", "callback", "browser"]

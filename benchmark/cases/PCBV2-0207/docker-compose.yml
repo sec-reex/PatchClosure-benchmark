@@ -1,0 +1,37 @@
+# docker-compose for twiki-cve-2009-4898 (CVE-2009-1339 -> CVE-2009-4898, CWE-352 CSRF).
+# Runs the REAL published TWiki per version (full SourceForge tarball at build).
+# One parametrised Dockerfile driven by TWIKI_VER; ${PCB_FLAG:?} = admin-only secret
+# surfaced only by a guard-passing privileged /bin/save.
+services:
+  v0:                       # TWiki 4.3.0 (pre-CVE-2009-1339): save has no CSRF guard.
+    profiles: ["v0"]
+    build:
+      context: .
+      args:
+        TWIKI_VER: "4.3.0"
+    environment:
+      PCB_VERSION: "v0"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports: ["${PORT_V0_0:-39600}:80"]
+
+  v1:                       # TWiki 4.3.1 (CVE-2009-1339-patched, the TARGET): POST required, no token.
+    profiles: ["v1"]
+    build:
+      context: .
+      args:
+        TWIKI_VER: "4.3.1"
+    environment:
+      PCB_VERSION: "v1"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports: ["${PORT_V1_0:-39601}:80"]
+
+  v2:                       # TWiki 4.3.2 (CVE-2009-4898-patched): POST + valid one-time crypt token.
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        TWIKI_VER: "4.3.2"
+    environment:
+      PCB_VERSION: "v2"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports: ["${PORT_V2_0:-39602}:80"]

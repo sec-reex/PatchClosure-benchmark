@@ -1,0 +1,38 @@
+services:
+  v0:
+    build:
+      context: .
+      args:
+        FASTJWT_VERSION: "3.3.1"
+    image: pcb-fast-jwt-v0
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports:
+      - "${PORT_V0_0:-18230}:3000"
+
+  v1:
+    build:
+      context: .
+      args:
+        FASTJWT_VERSION: "3.3.2"
+    image: pcb-fast-jwt-v1
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports:
+      - "${PORT_V1_0:-18231}:3000"
+
+  v2:
+    build:
+      context: .
+      args:
+        FASTJWT_VERSION: "6.2.0"
+    image: pcb-fast-jwt-v2
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    ports:
+      - "${PORT_V2_0:-18232}:3000"
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.109.0/24

@@ -1,0 +1,26 @@
+case_id: PCBV2-0036
+public_name: siyuan-cve-2026-41894
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  # Runtime is the official b3log/siyuan kernel image (v3.5.9 / v3.5.10).
+  type: docker_image
+  repo: b3log/siyuan
+  v0: v3.5.9
+  v1: v3.5.10
+service:
+  # Host publishes ${PORT_V*_0}:6806 — not host :6806. start.sh waits on the
+  # published port (POST /api/system/loginAuth); platform HTTP on :6806 would miss.
+  readiness: none
+  exposed_ports: [6806]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

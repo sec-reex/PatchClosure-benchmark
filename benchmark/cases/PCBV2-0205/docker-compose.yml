@@ -1,0 +1,45 @@
+# PatchClosure-Bench: tomcat-cve-2021-25329
+# Official library/tomcat images + PersistentManager/FileStore.
+# v0 = 9.0.34 (CVE-2020-9484 open)
+# v1 = 9.0.35 (9484 String.startsWith; CVE-2021-25329 residual open)  [TARGET]
+# v2 = 9.0.43 (Path.startsWith; 25329 closed)
+#
+# SUT is catalina.sh from the official image. Dockerfile only plants
+# context.xml, a benign classpath gadget, and marker.jsp.
+
+x-tomcat: &tomcat
+  platform: linux/amd64
+  restart: "no"
+  environment:
+    PCB_FLAG: "${PCB_FLAG:?}"
+
+services:
+  v0:
+    <<: *tomcat
+    profiles: ["v0"]
+    build:
+      context: .
+      args:
+        TOMCAT_TAG: "9.0.34-jdk8-openjdk"
+    ports:
+      - "${PORT_V0_0:-9480}:8080"
+
+  v1:
+    <<: *tomcat
+    profiles: ["v1"]
+    build:
+      context: .
+      args:
+        TOMCAT_TAG: "9.0.35-jdk8-openjdk"
+    ports:
+      - "${PORT_V1_0:-9481}:8080"
+
+  v2:
+    <<: *tomcat
+    profiles: ["v2"]
+    build:
+      context: .
+      args:
+        TOMCAT_TAG: "9.0.43-jdk8-openjdk"
+    ports:
+      - "${PORT_V2_0:-9482}:8080"

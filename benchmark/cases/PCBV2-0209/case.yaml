@@ -1,0 +1,23 @@
+case_id: PCBV2-0209
+public_name: undertow-jboss-wildfly-web-server-cve-2018-1067
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/undertow-io/undertow.git
+  v0: 1.4.2.Final
+  v1: 1.4.3.Final
+service:
+  readiness: http://127.0.0.1:8080/
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

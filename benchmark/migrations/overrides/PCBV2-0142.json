@@ -1,0 +1,6 @@
+{
+ "eval_id": "PCBV2-0142",
+ "family": "browser_xss",
+ "reason": "\u4efb\u52a1\u4e66 \u00a713 \u6307\u5b9a\uff1aloofah svg animate \u91cd\u53d1\u5e03 XSS",
+ "recorded_at": "2026-08-11"
+}

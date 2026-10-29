@@ -1,0 +1,151 @@
+# PatchClosure-Bench: DataEase hardcoded ShareLink JWT key (CVE-2024-52295 -> CVE-2026-57172)
+# Three real official DataEase images, one profile each. Bring up ONE profile at a time.
+#   v0 = 2.10.1  (both bugs present)
+#   v1 = 2.10.23 (main-auth fixed; ShareLink hardcoded 'link-pwd-fit2cloud' STILL present)
+#   v2 = 2.10.24 (ShareLink key fixed: random per-install secret)
+# Each dataease core talks to its own mysql + redis on an isolated compose network
+# (no pinned subnets — IPAM collisions are not part of the vuln).
+
+x-mysql-env: &mysql-env
+  MYSQL_ROOT_PASSWORD: Password123@mysql
+  MYSQL_DATABASE: dataease
+  MYSQL_ROOT_HOST: "%"
+
+# start_period: first-boot mysqld has no socket yet; without this, 30 failed
+# pings mark the container unhealthy and compose up fails after create.
+x-mysql-health: &mysql-health
+  test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pPassword123@mysql"]
+  interval: 5s
+  timeout: 5s
+  retries: 36
+  start_period: 120s
+
+x-redis-health: &redis-health
+  test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+  interval: 5s
+  timeout: 3s
+  retries: 20
+  start_period: 20s
+
+services:
+  # ---------------- v0 : 2.10.1 ----------------
+  mysql_v0:
+    image: mysql:8.0
+    pull_policy: missing
+    command: ["--character-set-server=utf8mb4","--collation-server=utf8mb4_0900_ai_ci","--max_allowed_packet=64M","--transaction-isolation=READ-COMMITTED","--sql_mode=STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"]
+    environment: *mysql-env
+    healthcheck: *mysql-health
+    networks: [de_v0]
+    profiles: ["v0"]
+  redis_v0:
+    image: redis:6.2
+    pull_policy: missing
+    command: ["redis-server","--requirepass","123456"]
+    healthcheck: *redis-health
+    networks: [de_v0]
+    profiles: ["v0"]
+  dataease_v0:
+    image: registry.cn-qingdao.aliyuncs.com/dataease/dataease:v2.10.1
+    pull_policy: missing
+    depends_on:
+      mysql_v0: {condition: service_healthy}
+      redis_v0: {condition: service_healthy}
+    environment:
+      SPRING_APPLICATION_JSON: '{"spring":{"datasource":{"url":"jdbc:mysql://mysql_v0:3306/dataease?autoReconnect=false&useUnicode=true&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true&zeroDateTimeBehavior=convertToNull","username":"root","password":"Password123@mysql"},"data":{"redis":{"host":"redis_v0","port":6379,"password":"123456","database":0}}}}'
+    volumes:
+      - ./conf:/opt/apps/config
+    ports: ["${PORT_DATAEASE_V0_0:-18101}:8100"]
+    healthcheck:
+      # PatchClosure: override the image's too-short built-in HC (JVM cold boot exceeds it -> up --wait
+      # marked v1/v2 unhealthy). `disable:true` is NOT usable here (up --wait errors "no healthcheck
+      # configured"). curl exits 0 on ANY HTTP response (app serving), long start_period for the boot.
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8100/de2api/login/localLogin || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 240s
+    networks: [de_v0]
+    profiles: ["v0"]
+
+  # ---------------- v1 : 2.10.23 (TARGET / residual) ----------------
+  mysql_v1:
+    image: mysql:8.0
+    pull_policy: missing
+    command: ["--character-set-server=utf8mb4","--collation-server=utf8mb4_0900_ai_ci","--max_allowed_packet=64M","--transaction-isolation=READ-COMMITTED","--sql_mode=STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"]
+    environment: *mysql-env
+    healthcheck: *mysql-health
+    networks: [de_v1]
+    profiles: ["v1"]
+  redis_v1:
+    image: redis:6.2
+    pull_policy: missing
+    command: ["redis-server","--requirepass","123456"]
+    healthcheck: *redis-health
+    networks: [de_v1]
+    profiles: ["v1"]
+  dataease_v1:
+    image: registry.cn-qingdao.aliyuncs.com/dataease/dataease:v2.10.23
+    pull_policy: missing
+    depends_on:
+      mysql_v1: {condition: service_healthy}
+      redis_v1: {condition: service_healthy}
+    environment:
+      SPRING_APPLICATION_JSON: '{"spring":{"datasource":{"url":"jdbc:mysql://mysql_v1:3306/dataease?autoReconnect=false&useUnicode=true&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true&zeroDateTimeBehavior=convertToNull","username":"root","password":"Password123@mysql"},"data":{"redis":{"host":"redis_v1","port":6379,"password":"123456","database":0}}}}'
+    volumes:
+      - ./conf:/opt/apps/config
+    ports: ["${PORT_DATAEASE_V1_0:-18123}:8100"]
+    healthcheck:
+      # PatchClosure: override the image's too-short built-in HC (JVM cold boot exceeds it -> up --wait
+      # marked v1/v2 unhealthy). `disable:true` is NOT usable here (up --wait errors "no healthcheck
+      # configured"). curl exits 0 on ANY HTTP response (app serving), long start_period for the boot.
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8100/de2api/login/localLogin || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 240s
+    networks: [de_v1]
+    profiles: ["v1"]
+
+  # ---------------- v2 : 2.10.24 (FIX) ----------------
+  mysql_v2:
+    image: mysql:8.0
+    pull_policy: missing
+    command: ["--character-set-server=utf8mb4","--collation-server=utf8mb4_0900_ai_ci","--max_allowed_packet=64M","--transaction-isolation=READ-COMMITTED","--sql_mode=STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"]
+    environment: *mysql-env
+    healthcheck: *mysql-health
+    networks: [de_v2]
+    profiles: ["v2"]
+  redis_v2:
+    image: redis:6.2
+    pull_policy: missing
+    command: ["redis-server","--requirepass","123456"]
+    healthcheck: *redis-health
+    networks: [de_v2]
+    profiles: ["v2"]
+  dataease_v2:
+    image: registry.cn-qingdao.aliyuncs.com/dataease/dataease:v2.10.24
+    pull_policy: missing
+    depends_on:
+      mysql_v2: {condition: service_healthy}
+      redis_v2: {condition: service_healthy}
+    environment:
+      SPRING_APPLICATION_JSON: '{"spring":{"datasource":{"url":"jdbc:mysql://mysql_v2:3306/dataease?autoReconnect=false&useUnicode=true&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true&zeroDateTimeBehavior=convertToNull","username":"root","password":"Password123@mysql"},"data":{"redis":{"host":"redis_v2","port":6379,"password":"123456","database":0}}}}'
+    volumes:
+      - ./conf:/opt/apps/config
+    ports: ["${PORT_DATAEASE_V2_0:-18124}:8100"]
+    healthcheck:
+      # PatchClosure: override the image's too-short built-in HC (JVM cold boot exceeds it -> up --wait
+      # marked v1/v2 unhealthy). `disable:true` is NOT usable here (up --wait errors "no healthcheck
+      # configured"). curl exits 0 on ANY HTTP response (app serving), long start_period for the boot.
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8100/de2api/login/localLogin || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 240s
+    networks: [de_v2]
+    profiles: ["v2"]
+
+networks:
+  de_v0: {}
+  de_v1: {}
+  de_v2: {}

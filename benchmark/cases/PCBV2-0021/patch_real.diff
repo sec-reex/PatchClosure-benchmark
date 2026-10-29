@@ -1,0 +1,114 @@
+# CVE-2026-6414
+# upstream: https://github.com/fastify/fastify-static
+# fix: cc7b7f7e00a5f028599ba17392b831afd0c651aa (v9.1.1 / GHSA-x428-ghpx-8j92)
+diff --git a/index.js b/index.js
+index 56967cd8..f9420ac2 100644
+--- a/index.js
++++ b/index.js
+@@ -122,7 +122,12 @@ async function fastifyStatic (fastify, opts) {
+         method: ['HEAD', 'GET'],
+         path: prefix + '*',
+         handler (req, reply) {
+-          pumpSendToReply(req, reply, '/' + req.params['*'], sendOptions.root)
++          const pathname = getPathnameForSend(req.raw.url, prefix)
++          if (!pathname) {
++            return reply.callNotFound()
++          }
++
++          pumpSendToReply(req, reply, pathname, sendOptions.root)
+         }
+       })
+       if (opts.redirect === true && prefix !== opts.prefix) {
+@@ -563,6 +568,40 @@ function getEncodingHeader (headers, checked) {
+   )
+ }
+ 
++/**
++ * @param {string} url
++ * @param {string} prefix
++ * @returns {string|undefined}
++ */
++function getPathnameForSend (url, prefix) {
++  const questionMark = url.indexOf('?')
++  let pathname = questionMark === -1 ? url : url.slice(0, questionMark)
++
++  if (prefix !== '/') {
++    const routePrefix = prefix.endsWith('/')
++      ? prefix.slice(0, -1)
++      : prefix
++
++    if (!pathname.startsWith(routePrefix)) {
++      return
++    }
++
++    pathname = pathname.slice(routePrefix.length)
++  }
++
++  if (pathname === '') {
++    pathname = '/'
++  } else if (!pathname.startsWith('/')) {
++    pathname = '/' + pathname
++  }
++
++  try {
++    return decodeURI(pathname)
++  } catch {
++
++  }
++}
++
+ /**
+  * @param {string} url
+  * @return {string}
+diff --git a/test/static.test.js b/test/static.test.js
+index ffdc4cc8..f5fc90be 100644
+--- a/test/static.test.js
++++ b/test/static.test.js
+@@ -3254,8 +3254,8 @@ test('should not redirect to protocol-relative locations', async (t) => {
+     ['//^/..', '/', 301],
+     ['//^/.', null, 404], // it is NOT recognized as a directory by pillarjs/send
+     ['//:/..', '/', 301],
+-    ['/\\\\a//google.com/%2e%2e%2f%2e%2e', '/a//google.com/%2e%2e%2f%2e%2e/', 301],
+-    ['//a//youtube.com/%2e%2e%2f%2e%2e', '/a//youtube.com/%2e%2e%2f%2e%2e/', 301],
++    ['/\\\\a//google.com/%2e%2e%2f%2e%2e', null, 404],
++    ['//a//youtube.com/%2e%2e%2f%2e%2e', null, 404],
+     ['/^', null, 404], // it is NOT recognized as a directory by pillarjs/send
+     ['//google.com/%2e%2e', '/', 301],
+     ['//users/%2e%2e', '/', 301],
+@@ -3590,6 +3590,36 @@ test(
+   }
+ )
+ 
++test('does not serve static files with encoded path separators', async (t) => {
++  t.plan(4)
++
++  const fastify = Fastify()
++
++  t.after(() => fastify.close())
++
++  fastify.all('/deep/*', async (_request, reply) => {
++    reply.code(401).send('Unauthorized')
++  })
++
++  fastify.register(fastifyStatic, {
++    root: path.join(__dirname, '/static')
++  })
++
++  const response = await fastify.inject({
++    method: 'GET',
++    url: '/deep/path/for/test/purpose/foo.html'
++  })
++  t.assert.deepStrictEqual(response.statusCode, 401)
++  t.assert.deepStrictEqual(response.body, 'Unauthorized')
++
++  const encodedPathResponse = await fastify.inject({
++    method: 'GET',
++    url: '/deep%2Fpath/for/test/purpose/foo.html'
++  })
++  t.assert.deepStrictEqual(encodedPathResponse.statusCode, 404)
++  t.assert.deepStrictEqual(encodedPathResponse.json().message, 'Route GET:/deep%2Fpath/for/test/purpose/foo.html not found')
++})
++
+ test('content-length in head route should not return zero when using wildcard', async t => {
+   t.plan(5)
+ 

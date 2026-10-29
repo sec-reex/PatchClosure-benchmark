@@ -1,0 +1,29 @@
+case_id: PCBV2-0197
+public_name: spring-framework-cve-2024-22262
+run_mode: real-app-cli
+oracle_family: ssrf_sidecar
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  # Runtime pulls official Maven Central org.springframework:spring-web
+  # (CVE-2024-22259 seed on 6.1.4; incomplete 6.1.5; complete 6.1.6).
+  # No official Spring/Tomcat image pins these library versions for the
+  # UriComponentsBuilder sink. Git tags v6.1.4 / v6.1.5 / v6.1.6 exist.
+  type: maven
+  repo: org.springframework:spring-web
+  v0: "6.1.4"
+  v1: "6.1.5"
+service:
+  # Exec-style library client: v0/v1 sleep + internal sidecar only (no host
+  # port). Platform HTTP readiness on :80 would time out.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

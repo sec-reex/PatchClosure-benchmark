@@ -1,0 +1,24 @@
+case_id: PCBV2-0040
+public_name: superset-cve-2026-23980
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: docker_image
+  repo: https://github.com/apache/superset.git
+  v0: 4.0.2
+  v1: 4.1.2
+service:
+  # Host port is ${PORT_SUPERSET_V*_0}, not :8088. start.sh waits after up.
+  readiness: none
+  exposed_ports: [8088]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

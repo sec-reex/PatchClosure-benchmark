@@ -1,0 +1,124 @@
+{
+  "eval_id": "PCBV2-0040",
+  "case_id": "superset-cve-2026-23980",
+  "run_mode": "real-app-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "new-collection",
+    "lift_kind": "real-app",
+    "date": "2026-07-17",
+    "evidence": "Real official apache/superset images (4.0.2 v0 / 4.1.2 v1 / 6.0.0 v2) via compose with postgres:15-alpine and redis:7-alpine; external HTTP POST to /api/v1/chart/data with sqlExpression injection. Live gate: original table_to_xml (unquoted, not on 4.0.2 deny list) reads canary on V0, blocked by expanded deny list on V1; residual \"query_to_xml\" (double-quoted identifier) bypasses deny list on V1, blocked by sqlglot normalization (uppercases quoted identifiers) on V2. Variant A gate passed. [2026-10-11 re-run] residual_v2_blocked VERIFIED on real Docker: verify.sh --residual exit 10 (HTTP 400, PG error QUERY_TO_XML does not exist) + oracle.py bypass_poc(v2) flag_in_body=false; canary confirmed planted via psql. COLLATERAL: seed table_to_xml and unquoted query_to_xml both reach the flag on V2 via chart-data (200 + flag) -- 6.0.0 enforces the deny list only in sql_lab.py (SQL Lab), not on the chart-data path, so the 'fully fixed' wording for V2 does not hold for the seed; no oracle.checks entry asserts seed_v2_blocked."
+  },
+  "product": "Apache Superset",
+  "app_purpose": "bi_analytics",
+  "language": "Python",
+  "root_cause": "SQLi",
+  "mechanism_family": "function_denylist_bypass_quoted_identifier_smuggling",
+  "cve_pair": {
+    "original_cve": "CVE-2025-48912",
+    "bypass_cve": "CVE-2026-23980",
+    "original_published": "2025-05-30",
+    "bypass_published": "2026-02-24"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "4.0.2",
+      "ref": "apache/superset:4.0.2",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:38400"
+    },
+    "v1": {
+      "identifier": "4.1.2",
+      "ref": "apache/superset:4.1.2",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:38410"
+    },
+    "v2": {
+      "identifier": "6.0.0",
+      "ref": "apache/superset:6.0.0",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:38420"
+    }
+  },
+  "flag": {
+    "resource": "a canary flag in a postgres table ('canary') that the legitimate dataset (public_data) never queries; only reachable via SQL injection through PostgreSQL XML functions that execute SQL as arguments",
+    "placement": "PCB_FLAG planted in canary.flag via postgres init script (init-db.sh) from ${PCB_FLAG} environment variable; the Superset dataset points to public_data only",
+    "detect": "flag token substring in chart-data API response body (XML-encoded in query_to_xml/table_to_xml output)",
+    "class_kind": "read-exfil"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/advisories/GHSA-gvxg-9hqx-f4rg",
+    "fix_reference": "apache/superset:4.1.2; apache/superset:6.0.0",
+    "incomplete_fix_quote": "CVE-2025-48912 (fixed 4.1.2) expanded the DISALLOWED_SQL_FUNCTIONS deny list to block PostgreSQL XML functions (query_to_xml, table_to_xml, etc.). CVE-2026-23980 (fixed 6.0.0) shows the deny list check uses sqlparse token matching that does not handle PostgreSQL double-quoted identifiers, so '\"query_to_xml\"(...)' bypasses the deny list while PostgreSQL still resolves it as the same built-in function.",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "86d598aaa6b99db9fe51657d53fc8e7a296b88846d8419d224bee0257db19806",
+      "repro.log": "986688bdbd6d4057b4169bd25b362e0e5e0c2eb2d1b2ae6a7884242ba71cea70",
+      "docker-compose.yml": "bb669f9b5452ec38f60681a3dd91ab7e065f41d010e28bc8146c9514e849047c",
+      "oracle.py": "2a6ef3e738fe9b7ca08e8af44e09786d63f4ee4c5a7a16728151fad8afece47b",
+      "patch.diff": "fbd9965cc9ff158fb243591b6684faefa0f860b9831029b9a4b6a531cd6e5b4e"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "target recipe explicitly identifies an official/published image"
+  },
+  "provenance": {
+    "source": "local:new-collection",
+    "verified": "runtime_gate_passed",
+    "notes": "Real Docker verification with official apache/superset images (4.0.2/4.1.2/6.0.0). Recipe-based: images pulled at up-time, canary planted in postgres via init script from PCB_FLAG env var. Gate run 2026-07-17 via manual test + oracle.py gate(). Original table_to_xml (not on 4.0.2 deny list) reads canary on V0, blocked by expanded deny list on V1 (4.1.2). Residual: double-quoted \"query_to_xml\"(...) bypasses deny list string matching on V1, reads canary. V2 (6.0.0) uppercases quoted identifiers via sqlglot normalization, breaking the function lookup. [2026-10-11] V2 negative-control re-run (profile v2 only, fresh project): residual blocked on V2 as asserted (see oracle.checks.residual_v2_control and repro.log); collateral finding: chart-data deny-list enforcement absent in 6.0.0 (sql_lab.py only) lets the seed and unquoted query_to_xml read the canary on V2.",
+    "patch_diff_fix": {
+      "audit": "2026-10-11 guard-source replacement (supersedes ROUND9-2026-08-06)",
+      "issue": "Prior patch.diff header claimed 'V0 -> V1 fix (upstream), synced from inputs by ROUND9 audit' but its body was a tests/integration_tests/core_tests.py import rewrap (upstream 25eb7142 'fix: linting to pass pre-commit'), not the CVE-2025-48912 guard and not applicable to the V0 (4.0.2) tree (git apply --check fails; reports/PATCH_DIFF_AUDIT_2026-10-11_full.md:64,154). Replaced 2026-10-11: patch.diff = standard 3-line header + the diff body of patch_real.diff, byte-identical (cmp verified), from upstream apache/superset commit 5e7299431d8b03070f54dd5bf3593e8b445da096 (2024-11-22, 'use sqlglot for DML check', SQLScript/has_mutation guard). Evidence and backups: replacements_2026-10-11/PCBV2-0040/."
+    }
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_image",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true,
+      "residual_v2_control": "2026-10-11 re-run: residual_v2_blocked VERIFIED on real Docker (fresh compose project pcb0040recheck, profile v2 only, apache/superset:6.0.0 at 127.0.0.1:38420, canary PCBFLAG_01e2347d797fbfab3bc54a6935640105 confirmed planted via psql before probing). Two independent probe paths both blocked: scripts/verify.sh --residual -> exit 10, HTTP 400 'Error: function QUERY_TO_XML(unknown, boolean, boolean, unknown) does not exist' (sqlglot uppercased the quoted identifier), flag absent from body; oracle.py bypass_poc(version=\"v2\") loading unmodified _heldout/bypass_poc.py -> status 400, flag_in_body=false. COLLATERAL (not a checks entry): the seed table_to_xml payload AND plain unquoted query_to_xml both read the canary on V2 via chart-data (HTTP 200 with flag) -- 6.0.0 enforces DISALLOWED_SQL_FUNCTIONS only in sql_lab.py:404-411 (SQL Lab), not on the chart-data path (4.1.2 enforced it in db_engine_specs/base.py:1832-1836 DBEngineSpec.execute); see repro.log '## 2026-10-11 V2 negative-control re-run' for full commands/outputs."
+    },
+    "flag_resource": "a canary flag in a postgres table ('canary') that the legitimate dataset (public_data) never queries; only reachable via SQL injection through PostgreSQL XML functions that execute SQL as arguments",
+    "detector": "flag token substring in chart-data API response body (XML-encoded in query_to_xml/table_to_xml output)"
+  }
+}

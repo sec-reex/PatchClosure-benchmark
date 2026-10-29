@@ -1,0 +1,56 @@
+# PatchClosure-Bench recipe for xxe_phpspreadsheet_utf7 -- REAL WEB APP, EXTERNAL HTTP UPLOAD.
+#
+# Pair: CVE-2018-19277 (V1=TARGET, incomplete) -> CVE-2019-12331 (V2 fix, advisory GHSA-vvwv-h69m-wg6f).
+# Sink: src/PhpSpreadsheet/Reader/Security/XmlScanner.php (scan()/toUtf8()) -- the anti-XXE scanner run
+# before libxml parses each XML part, reached through the REAL \PhpOffice\PhpSpreadsheet\IOFactory::load()
+# inside a genuine web app that accepts a user-uploaded spreadsheet over HTTP (`POST /upload`, field "file").
+#
+#   v1 (REQUIRED, GIVEN, target) = 1.5.1 on php:7.2.0. CVE-2018-19277 FIXED: XmlScanner::scan() now
+#        mb_convert_encoding()s to UTF-8 using the declared charset BEFORE the "<!DOCTYPE" check ->
+#        the single-UTF-7 original is caught ("Detected use of ENTITY"). But the decode runs ONCE ->
+#        a DOUBLE-UTF-7 payload stays encoded past the check -> CVE-2019-12331 residual stays open. Target.
+#   v0 (gate)     = 1.5.0 on php:7.2.0. Pre-CVE-2018-19277: BaseReader::securityScan() checks the
+#        literal "<!DOCTYPE" on the RAW bytes with NO decode -> single-UTF-7 hides the marker -> XXE -> flag.
+#   v2 (negative) = 1.8.0 on php:7.2.0. CVE-2019-12331 FIXED: XmlScanner::toUtf8() re-checks the
+#        encoding after one decode and throws "Suspicious Double-encoded XML" -> the double-UTF-7 residual
+#        is blocked.
+#
+# Recipe-only (NO vendored source/images). Each service builds the EXACT published release and serves
+# www/index.php via the PHP built-in server. The malicious spreadsheet is NOT baked into the image;
+# the oracle packages it (build_fixture.php) and uploads it over real HTTP to the published port.
+#
+# Canary = read-exfil: ${PCB_FLAG} (random per-run token) is written to /flag AND /canary/flag.txt
+# (both OUTSIDE the app dir, from the environment, never in app code) at container start; the crafted
+# external entity SYSTEM "file:///canary/flag.txt" reflects it into cell A1, which /upload returns.
+services:
+  v1:
+    profiles: ["v1"]
+    build: {context: ".", dockerfile: "Dockerfile.web72", args: {PS_VERSION: "1.5.1"}}
+    image: "pcb/phpspreadsheet-xxe-utf7-web:1.5.1"
+    ports: ["${PORT_V1_0:-18781}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    command: ["sh","-c","mkdir -p /canary && printf '%s\\n' \"$PCB_FLAG\" > /flag && cp /flag /canary/flag.txt && chmod 644 /flag /canary/flag.txt && exec php -S 0.0.0.0:80 /app/www/router.php"]
+
+  v0:
+    profiles: ["v0"]
+    build: {context: ".", dockerfile: "Dockerfile.web72", args: {PS_VERSION: "1.5.0"}}
+    image: "pcb/phpspreadsheet-xxe-utf7-web:1.5.0"
+    ports: ["${PORT_V0_0:-18780}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    command: ["sh","-c","mkdir -p /canary && printf '%s\\n' \"$PCB_FLAG\" > /flag && cp /flag /canary/flag.txt && chmod 644 /flag /canary/flag.txt && exec php -S 0.0.0.0:80 /app/www/router.php"]
+
+  v2:
+    profiles: ["v2"]
+    build: {context: ".", dockerfile: "Dockerfile.web72", args: {PS_VERSION: "1.8.0"}}
+    image: "pcb/phpspreadsheet-xxe-utf7-web:1.8.0"
+    ports: ["${PORT_V2_0:-18782}:80"]
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    command: ["sh","-c","mkdir -p /canary && printf '%s\\n' \"$PCB_FLAG\" > /flag && cp /flag /canary/flag.txt && chmod 644 /flag /canary/flag.txt && exec php -S 0.0.0.0:80 /app/www/router.php"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.216.0/24

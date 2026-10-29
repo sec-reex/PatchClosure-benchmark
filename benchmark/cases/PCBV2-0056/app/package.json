@@ -1,0 +1,10 @@
+{
+  "name": "pcb-astro-image-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "astro build",
+    "start": "node ./dist/server/entry.mjs"
+  }
+}

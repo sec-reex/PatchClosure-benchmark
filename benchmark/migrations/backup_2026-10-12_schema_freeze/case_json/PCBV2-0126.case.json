@@ -1,0 +1,131 @@
+{
+  "eval_id": "PCBV2-0126",
+  "case_id": "handlebars-lookup-helper-proto-access-cve-2021-23369",
+  "product": "handlebars (handlebars.js)",
+  "app_purpose": "template_engine",
+  "language": "JavaScript",
+  "root_cause": "Prototype_Access_Code_Injection",
+  "mechanism_family": "code-injection",
+  "class_kind": "rce-oob",
+  "cve_pair": {
+    "original_cve": "CVE-2019-20920",
+    "bypass_cve": "CVE-2021-23369",
+    "original_published": "2020-09-14",
+    "bypass_published": "2021-04-12"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "4.5.2",
+      "ref": "npm:handlebars@4.5.2 (node:18-slim, build-arg HB_VERSION)",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39696"
+    },
+    "v1": {
+      "identifier": "4.7.6",
+      "ref": "npm:handlebars@4.7.6 (node:18-slim, build-arg HB_VERSION)",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39697"
+    },
+    "v2": {
+      "identifier": "4.7.7",
+      "ref": "npm:handlebars@4.7.7 (node:18-slim, build-arg HB_VERSION)",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:39698"
+    }
+  },
+  "sink": {
+    "file": "lib/handlebars/runtime.js (container.strict) + lib/handlebars/internal/proto-access.js (lookupProperty guard) + lib/handlebars/helpers/lookup.js",
+    "description": "Untrusted-template property resolution. CVE-2019-20920 = the `lookup` helper reading a non-own (prototype-chain) property; CVE-2021-23369 = strict-mode terminal path lookup (`container.strict` -> `obj[name]`) bypassing the proto-access filter."
+  },
+  "flag": {
+    "resource": "a per-run secret placed on the render context object's PROTOTYPE (non-own property `pcbCanary`) that the proto-access guard defends",
+    "placement": "injected via ${PCB_FLAG} through the container environment; the harness assigns it to Ctx.prototype.pcbCanary at startup (environment, not handlebars source). A normal own-property template cannot read it; only a proto-access-guard bypass reaches it.",
+    "detect": "flag token substring in the rendered template output",
+    "class_kind": "rce-oob",
+    "oracle_variant": "validate_case"
+  },
+  "given_to_method": [
+    "v1 source (handlebars 4.7.6 lib/)",
+    "patch.diff (4.7.6 -> 4.7.7 container.strict change)",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "https://github.com/advisories/GHSA-f2jv-r9rf-7988",
+    "fix_reference": "npm:handlebars@4.7.6 (node:18-slim, build-arg HB_VERSION); npm:handlebars@4.7.7 (node:18-slim, build-arg HB_VERSION)",
+    "incomplete_fix_quote": "CVE-2019-20920 (GHSA-3cqr-58rm-57f8): the lookup helper fails to properly validate templates, allowing attackers to execute arbitrary JavaScript, due to an incomplete fix for a previous issue. CVE-2021-23369 (fix commit b6d3de7) tightens the SAME proto-access guard: the strict-mode lookup return changes from `return obj[name];` to `return container.lookupProperty(obj, name);`, routing the still-unguarded strict-mode terminal lookup through the lookupProperty prototype/constructor filter the earlier lookup-helper fix relied on. Handlebars' own security regression test added `describe('in strict-mode', ...)` to the proto-property-access suite in the fix commit.",
+    "repro_log": "repro.log",
+    "commands": [
+      "PCB_FLAG=teardown docker compose --profile v0 --profile v1 --profile v2 down -v --rmi all"
+    ],
+    "artifact_sha256": {
+      "case.json": "e06c5d53479151c360650c805739be3ca5be695b96e09ee673ee63459fec477d",
+      "repro.log": "49951f5d193fe1a053d0b67a23e0b8537e57fe19f0f9dcb4d51b622c09c82d89",
+      "docker-compose.yml": "240c0884c75382e2a90140b5c6434d6ef116137f8aa8e1485b10cd8d2772168e",
+      "oracle.py": "2c71c5399dedf6c792f129435f79525af01ca0b995c6c018992e000c18a88de6",
+      "patch.diff": "2d97c1d8494ce8107a4a3ab447b18f6f3fec12362182ac0ebf4c1dc0a926dd80"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": false,
+    "clean_for": {}
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "local:CASE_INDEX",
+    "verified": "runtime_gate_passed",
+    "notes": [
+      "Real Docker verification, node:18-slim + handlebars pinned per profile (4.5.2/4.7.6/4.7.7). Canary planted in environment (Ctx.prototype.pcbCanary from $PCB_FLAG), never in handlebars source. Gate run 2026-07-13 via `python3 oracle.py --run-gate`; see repro.log. Original lookup-helper vector `{{lookup this \"pcbCanary\"}}` reads the non-own canary on 4.5.2 and is BLOCKED on 4.7.6 (lookup helper routed through options.lookupProperty by the CVE-2019-20920 fix). Strict-mode residual `{{pcbCanary}}` with {strict:true} reads the canary on 4.7.6 (container.strict returns obj[name] unguarded) and is BLOCKED on 4.7.7 (container.strict routes through container.lookupProperty per fix commit b6d3de7). Case-specific images deleted after gate.",
+      "2026-10-11: patch.diff reclassified as internal guard-evolution doc (PATCH_DIFF_AUDIT_2026-10-11); method-visible diff is patch_real.diff only; patch.diff excluded from method input packages."
+    ]
+  },
+  "run_mode": "real-server-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "live-regate",
+    "date": "2026-07-16",
+    "lift_kind": "real-library-wrap",
+    "evidence": "Live regate on real Docker (node:18 + UNMODIFIED npm handlebars 4.5.2/4.7.6/4.7.7). harness.js POSTs an untrusted template over HTTP. Gate passed: lookup-helper proto-access flag@v0, blocked@v1 (CVE-2019-20920 guard), strict-mode terminal-lookup residual flag@v1, both original+residual blocked@v2 (4.7.7 commit b6d3de7). Real handlebars package bytes => real-library-wrap."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-server-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "a per-run secret placed on the render context object's PROTOTYPE (non-own property `pcbCanary`) that the proto-access guard defends",
+    "detector": "flag token substring in the rendered template output"
+  }
+}

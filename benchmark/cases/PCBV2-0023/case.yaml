@@ -1,0 +1,24 @@
+case_id: PCBV2-0023
+public_name: admidio-cve-2026-42194
+run_mode: real-app-http
+oracle_family: ssrf_sidecar
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/Admidio/admidio.git
+  v0: v5.0.6
+  v1: v5.0.7
+service:
+  # Compose publishes ${PORT_V*_0}:8080. start.sh waits on the mapped host port.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

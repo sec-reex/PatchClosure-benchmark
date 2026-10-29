@@ -1,0 +1,313 @@
+PCBV2-0014 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: # fix: 0e6238c69e863b58aeece61e48ea032696c6dccd
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0014/
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 517bfb0..d6c42d7 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org).
+ 
+ ## [Unreleased]
+ 
++
++## [1.8.0] - 2019-07-01
++
++### Security Fix (CVE-2019-12331)
++
++- Detect double-encoded xml in the Security scanner, and reject as suspicious.
++- This change also broadens the scope of the `libxml_disable_entity_loader` setting when reading XML-based formats, so that it is enabled while the xml is being parsed and not simply while it is loaded.
++  On some versions of PHP, this can cause problems because it is not thread-safe, and can affect other PHP scripts running on the same server. This flag is set to true when instantiating a loader, and back to its original setting when the Reader is no longer in scope, or manually unset.
++- Provide a check to identify whether libxml_disable_entity_loader is thread-safe or not.
++
++  `XmlScanner::threadSafeLibxmlDisableEntityLoaderAvailability()`
++- Provide an option to disable the libxml_disable_entity_loader call through settings. This is not recommended as it reduces the security of the XML-based readers, and should only be used if you understand the consequences and have no other choice.
++ 
+ ### Added
+ 
+ - Added support for the SWITCH function - [Issue #963](https://github.com/PHPOffice/PhpSpreadsheet/issues/963) and [PR #983](https://github.com/PHPOffice/PhpSpreadsheet/pull/983)
+diff --git a/src/PhpSpreadsheet/Reader/BaseReader.php b/src/PhpSpreadsheet/Reader/BaseReader.php
+index a81a5f6..18bee1b 100644
+--- a/src/PhpSpreadsheet/Reader/BaseReader.php
++++ b/src/PhpSpreadsheet/Reader/BaseReader.php
+@@ -58,6 +58,21 @@ abstract class BaseReader implements IReader
+     public function __construct()
+     {
+         $this->readFilter = new DefaultReadFilter();
++
++        // A fatal error will bypass the destructor, so we register a shutdown here
++        register_shutdown_function([$this, '__destruct']);
++    }
++
++    private function shutdown()
++    {
++        if ($this->securityScanner !== null) {
++            $this->securityScanner = null;
++        }
++    }
++
++    public function __destruct()
++    {
++        $this->shutdown();
+     }
+ 
+     public function getReadDataOnly()
+diff --git a/src/PhpSpreadsheet/Reader/Security/XmlScanner.php b/src/PhpSpreadsheet/Reader/Security/XmlScanner.php
+index b5f7ac6..c4ad035 100644
+--- a/src/PhpSpreadsheet/Reader/Security/XmlScanner.php
++++ b/src/PhpSpreadsheet/Reader/Security/XmlScanner.php
+@@ -3,6 +3,7 @@
+ namespace PhpOffice\PhpSpreadsheet\Reader\Security;
+ 
+ use PhpOffice\PhpSpreadsheet\Reader;
++use PhpOffice\PhpSpreadsheet\Settings;
+ 
+ class XmlScanner
+ {
+@@ -22,10 +23,16 @@ class XmlScanner
+ 
+     private $callback;
+ 
+-    private function __construct($pattern = '<!DOCTYPE')
++    private static $libxmlDisableEntityLoaderValue;
++
++    public function __construct($pattern = '<!DOCTYPE')
+     {
+         $this->pattern = $pattern;
+-        $this->libxmlDisableEntityLoader = $this->identifyLibxmlDisableEntityLoaderAvailability();
++
++        $this->disableEntityLoaderCheck();
++
++        // A fatal error will bypass the destructor, so we register a shutdown here
++        register_shutdown_function([$this, '__destruct']);
+     }
+ 
+     public static function getInstance(Reader\IReader $reader)
+@@ -43,7 +50,7 @@ class XmlScanner
+         }
+     }
+ 
+-    private function identifyLibxmlDisableEntityLoaderAvailability()
++    public static function threadSafeLibxmlDisableEntityLoaderAvailability()
+     {
+         if (PHP_MAJOR_VERSION == 7) {
+             switch (PHP_MINOR_VERSION) {
+@@ -61,11 +68,53 @@ class XmlScanner
+         return false;
+     }
+ 
++    private function disableEntityLoaderCheck()
++    {
++        if (Settings::getLibXmlDisableEntityLoader()) {
++            $libxmlDisableEntityLoaderValue = libxml_disable_entity_loader(true);
++
++            if (self::$libxmlDisableEntityLoaderValue === null) {
++                self::$libxmlDisableEntityLoaderValue = $libxmlDisableEntityLoaderValue;
++            }
++        }
++    }
++
++    private function shutdown()
++    {
++        if (self::$libxmlDisableEntityLoaderValue !== null) {
++            libxml_disable_entity_loader(self::$libxmlDisableEntityLoaderValue);
++        }
++    }
++
++    public function __destruct()
++    {
++        $this->shutdown();
++    }
++
+     public function setAdditionalCallback(callable $callback)
+     {
+         $this->callback = $callback;
+     }
+ 
++    private function toUtf8($xml)
++    {
++        $pattern = '/encoding="(.*?)"/';
++        $result = preg_match($pattern, $xml, $matches);
++        $charset = $result ? $matches[1] : 'UTF-8';
++
++        if ($charset !== 'UTF-8') {
++            $xml = mb_convert_encoding($xml, 'UTF-8', $charset);
++
++            $result = preg_match($pattern, $xml, $matches);
++            $charset = $result ? $matches[1] : 'UTF-8';
++            if ($charset !== 'UTF-8') {
++                throw new Reader\Exception('Suspicious Double-encoded XML, spreadsheet file load() aborted to prevent XXE/XEE attacks');
++            }
++        }
++
++        return $xml;
++    }
++
+     /**
+      * Scan the XML for use of <!ENTITY to prevent XXE/XEE attacks.
+      *
+@@ -77,33 +126,19 @@ class XmlScanner
+      */
+     public function scan($xml)
+     {
+-        if ($this->libxmlDisableEntityLoader) {
+-            $previousLibxmlDisableEntityLoaderValue = libxml_disable_entity_loader(true);
+-        }
++        $this->disableEntityLoaderCheck();
+ 
+-        $pattern = '/encoding="(.*?)"/';
+-        $result = preg_match($pattern, $xml, $matches);
+-        $charset = $result ? $matches[1] : 'UTF-8';
+-
+-        if ($charset !== 'UTF-8') {
+-            $xml = mb_convert_encoding($xml, 'UTF-8', $charset);
+-        }
++        $xml = $this->toUtf8($xml);
+ 
+         // Don't rely purely on libxml_disable_entity_loader()
+         $pattern = '/\\0?' . implode('\\0?', str_split($this->pattern)) . '\\0?/';
+ 
+-        try {
+-            if (preg_match($pattern, $xml)) {
+-                throw new Reader\Exception('Detected use of ENTITY in XML, spreadsheet file load() aborted to prevent XXE/XEE attacks');
+-            }
++        if (preg_match($pattern, $xml)) {
++            throw new Reader\Exception('Detected use of ENTITY in XML, spreadsheet file load() aborted to prevent XXE/XEE attacks');
++        }
+ 
+-            if ($this->callback !== null && is_callable($this->callback)) {
+-                $xml = call_user_func($this->callback, $xml);
+-            }
+-        } finally {
+-            if (isset($previousLibxmlDisableEntityLoaderValue)) {
+-                libxml_disable_entity_loader($previousLibxmlDisableEntityLoaderValue);
+-            }
++        if ($this->callback !== null && is_callable($this->callback)) {
++            $xml = call_user_func($this->callback, $xml);
+         }
+ 
+         return $xml;
+diff --git a/src/PhpSpreadsheet/Settings.php b/src/PhpSpreadsheet/Settings.php
+index 22196b7..c297dd6 100644
+--- a/src/PhpSpreadsheet/Settings.php
++++ b/src/PhpSpreadsheet/Settings.php
+@@ -24,6 +24,20 @@ class Settings
+      */
+     private static $libXmlLoaderOptions = null;
+ 
++    /**
++     * Allow/disallow libxml_disable_entity_loader() call when not thread safe.
++     * Default behaviour is to do the check, but if you're running PHP versions
++     *      7.2 < 7.2.1
++     *      7.1 < 7.1.13
++     *      7.0 < 7.0.27
++     *      5.6 ANY
++     * then you may need to disable this check to prevent unwanted behaviour in other threads
++     * SECURITY WARNING: Changing this flag is not recommended.
++     *
++     * @var bool
++     */
++    private static $libXmlDisableEntityLoader = true;
++
+     /**
+      * The cache implementation to be used for cell collection.
+      *
+@@ -101,6 +115,34 @@ class Settings
+         return self::$libXmlLoaderOptions;
+     }
+ 
++    /**
++     * Enable/Disable the entity loader for libxml loader.
++     * Allow/disallow libxml_disable_entity_loader() call when not thread safe.
++     * Default behaviour is to do the check, but if you're running PHP versions
++     *      7.2 < 7.2.1
++     *      7.1 < 7.1.13
++     *      7.0 < 7.0.27
++     *      5.6 ANY
++     * then you may need to disable this check to prevent unwanted behaviour in other threads
++     * SECURITY WARNING: Changing this flag to false is not recommended.
++     *
++     * @param bool $state
++     */
++    public static function setLibXmlDisableEntityLoader($state)
++    {
++        self::$libXmlDisableEntityLoader = (bool) $state;
++    }
++
++    /**
++     * Return the state of the entity loader (disabled/enabled) for libxml loader.
++     *
++     * @return bool $state
++     */
++    public static function getLibXmlDisableEntityLoader()
++    {
++        return self::$libXmlDisableEntityLoader;
++    }
++
+     /**
+      * Sets the implementation of cache that should be used for cell collection.
+      *
+diff --git a/tests/PhpSpreadsheetTests/Reader/Security/XmlScannerTest.php b/tests/PhpSpreadsheetTests/Reader/Security/XmlScannerTest.php
+index ca813a0..473e47d 100644
+--- a/tests/PhpSpreadsheetTests/Reader/Security/XmlScannerTest.php
++++ b/tests/PhpSpreadsheetTests/Reader/Security/XmlScannerTest.php
+@@ -5,7 +5,6 @@ namespace PhpOffice\PhpSpreadsheetTests\Reader\Security;
+ use PhpOffice\PhpSpreadsheet\Reader\Security\XmlScanner;
+ use PhpOffice\PhpSpreadsheet\Reader\Xls;
+ use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
+-use PhpOffice\PhpSpreadsheet\Reader\Xml;
+ use PHPUnit\Framework\TestCase;
+ 
+ class XmlScannerTest extends TestCase
+@@ -19,12 +18,13 @@ class XmlScannerTest extends TestCase
+      */
+     public function testValidXML($filename, $expectedResult, $libxmlDisableEntityLoader)
+     {
+-        libxml_disable_entity_loader($libxmlDisableEntityLoader);
++        $oldDisableEntityLoaderState = libxml_disable_entity_loader($libxmlDisableEntityLoader);
+ 
+         $reader = XmlScanner::getInstance(new \PhpOffice\PhpSpreadsheet\Reader\Xml());
+         $result = $reader->scanFile($filename);
+         self::assertEquals($expectedResult, $result);
+-        self::assertEquals($libxmlDisableEntityLoader, libxml_disable_entity_loader());
++
++        libxml_disable_entity_loader($oldDisableEntityLoaderState);
+     }
+ 
+     public function providerValidXML()
+@@ -115,26 +115,4 @@ class XmlScannerTest extends TestCase
+ 
+         return $tests;
+     }
+-
+-    /**
+-     * @dataProvider providerLibxmlSettings
+-     *
+-     * @param $libxmlDisableLoader
+-     */
+-    public function testNewInstanceCreationDoesntChangeLibxmlSettings($libxmlDisableLoader)
+-    {
+-        libxml_disable_entity_loader($libxmlDisableLoader);
+-
+-        $reader = new Xml();
+-        self::assertEquals($libxmlDisableLoader, libxml_disable_entity_loader($libxmlDisableLoader));
+-        unset($reader);
+-    }
+-
+-    public function providerLibxmlSettings()
+-    {
+-        return [
+-            [true],
+-            [false],
+-        ];
+-    }
+ }
+diff --git a/tests/data/Reader/Xml/XEETestInvalidUTF-7_DoubleEncoded.xml b/tests/data/Reader/Xml/XEETestInvalidUTF-7_DoubleEncoded.xml
+new file mode 100644
+index 0000000..cc65a0e
+--- /dev/null
++++ b/tests/data/Reader/Xml/XEETestInvalidUTF-7_DoubleEncoded.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="UTF-7"?>
+++-ADwAIQ-DOCTYPE xmlrootname +-AFsAPAAh-ENTITY +-ACU aaa SYSTEM +-ACI-http://127.0.0.1:8080/ext.dtd+-ACIAPgAl-aaa+-ADsAJQ-ccc+-ADsAJQ-ddd+-ADsAXQA+-

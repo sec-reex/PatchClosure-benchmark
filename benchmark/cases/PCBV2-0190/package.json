@@ -1,0 +1,11 @@
+{
+  "name": "pcb-set-value-core",
+  "private": true,
+  "type": "commonjs",
+  "description": "Faithful-core prototype-pollution guard using the REAL npm `set-value` per version (CVE-2019-10747 -> CVE-2021-23440). npm aliases hold all three versions side-by-side; the harness selects one by HARNESS_VER.",
+  "dependencies": {
+    "set-value-v0": "npm:set-value@3.0.0",
+    "set-value-v1": "npm:set-value@4.0.0",
+    "set-value-v2": "npm:set-value@4.0.1"
+  }
+}

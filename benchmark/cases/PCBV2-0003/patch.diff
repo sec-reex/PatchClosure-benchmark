@@ -1,0 +1,39 @@
+PCBV2-0003 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: (patch_real.diff header carries no commit/tag annotation; body starts directly with diff --git)
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0003/
+
+diff --git a/packages/vite/src/node/server/middlewares/transform.ts b/packages/vite/src/node/server/middlewares/transform.ts
+index b56ccb7..6c2db4b 100644
+--- a/packages/vite/src/node/server/middlewares/transform.ts
++++ b/packages/vite/src/node/server/middlewares/transform.ts
+@@ -41,6 +41,7 @@ import { ensureServingAccess } from './static'
+ const debugCache = createDebugger('vite:cache')
+ 
+ const knownIgnoreList = new Set(['/', '/favicon.ico'])
++const trailingQuerySeparatorsRE = /[?&]+$/
+ 
+ /**
+  * A middleware that short-circuits the middleware chain to serve cached transformed modules
+@@ -163,9 +164,19 @@ export function transformMiddleware(
+         warnAboutExplicitPublicPathInUrl(url)
+       }
+ 
++      const urlWithoutTrailingQuerySeparators = url.replace(
++        trailingQuerySeparatorsRE,
++        '',
++      )
+       if (
+-        (rawRE.test(url) || urlRE.test(url)) &&
+-        !ensureServingAccess(url, server, res, next)
++        (rawRE.test(urlWithoutTrailingQuerySeparators) ||
++          urlRE.test(urlWithoutTrailingQuerySeparators)) &&
++        !ensureServingAccess(
++          urlWithoutTrailingQuerySeparators,
++          server,
++          res,
++          next,
++        )
+       ) {
+         return
+       }

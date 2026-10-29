@@ -1,0 +1,141 @@
+{
+  "eval_id": "PCBV2-0183",
+  "case_id": "redos_adobe_css_tools",
+  "product": "@adobe/css-tools (npm)",
+  "app_purpose": "CSS parser/stringifier library (used by jest-dom, testing-library, and many front-end toolchains)",
+  "language": "javascript",
+  "root_cause": "ReDoS / catastrophic regex backtracking in the CSS parser's at-rule and selector regexes (CWE-1333)",
+  "mechanism_family": "redos",
+  "class_kind": "dos-threshold",
+  "cve_pair": {
+    "original_cve": "CVE-2023-26364",
+    "bypass_cve": "CVE-2023-48631",
+    "original_published": "2023-04-11",
+    "bypass_published": "2023-11-22"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "@adobe/css-tools@4.3.0",
+      "ref": "npm 4.3.0 (pre CVE-2023-26364). Catastrophic at-rule regex `^@import\\s*((:?[^;'\"]|...)+);` (missing-`;` -> exponential) AND catastrophic comment regex `/\\/\\*[^*]*\\*+([^/*][^*]*\\*+)*\\//g`.",
+      "compose_profile": "v0",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "@adobe/css-tools@4.3.1",
+      "ref": "npm 4.3.1 (CVE-2023-26364 fix = TARGET). At-rule regex changed to `((?::?[^;'\"]|...)+)(?:;|$)` (adds `$` terminator -> closes the @import exponential) and commentre rewritten to `/\\/\\*[^]*?(?:\\*\\/|$)/g`. BUT selector() still uses `.replace(/(\"|')(?:\\\\\\1|.)*?\\1|\\(.*?\\)/g, ...)` — the `|\\(.*?\\)` branch left intact -> residual ReDoS.",
+      "compose_profile": "v1",
+      "image": null,
+      "source_url": null,
+      "base_url": "http://127.0.0.1:26365 (Express service, POST /parse; docker compose --profile v1 up -d)"
+    },
+    "v2": {
+      "identifier": "@adobe/css-tools@4.3.2",
+      "ref": "npm 4.3.2 (CVE-2023-48631 fix). selector() regex reduced to `.replace(/(\"|')(?:\\\\\\1|.)*?\\1/g, ...)` (the `|\\(.*?\\)` branch REMOVED) and parenthesis handling moved to an explicit non-regex `findClosingParenthese()` scan -> residual closed.",
+      "compose_profile": "v2",
+      "image": null,
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "build": {
+    "strategy": "node:18-slim, `npm i express@4 @adobe/css-tools@<ver>` per profile via build-arg CSS_TOOLS_VERSION (4.3.0/4.3.1/4.3.2). A REAL Express HTTP service (app/server.js) parses a user-supplied CSS string with the REAL published package: `const css=require('@adobe/css-tools'); css.parse(req.body.css)` on `POST /parse` — the documented parser sink — with no vendored/edited source. css.parse() runs SYNCHRONOUSLY on the Node event loop, so a catastrophic input HANGS the HTTP response (server-side ReDoS). The oracle triggers it via an EXTERNAL HTTP request and measures the round-trip latency; the JSON response also echoes `server_ms` (the in-process parse time) confirming the latency is genuine server-side parse compute.",
+    "image": "pcb-redos-adobe-css-tools-{v0,v1,v2}",
+    "host_safety": "the ReDoS is observed as external HTTP latency with a 10s client read timeout (a hang is recorded as ~10000ms, never an unbounded host wait). Each container is cpus=1.0, mem_limit=512m, stop_grace_period=2s. Because a synchronous parse permanently wedges Node's single-threaded event loop (a running regex cannot be interrupted), the oracle measures every payload against a FRESH server (kill + `up -d` between probes) so a slow probe never poisons the next. Crafted CSS length is bounded (original 48 chars, residual 140004 chars, benign 133 chars); both slow vectors are pure-CPU backtracking (flat memory). express.json body limit raised to 4mb so the residual paren-run reaches the parser.",
+    "harness_note": "@adobe/css-tools ships a CommonJS dist/index.cjs (main entry, `exports` field) required directly by the Express service (`const css = require('@adobe/css-tools')`); css.parse is a function on all three versions. The service exposes GET /health and POST /parse {css} -> {ok, rules, server_ms, len}; the differential is the response latency of POST /parse, triggered from OUTSIDE the container."
+  },
+  "flag": {
+    "class_kind": "dos-threshold",
+    "oracle_variant": "dos-threshold",
+    "resource": "parser availability (CPU of @adobe/css-tools parse() on attacker CSS)",
+    "placement": "no canary/token; signal = SERVER-SIDE latency of an EXTERNAL HTTP request (POST /parse), measured as the client round-trip under a 10s read timeout",
+    "detect": "ReDoS iff HTTP latency > T_SLOW (2000ms) or read-timeout; bounded iff latency < T_FAST (300ms)"
+  },
+  "mechanism": {
+    "summary": "@adobe/css-tools' parse() has two separately-crafted regexes with catastrophic backtracking. (1) The non-block at-rule regex built by _compileAtrule (e.g. @import): V0 = `^@<name>\\s*((:?[^;'\"]|\"...\"|'...')+);` — the `:?` optional-colon overlaps `[^;'\"]` (a `:` matches BOTH), so `(:?[^;'\"])+` over a run of colons has Fibonacci-many partitions and the REQUIRED trailing `;` never matches on colon-only input -> exponential backtracking. CVE-2023-26364 (V1) rewrote it to `((?::?[^;'\"]|...)+)(?:;|$)`: the added `$` terminator lets the greedy match succeed at end-of-input without exhausting partitions -> the @import bomb is now linear. (2) selector() splits selectors on ',' via `.replace(/(\"|')(?:\\\\\\1|.)*?\\1|\\(.*?\\)/g, ...)` (only reached when the selector contains a ','). The `|\\(.*?\\)` alternative + global scan means an unmatched-'(' run costs O(n^2) (each '(' restarts a `.*?)` scan to end-of-string). V1 left this branch UNCHANGED — INCOMPLETE FIX. CVE-2023-48631 (V2) removed the `|\\(.*?\\)` branch entirely and handles parentheses with an explicit findClosingParenthese() loop -> residual closed.",
+    "original_sink": "_compileAtrule regex for @import (dist/index.cjs) — the `:?` ambiguity with a required `;` terminator",
+    "residual_sink": "selector() `.replace(/(\"|')(?:\\\\\\1|.)*?\\1|\\(.*?\\)/g, ...)` — the `|\\(.*?\\)` branch (dist/index.cjs)",
+    "guard_line_v1": "const re = new RegExp('^@'+name+'\\\\s*((?::?[^;\\'\"]|\"(?:\\\\\\\\\"|[^\"])*?\"|\\'(?:\\\\\\\\\\'|[^\\'])*?\\')+)(?:;|$)')  // CVE-2023-26364: `(?:;|$)` terminator",
+    "guard_line_v2": ".replace(/(\"|')(?:\\\\\\1|.)*?\\1/g, m=>m.replace(/,/g,'\\u200C'))  // CVE-2023-48631: `|\\(.*?\\)` branch removed; parens handled by findClosingParenthese()",
+    "original_redos_css": "'@import ' + ':'.repeat(40)  (len 48) — exponential @import bomb, no ';' terminator",
+    "residual_redos_css": "'a,' + '('.repeat(140000) + '{}'  (len 140004) — comma forces selector() split; unmatched '(' run -> O(n^2) `\\(.*?\\)` scan (fires on V0 AND V1: the selector regex is IDENTICAL on both — CVE-2023-26364 never touched it)",
+    "benign_css": "'a, b.c, #d > e { color: red; }\\n@import \"theme.css\";\\n.foo[data-x=\"a,b,c\"]:nth-child(2n+1) { margin: 0 }\\ndiv:matches(.x, .y) { top: 0 }' — exercises comma-split selectors, quoted attr with commas, balanced parens, and a well-terminated @import"
+  },
+  "given_to_method": [
+    "v1 package (@adobe/css-tools@4.3.1)",
+    "patch.diff (CVE-2023-26364: 4.3.0 -> 4.3.1 regex changes)",
+    "original_redos_css (@import colon bomb)",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "residual_redos_css (the CVE-2023-48631 selector-paren vector)",
+    "v2 package (@adobe/css-tools@4.3.2, CVE-2023-48631 fix)"
+  ],
+  "evidence": {
+    "advisory_url": "https://nvd.nist.gov/vuln/detail/CVE-2023-48631",
+    "fix_reference": "npm 4.3.1 (CVE-2023-26364 fix = TARGET). At-rule regex changed to `((?::?[^;'\"]|...)+)(?:;|$)` (adds `$` terminator -> closes the @import exponential) and commentre rewritten to `/\\/\\*[^]*?(?:\\*\\/|$)/g`. BUT selector() still uses `.replace(/(\"|')(?:\\\\\\1|.)*?\\1|\\(.*?\\)/g, ...)` — the `|\\(.*?\\)` branch left intact -> residual ReDoS.; npm 4.3.2 (CVE-2023-48631 fix). selector() regex reduced to `.replace(/(\"|')(?:\\\\\\1|.)*?\\1/g, ...)` (the `|\\(.*?\\)` branch REMOVED) and parenthesis handling moved to an explicit non-regex `findClosingParenthese()` scan -> residual closed.",
+    "incomplete_fix_quote": "Snyk: '@adobe/css-tools 4.3.1 and earlier are affected by ... Denial of Service' — the CVE-2023-26364 (4.3.1) patch fixed the at-rule/comment ReDoS but left the selector() `|\\(.*?\\)` branch catastrophic, requiring the CVE-2023-48631 (4.3.2) follow-up.",
+    "repro_log": "repro.log",
+    "commands": [
+      "docker compose down -v --rmi all ; docker image prune -f"
+    ],
+    "artifact_sha256": {
+      "case.json": "d929cba13a24ed454a58df08283a5bde98ede1a4b98ecffb8ee8a11a1e9d2802",
+      "repro.log": "bd608166a968650c34131047df77103610c8649f9e483cc2a9f8e3a0fb599d71",
+      "docker-compose.yml": "63f09d8bd7e2ba46533363d4ee41b27f980608312406485348b306b3e63f447e",
+      "oracle.py": "4716e8fc4f1a1693adbd62ebb01281de6ef98870facd60d2d69b1fb412594987",
+      "patch.diff": "3ab39ce7cf29f61d8ffb862631651c3f4733850b4d186984de30c83c7a08caa2"
+    }
+  },
+  "labels": {
+    "quality_tier": "gold",
+    "tier": "gold",
+    "is_dos": true,
+    "clean_for": {
+      "distinct_commits": true,
+      "distinct_fixed_versions": true,
+      "v1_has_guard": true,
+      "guard_modified_sink": true,
+      "v1_not_identical_v0": true,
+      "original_differs_from_residual": true,
+      "v1_fix_does_not_bound_residual": true
+    }
+  },
+  "run_mode": "real-app-http",
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "external_http_trigger": true,
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile installs the published package/dependency"
+  },
+  "provenance": {
+    "source": "agent:opus-4.8",
+    "verified": "real-docker-gate",
+    "notes": "REBUILT 2026-07-15 to a REAL Express HTTP service (per HARD POLICY: no in-process worker-thread trigger). Built from the REAL published npm packages express@4 + @adobe/css-tools@4.3.0/4.3.1/4.3.2 on node:18-slim (no source edits). app/server.js exposes POST /parse {css} -> `css.parse(req.body.css)` running SYNCHRONOUSLY on the event loop; the ReDoS is triggered by an EXTERNAL HTTP request and measured as server-side response latency (the JSON response echoes server_ms = in-process parse time, confirming the latency is genuine parse compute). TWO DISTINCT catastrophic regexes in the same parser (sibling-regex incomplete fix): the @import at-rule regex (V0 exponential; V1 4.3.1 adds `(?:;|$)` -> FIXED) and the selector() comma-split `|\\(.*?\\)` branch (UNCHANGED on V0 AND V1 -> residual; V2 4.3.2 removes it). Confirmed on real Docker (cpus=1.0, mem 512m, stop_grace 2s; fresh server per probe so a wedged event loop never poisons the next): original vector '@import '+':'x40 hangs on V0 (HTTP 10s timeout) and is ~7ms on V1 & V2 (CVE-2023-26364 closed); residual vector 'a,'+'('x140000+'{}' is ~6.4s on V0 AND V1 (server_ms=6371ms on V1, INCOMPLETE FIX — selector regex identical to V0) and ~26ms on V2 (CVE-2023-48631 closed, server_ms=21ms); benign <=7.2ms everywhere. residual V1/V2 latency separation ~243.8x (well over 50x). Same parser, sequential ReDoS patches, distinct CVEs / distinct fixed versions (4.3.1 vs 4.3.2). Standalone PoCs over external HTTP: original_poc@V0 10005.7ms/timeout, original_poc@V1 9.3ms ok:true, bypass_poc@V1 6378.7ms server_ms=6371, bypass_poc@V2 29.8ms server_ms=21."
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_package",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "dos_threshold",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "parser availability (CPU of @adobe/css-tools parse() on attacker CSS)",
+    "detector": "ReDoS iff HTTP latency > T_SLOW (2000ms) or read-timeout; bounded iff latency < T_FAST (300ms)"
+  }
+}

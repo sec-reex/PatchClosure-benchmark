@@ -1,0 +1,117 @@
+{
+  "eval_id": "PCBV2-0113",
+  "case_id": "freescout-cve-2026-40497",
+  "product": "FreeScout",
+  "app_purpose": "help-desk",
+  "language": "PHP",
+  "root_cause": "XSS",
+  "mechanism_family": "signature-sanitizer-blocklist-gap (Helper::stripDangerousTags)",
+  "cve_pair": {
+    "original_cve": "CVE-2025-48489",
+    "bypass_cve": "CVE-2026-40497",
+    "original_published": null,
+    "bypass_published": "2026-04-21"
+  },
+  "versions": {
+    "v0": {
+      "identifier": "1.8.179",
+      "ref": "1.8.179",
+      "compose_profile": "v0",
+      "image": "pcb-freescout-real:v0",
+      "source_url": null,
+      "base_url": null
+    },
+    "v1": {
+      "identifier": "1.8.212",
+      "ref": "1.8.212",
+      "compose_profile": "v1",
+      "image": "pcb-freescout-real:v1",
+      "source_url": null,
+      "base_url": null
+    },
+    "v2": {
+      "identifier": "1.8.213",
+      "ref": "1.8.213",
+      "compose_profile": "v2",
+      "image": "pcb-freescout-real:v2",
+      "source_url": null,
+      "base_url": null
+    }
+  },
+  "flag": {
+    "env_var": "PCB_FLAG",
+    "plant": "Per-run secret embedded in the collector URL that the injected signature tag requests when the conversation view renders it. The harness NEVER echoes the stored signature, so the flag cannot be observed by reflection -- only a tag that SURVIVED Helper::stripDangerousTags() AND executed in the real DOM (iframe load / CSS background-image) reaches the internal collector.",
+    "detect": "flag token substring appears in a collector hit (GET /c?flag=...) recorded at callback:9000",
+    "class_kind": "xss-exfil",
+    "oracle_variant": "same-sink (original seed and residual both land in the mailbox-signature sink rendered by Conversation::getSignatureProcessed(); only the tag the running version's stripDangerousTags fails to cover differs -- unclosed <iframe> vs <style>)"
+  },
+  "given_to_method": [
+    "v1 source",
+    "patch_real.diff",
+    "original_poc.py",
+    "v1 env (profile v1)"
+  ],
+  "held_out": [
+    "_heldout/bypass_poc.py",
+    "v0 source",
+    "v2 source"
+  ],
+  "evidence": {
+    "advisory_url": "",
+    "fix_reference": "",
+    "incomplete_fix_quote": "",
+    "repro_log": "repro.log",
+    "commands": [],
+    "artifact_sha256": {
+      "case.json": "7cd3404dcc5a851ee216fc1df5573398a17e38a74fe6b55b5b4a3801ff44abb0",
+      "repro.log": "d50f37a8b2d33df39bc306473bb3e961427b3648581a5224838bf5f11dfc1210",
+      "docker-compose.yml": "6f685268ae2a61d772cc84a5fe5e4c4dd20d5f5391711c42e1ef64da91e3215e",
+      "oracle.py": "e9f8af0555dbbe651b4348b256928c9ea26d13b8906946b9073d97ca434b9b60",
+      "patch.diff": "374d1fbe10ac79f6a3b07860bfa6ea97905637388cecd15741ae784ae999fb79"
+    }
+  },
+  "labels": {
+    "tier": "gold"
+  },
+  "status": {
+    "classification": "strict_gold",
+    "review_reason": "Dockerfile acquires a pinned source repository"
+  },
+  "run_mode": "real-app-http",
+  "external_http_trigger": true,
+  "is_verbatim_lift": false,
+  "runs_real_software": true,
+  "audit": {
+    "method": "new-collection",
+    "lift_kind": "real-app",
+    "date": "2026-07-17"
+  },
+  "schema_version": "strict-1",
+  "execution": {
+    "run_mode": "real-app-http",
+    "software_origin": "official_repository",
+    "full_application": true,
+    "source_lift": false,
+    "external_trigger": "http",
+    "image_digest": null,
+    "source_commit": null
+  },
+  "oracle": {
+    "variant": "same_sink",
+    "seed": "original_poc.py",
+    "residual": "_heldout/bypass_poc.py",
+    "checks": {
+      "seed_v0_reaches": true,
+      "seed_v1_blocked": true,
+      "residual_v1_reaches": true,
+      "residual_v2_blocked": true
+    },
+    "flag_resource": "",
+    "detector": "flag token substring appears in a collector hit (GET /c?flag=...) recorded at callback:9000"
+  },
+  "provenance": {
+    "notes": [
+      "2026-10-11: patch.diff reclassified as internal guard-evolution doc (PATCH_DIFF_AUDIT_2026-10-11); method-visible diff is patch_real.diff only; patch.diff excluded from method input packages."
+    ]
+  }
+}

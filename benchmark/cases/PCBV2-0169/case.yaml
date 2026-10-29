@@ -1,0 +1,24 @@
+case_id: PCBV2-0169
+public_name: phpmailer-cve-2016-10045
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: git
+  repo: https://github.com/PHPMailer/PHPMailer.git
+  v0: v5.2.17
+  v1: v5.2.18
+service:
+  # Host port is ${PORT_V*_0}, not :8080. start.sh waits for /healthz after up.
+  readiness: none
+  exposed_ports: [8080]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

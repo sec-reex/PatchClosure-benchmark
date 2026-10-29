@@ -1,0 +1,33 @@
+# Three run-to-completion profiles, one per REAL OpenSSL release.
+# Each image compiles the real OpenSSL from source and installs the real c_rehash + openssl.
+# Invoked as: docker compose --profile vN run --rm vN <original|residual>
+services:
+  v0:
+    build:
+      context: .
+      args:
+        OSSL_VER: "1.1.1n"
+    image: pcb-crehash-real-v0
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    profiles: ["v0"]
+  v1:
+    build:
+      context: .
+      args:
+        OSSL_VER: "1.1.1o"
+    image: pcb-crehash-real-v1
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    profiles: ["v1"]
+  v2:
+    build:
+      context: .
+      args:
+        OSSL_VER: "1.1.1p"
+    image: pcb-crehash-real-v2
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG}"
+    profiles: ["v2"]
+# No host ports and no fixed IPAM: probe is `compose run --rm`. A pinned subnet
+# collides with leftover project networks and fails create.

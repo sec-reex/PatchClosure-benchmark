@@ -1,0 +1,50 @@
+PCBV2-0046 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: Fix: d4d815d0caae3dbae83ac70a1ae4581bd57cf376
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0046/
+
+diff --git a/wwwroot/cgi-bin/awstats.pl b/wwwroot/cgi-bin/awstats.pl
+index b04ed6f..b789a2c 100755
+--- a/wwwroot/cgi-bin/awstats.pl
++++ b/wwwroot/cgi-bin/awstats.pl
+@@ -1780,22 +1780,24 @@ sub Read_Config {
+ 		}else{if ($Debug){debug("Unable to open config file: $searchdir$SiteConfig", 2);}}
+ 	}
+ 	
+-	#CL - Added to open config if full path is passed to awstats 
+-	if ( !$FileConfig ) {
+-		
+-		my $SiteConfigBis = File::Spec->rel2abs($SiteConfig);
+-		debug("Finally, try to open an absolute path : $SiteConfigBis", 2);
+-	
+-		if ( -f $SiteConfigBis && open(CONFIG, "$SiteConfigBis")) {
+-			$FileConfig = "$SiteConfigBis";
+-			$FileSuffix = '';
+-			if ($Debug){debug("Opened config: $SiteConfigBis", 2);}
+-			$SiteConfig=$SiteConfigBis;
+-		}
+-		else {
+-			if ($Debug){debug("Unable to open config file: $SiteConfigBis", 2);}
+-		}
+-	}
++	#CL - Added to open config if full path is passed to awstats
++	# Disabled by LDR for security reason.
++	# If we need to execute config into other dir 
++	#if ( !$FileConfig ) {
++	#	
++	#	my $SiteConfigBis = File::Spec->rel2abs($SiteConfig);
++	#	debug("Finally, try to open an absolute path : $SiteConfigBis", 2);
++	#
++	#	if ( -f $SiteConfigBis && open(CONFIG, "$SiteConfigBis")) {
++	#		$FileConfig = "$SiteConfigBis";
++	#		$FileSuffix = '';
++	#		if ($Debug){debug("Opened config: $SiteConfigBis", 2);}
++	#		$SiteConfig=$SiteConfigBis;
++	#	}
++	#	else {
++	#		if ($Debug){debug("Unable to open config file: $SiteConfigBis", 2);}
++	#	}
++	#}
+ 	
+ 	if ( !$FileConfig ) {
+ 		if ($DEBUGFORCED || !$ENV{'GATEWAY_INTERFACE'}){

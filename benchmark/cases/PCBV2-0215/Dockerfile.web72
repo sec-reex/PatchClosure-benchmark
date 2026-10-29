@@ -1,0 +1,33 @@
+# WEB runtime for xxe_phpspreadsheet_utf7 -- php:7.2.0-cli serving a REAL upload web app.
+#
+# Pair: CVE-2018-19277 (V1=TARGET, incomplete) -> CVE-2019-12331 (V2 fix). Sink:
+# src/PhpSpreadsheet/Reader/Security/XmlScanner.php (scan()/toUtf8()) -- the anti-XXE scanner run
+# before libxml parses each XML part, reached through the REAL \PhpOffice\PhpSpreadsheet\IOFactory::load()
+# inside a genuine web app that accepts a user-uploaded spreadsheet over HTTP (`POST /upload`, field "file").
+#
+# All three profiles (V0=1.5.0, V1=1.5.1, V2=1.8.0) run on php:7.2.0-cli: on 7.2.0 the library's own
+# XmlScanner::(threadSafe)LibxmlDisableEntityLoaderAvailability() returns FALSE, so it does NOT
+# auto-call libxml_disable_entity_loader(true) -> the SCANNER regex is the SOLE guard (faithful code
+# path that makes the scanner differential observable across the three releases).
+#
+# Recipe-only (NO vendored source/images). Each service builds the EXACT published release via composer
+# and serves www/index.php through the PHP built-in server. The malicious spreadsheet is NOT baked into
+# the image; the oracle packages it (build_fixture.php) and uploads it over real HTTP to the port.
+FROM composer:2.2 AS deps
+WORKDIR /app
+ARG PS_VERSION
+RUN composer require phpoffice/phpspreadsheet:${PS_VERSION} \
+      --no-interaction --no-progress --ignore-platform-reqs --no-scripts
+
+FROM php:7.2.0-cli
+RUN printf 'deb [check-valid-until=no] http://archive.debian.org/debian stretch main\ndeb [check-valid-until=no] http://archive.debian.org/debian-security stretch/updates main\n' > /etc/apt/sources.list
+RUN apt-get -o Acquire::Check-Valid-Until=false update \
+    && apt-get install -y --no-install-recommends --allow-unauthenticated libzip-dev zlib1g-dev libxml2-dev \
+    && docker-php-ext-install zip mbstring \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=deps /app/vendor /app/vendor
+COPY build_fixture.php /app/build_fixture.php
+COPY www /app/www
+EXPOSE 80
+CMD ["php","-S","0.0.0.0:80","/app/www/router.php"]

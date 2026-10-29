@@ -1,0 +1,117 @@
+# CVE-2023-50839
+# https://downloads.wordpress.org/plugin/js-support-ticket
+# range: 2.8.1 -> 2.8.2 (official wordpress.org plugin zips)
+diff --git a/includes/activation.php b/includes/activation.php
+index c79ec70..e27a70b 100644
+--- a/includes/activation.php
++++ b/includes/activation.php
+@@ -194,8 +194,8 @@ class JSSTactivation {
+                     ('tplink_faqs_user', '0', 'tplink', 'faq'),
+                     ('show_breadcrumbs', '1', 'default', NULL),
+                     ('productcode', 'jsticket', 'default', NULL),
+-                    ('versioncode', '2.8.1', 'default', NULL),
+-                    ('productversion', '281', 'default', NULL),
++                    ('versioncode', '2.8.2', 'default', NULL),
++                    ('productversion', '282', 'default', NULL),
+                     ('producttype', 'free', 'default', NULL),
+                     ('tve_enabled', '2', 'default', NULL),
+                     ('tve_mailreadtype', '3', 'default', NULL),
+diff --git a/includes/updates/sql/282.sql b/includes/updates/sql/282.sql
+new file mode 100644
+index 0000000..5e81282
+--- /dev/null
++++ b/includes/updates/sql/282.sql
+@@ -0,0 +1,2 @@
++REPLACE INTO `#__js_ticket_config` (`configname`, `configvalue`, `configfor`) VALUES ('versioncode','2.8.2','default');
++REPLACE INTO `#__js_ticket_config` (`configname`, `configvalue`, `configfor`) VALUES ('productversion','282','default');
+diff --git a/js-support-ticket.php b/js-support-ticket.php
+index 740f6a5..8b9d677 100644
+--- a/js-support-ticket.php
++++ b/js-support-ticket.php
+@@ -3,14 +3,14 @@
+ /**
+  * @package JS Help Desk
+  * @author Ahmad Bilal
+- * @version 2.8.1
++ * @version 2.8.2
+  */
+ /*
+   Plugin Name: JS Help Desk
+   Plugin URI: https://www.jshelpdesk.com
+   Description: JS Help Desk is a trusted open source ticket system. JS Help Desk is a simple, easy to use, web-based customer support system. User can create ticket from front-end. JS Help Desk comes packed with lot features than most of the expensive(and complex) support ticket system on market. JS Help Desk provide you best industry help desk system.
+   Author: JS Help Desk
+-  Version: 2.8.1
++  Version: 2.8.2
+   Text Domain: js-support-ticket
+   Author URI: https://www.jshelpdesk.com
+  */
+@@ -66,7 +66,7 @@ class jssupportticket {
+         self::$_data = array();
+         self::$_search = array();
+         self::$_captcha = array();
+-        self::$_currentversion = '281';
++        self::$_currentversion = '282';
+         self::$_addon_query = array('select'=>'','join'=>'','where'=>'');
+         self::$_jshdsession = JSSTincluder::getObjectClass('wphdsession');
+         global $wpdb;
+@@ -144,7 +144,7 @@ class jssupportticket {
+                     // restore colors data end
+                     update_option('jsst_currentversion', self::$_currentversion);
+                     include_once JSST_PLUGIN_PATH . 'includes/updates/updates.php';
+-                    JSSTupdates::checkUpdates('281');
++                    JSSTupdates::checkUpdates('282');
+                     JSSTincluder::getJSModel('jssupportticket')->updateColorFile();
+                 }
+             }
+diff --git a/modules/jssupportticket/controller.php b/modules/jssupportticket/controller.php
+index 94db1f8..b6e8aad 100644
+--- a/modules/jssupportticket/controller.php
++++ b/modules/jssupportticket/controller.php
+@@ -21,7 +21,7 @@ class JSSTjssupportticketController {
+                 case 'controlpanel':
+                     JSSTincluder::getJSModel('jssupportticket')->getControlPanelData();
+                     include_once JSST_PLUGIN_PATH . 'includes/updates/updates.php';
+-                    JSSTupdates::checkUpdates('281');
++                    JSSTupdates::checkUpdates('282');
+                     JSSTincluder::getJSModel('jssupportticket')->updateColorFile();
+                     //JSSTincluder::getJSModel('jssupportticket')->getStaffControlPanelData();
+                     break;
+diff --git a/modules/ticket/model.php b/modules/ticket/model.php
+index be9708f..3b348ec 100644
+--- a/modules/ticket/model.php
++++ b/modules/ticket/model.php
+@@ -2279,6 +2279,9 @@ class JSSTticketModel {
+         }
+         if($emailaddress == '' && $trackingid == ''){
+             return false;
++        } else{
++            $emailaddress = sanitize_email($emailaddress);
++            $trackingid = sanitize_email($trackingid);
+         }
+         $query = "SELECT id FROM `" . jssupportticket::$_db->prefix . "js_ticket_tickets` WHERE email = '" . $emailaddress . "' AND ticketid = '" . $trackingid . "'";
+         $ticketid = jssupportticket::$_db->get_var($query);
+diff --git a/readme.txt b/readme.txt
+index ac4f102..d49e272 100644
+--- a/readme.txt
++++ b/readme.txt
+@@ -3,8 +3,8 @@ Contributors: rabilal
+ Donate link: https://jshelpdesk.com/pricing/
+ Tags:  helpdesk,ticket system,support,tickets,support ticket,support desk,help,paid support,knowledgebase,faq, support plugin, ticket plugin, support system, ticketing system,monitor desk, help desk, IMAP, Email Piping, agents, js support ticket
+ Requires at least: 5.5
+-Tested up to: 6.4.1
+-Stable tag: 2.8.1
++Tested up to: 6.4.2
++Stable tag: 2.8.2
+ License: GPLv2
+ License URI: http://www.gnu.org/licenses/gpl-2.0.html
+ 
+@@ -241,6 +241,9 @@ Automatic updates should work like a charm; as always though, ensure you backup
+ 21. Internal Mails
+ 
+ == Changelog ==
++= 2.8.2 =
++* Security update
++
+ = 2.8.1 =
+ * Add reCaptcha 3
+ * Improve plugin translation

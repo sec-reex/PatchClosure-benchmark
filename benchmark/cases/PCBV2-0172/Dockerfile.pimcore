@@ -1,0 +1,94 @@
+# Real Pimcore image for PatchClosure-Bench pimcore-cve-2026-23492.
+# Builds a full Pimcore skeleton with the specified pimcore/pimcore version.
+# Installation, class/brick creation, and flag seeding happen at container start.
+#
+# Build args:
+#   PIMCORE_VERSION  = pimcore/pimcore version (e.g. 11.5.13, 11.5.14)
+
+FROM php:8.3-apache
+
+# ---- System dependencies ----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libicu-dev libzip-dev libpng-dev libjpeg-dev libfreetype6-dev \
+        unzip git default-mysql-client libxml2-dev libcurl4-openssl-dev \
+        locales \
+    && sed -i '/en_US.UTF-8/s/^# //' /etc/locale.gen && locale-gen \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+
+# ---- PHP extensions required by Pimcore ----
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) \
+        intl zip gd pdo pdo_mysql opcache curl exif
+
+# ---- Apache modules ----
+RUN a2enmod rewrite headers
+
+# ---- Composer ----
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# ---- PHP tuning ----
+RUN { \
+      echo "memory_limit=1G"; \
+      echo "max_execution_time=600"; \
+      echo "upload_max_filesize=128M"; \
+      echo "post_max_size=128M"; \
+      echo "display_errors=On"; \
+      echo "error_reporting=E_ALL"; \
+    } > /usr/local/etc/php/conf.d/pimcore-pcb.ini
+
+WORKDIR /var/www/html
+
+# ---- Create Pimcore skeleton (no install yet) ----
+# Pin skeleton to ^11.0 for Pimcore 11.x compatibility (latest is for 12.x/2025 platform)
+RUN COMPOSER_ALLOW_SUPERUSER=1 \
+    composer create-project "pimcore/skeleton:^11.0" . \
+    --no-interaction --no-install --prefer-dist 2>&1
+
+# ---- Pin Pimcore version ----
+ARG PIMCORE_VERSION=11.5.13
+RUN COMPOSER_ALLOW_SUPERUSER=1 \
+    composer require "pimcore/pimcore:${PIMCORE_VERSION}" \
+    --no-update --no-interaction 2>&1
+
+# ---- Disable Composer security advisory blocking (we install known-vuln versions on purpose) ----
+RUN COMPOSER_ALLOW_SUPERUSER=1 \
+    composer config policy.advisories.block false 2>&1 || true
+RUN COMPOSER_ALLOW_SUPERUSER=1 \
+    composer config --global policy.advisories.block false 2>&1 || true
+
+# ---- Install all dependencies ----
+RUN COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_NO_AUDIT=1 \
+    composer update --no-interaction --no-scripts --prefer-dist 2>&1
+
+# ---- Run safe post-install scripts (autoload) ----
+RUN COMPOSER_ALLOW_SUPERUSER=1 composer dump-autoload 2>&1
+
+# ---- Apache vhost: DocumentRoot = public/ ----
+RUN echo '<VirtualHost *:80>\n\
+    DocumentRoot /var/www/html/public\n\
+    <Directory /var/www/html/public>\n\
+        AllowOverride All\n\
+        Options FollowSymLinks\n\
+        Require all granted\n\
+    </Directory>\n\
+    ErrorLog ${APACHE_LOG_DIR}/error.log\n\
+    CustomLog ${APACHE_LOG_DIR}/access.log combined\n\
+</VirtualHost>' > /etc/apache2/sites-available/000-default.conf
+
+# ---- Create var directories Pimcore needs ----
+RUN mkdir -p var/cache var/log var/tmp var/config var/email var/recyclebin \
+             var/versions var/admin var/classes public/var \
+    && chown -R www-data:www-data var public/var
+
+# ---- Copy setup scripts ----
+COPY setup/ /opt/pimcore-setup/
+RUN chmod +x /opt/pimcore-setup/entrypoint.sh
+
+# ---- Readiness marker is written by entrypoint.sh AFTER install (not baked here), so
+# /pcb_health.txt reflects real readiness instead of returning "OK" before the DB is configured. ----
+RUN rm -f /var/www/html/public/pcb_health.txt
+
+EXPOSE 80
+CMD ["/opt/pimcore-setup/entrypoint.sh"]

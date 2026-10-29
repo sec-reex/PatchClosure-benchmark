@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- REAL-SERVER-TCP recipe: maven pulls the EXACT published org.jenkins-ci.main:remoting:${remoting.version}
+     (V0=2.52 / V1=2.53 / V2=3.16) from the official Jenkins artifact repo at build time. No vendored jars.
+     A REAL remoting TCP server (Server.java) reads objects off a real socket through the REAL, unmodified
+     hudson.remoting.ObjectInputStreamEx + ClassFilter sink (the CLI Command#readFrom sink); an EXTERNAL TCP
+     client (Client.java, a separate container) triggers it over the network. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>pcb</groupId>
+  <artifactId>jenkins-remoting-tcp</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <properties>
+    <remoting.version>2.53</remoting.version>
+    <maven.compiler.source>8</maven.compiler.source>
+    <maven.compiler.target>8</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <repositories>
+    <repository>
+      <id>jenkins-public</id>
+      <url>https://repo.jenkins-ci.org/public/</url>
+      <releases><enabled>true</enabled></releases>
+      <snapshots><enabled>false</enabled></snapshots>
+    </repository>
+  </repositories>
+  <dependencies>
+    <dependency>
+      <groupId>org.jenkins-ci.main</groupId>
+      <artifactId>remoting</artifactId>
+      <version>${remoting.version}</version>
+    </dependency>
+  </dependencies>
+</project>

@@ -1,0 +1,52 @@
+PCBV2-0076 V0 -> V1 fix (faithful copy of the verified upstream fix)
+source: 3597dd02149a842e18c9074fc39a3cc1baaf889b
+patch.diff is METHOD-VISIBLE; the V1->V2 guard-evolution notes that used to live here were removed 2026-10-11 (option A uniform rewrite; see reports/PATCH_DIFF_AUDIT_addendum_2026-10-11.md)
+backup of the previous file: replacements_2026-10-11/PCBV2-0076/
+
+diff --git a/CHANGES b/CHANGES
+index e47dd6c..624fc88 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,6 +1,11 @@
+-﻿                                                         -*- coding: utf-8 -*-
++                                                         -*- coding: utf-8 -*-
+ Changes with Apache 2.2.22
+ 
++  *) SECURITY: CVE-2011-3368 (cve.mitre.org)
++     Reject requests where the request-URI does not match the HTTP
++     specification, preventing unexpected expansion of target URLs in
++     some reverse proxy configurations.  [Joe Orton]
++
+   *) Fix a regression introduced by the CVE-2011-3192 byterange fix in 2.2.20:
+      A range of '0-' will now return 206 instead of 200. PR 51878.
+      [Jim Jagielski]
+diff --git a/server/protocol.c b/server/protocol.c
+index 55468fc..b45851a 100644
+--- a/server/protocol.c
++++ b/server/protocol.c
+@@ -640,6 +640,25 @@ static int read_request_line(request_rec *r, apr_bucket_brigade *bb)
+ 
+     ap_parse_uri(r, uri);
+ 
++    /* RFC 2616:
++     *   Request-URI    = "*" | absoluteURI | abs_path | authority
++     *
++     * authority is a special case for CONNECT.  If the request is not
++     * using CONNECT, and the parsed URI does not have scheme, and
++     * it does not begin with '/', and it is not '*', then, fail
++     * and give a 400 response. */
++    if (r->method_number != M_CONNECT 
++        && !r->parsed_uri.scheme 
++        && uri[0] != '/'
++        && !(uri[0] == '*' && uri[1] == '\0')) {
++        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
++                      "invalid request-URI %s", uri);
++        r->args = NULL;
++        r->hostname = NULL;
++        r->status = HTTP_BAD_REQUEST;
++        r->uri = apr_pstrdup(r->pool, uri);
++    }
++
+     if (ll[0]) {
+         r->assbackwards = 0;
+         pro = ll;

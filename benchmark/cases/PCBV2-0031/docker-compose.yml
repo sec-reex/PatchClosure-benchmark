@@ -1,0 +1,59 @@
+services:
+  v0:
+    profiles: ["v0"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ASTRO_VERSION: "6.4.5"
+    image: astro-pcb-v0:latest
+    container_name: pcb-astro-v0
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "$PCB_FLAG" > /flag.txt
+        exec node /app/server.js
+    ports: ["${PORT_V0_0:-33890}:3000"]
+
+  v1:
+    profiles: ["v1"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ASTRO_VERSION: "7.0.4"
+    image: astro-pcb-v1:latest
+    container_name: pcb-astro-v1
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "$PCB_FLAG" > /flag.txt
+        exec node /app/server.js
+    ports: ["${PORT_V1_0:-33891}:3000"]
+
+  v2:
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ASTRO_VERSION: "7.0.6"
+    image: astro-pcb-v2:latest
+    container_name: pcb-astro-v2
+    environment:
+      PCB_FLAG: "${PCB_FLAG:?}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "$PCB_FLAG" > /flag.txt
+        exec node /app/server.js
+    ports: ["${PORT_V2_0:-33892}:3000"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.31.0/24

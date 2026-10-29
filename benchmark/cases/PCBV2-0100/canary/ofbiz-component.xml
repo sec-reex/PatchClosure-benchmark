@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Benign PatchClosure-Bench canary component. Adds the benign canary JAR (pcb-canary.jar) to the OFBiz
+  runtime classpath so the real SafeObjectInputStream deserialization can resolve/instantiate the benign
+  shadow-class names. This is a DEPLOYMENT-only addition (a classpath jar) and does NOT modify any OFBiz
+  source. Dropped into plugins/pcbcanary/ where OFBiz auto-discovers it (framework/base/config/
+  component-load.xml loads parent-directory="plugins"; gradle build.gradle line ~230 also adds every
+  active component's lib/*.jar to the runtime classpath).
+-->
+<ofbiz-component name="pcbcanary"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="http://ofbiz.apache.org/dtds/ofbiz-component.xsd">
+    <resource-loader name="main" type="component"/>
+    <classpath type="jar" location="lib/pcb-canary.jar"/>
+</ofbiz-component>

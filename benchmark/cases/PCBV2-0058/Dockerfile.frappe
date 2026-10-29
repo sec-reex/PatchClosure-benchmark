@@ -1,0 +1,21 @@
+## Real Frappe SUT: official frappe/erpnext bench image + the WHOLE frappe
+## tree at the CVE tag (not a db_query.py snippet / harness).
+## ERPNext image tags do not match Frappe tags (erpnext:v15.57.0 ships
+## Frappe 15.63.1), so we replace apps/frappe with github.com/frappe/frappe
+## at FRAPPE_TAG (v15.57.0 / v15.58.0 / v15.74.2).
+FROM frappe/erpnext:v15.58.0
+
+ARG FRAPPE_TAG=v15.58.0
+
+USER frappe
+WORKDIR /home/frappe/frappe-bench
+
+RUN rm -rf apps/frappe \
+    && git clone --depth 1 --branch "${FRAPPE_TAG}" https://github.com/frappe/frappe.git apps/frappe \
+    && ./env/bin/pip install --no-cache-dir -e apps/frappe --no-deps \
+    && ./env/bin/python -c "import frappe; v=frappe.__version__; t='${FRAPPE_TAG}'.lstrip('v'); assert v==t, (v,t)"
+
+COPY --chown=frappe:frappe --chmod=755 entrypoint.sh /home/frappe/entrypoint.sh
+
+EXPOSE 8000
+ENTRYPOINT ["/home/frappe/entrypoint.sh"]

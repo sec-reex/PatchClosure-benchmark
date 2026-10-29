@@ -1,0 +1,83 @@
+CVE: CVE-2024-11171
+upstream: https://github.com/danny-avila/LibreChat
+fix: bb58a2d0662ef86dc75a9d2f6560125c018e3836 (0.7.6 multer limits)
+
+diff --git a/api/server/routes/files/avatar.js b/api/server/routes/files/avatar.js
+index beb64d449a8..74585a7ed44 100644
+--- a/api/server/routes/files/avatar.js
++++ b/api/server/routes/files/avatar.js
+@@ -1,17 +1,18 @@
+-const multer = require('multer');
++const fs = require('fs').promises;
+ const express = require('express');
+ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+ const { resizeAvatar } = require('~/server/services/Files/images/avatar');
++const { filterFile } = require('~/server/services/Files/process');
+ const { logger } = require('~/config');
+ 
+-const upload = multer();
+ const router = express.Router();
+ 
+-router.post('/', upload.single('input'), async (req, res) => {
++router.post('/', async (req, res) => {
+   try {
++    filterFile({ req, file: req.file, image: true, isAvatar: true });
+     const userId = req.user.id;
+     const { manual } = req.body;
+-    const input = req.file.buffer;
++    const input = await fs.readFile(req.file.path);
+ 
+     if (!userId) {
+       throw new Error('User ID is undefined');
+diff --git a/api/server/services/Files/process.js b/api/server/services/Files/process.js
+index d1cbc13ed10..37f465074dc 100644
+--- a/api/server/services/Files/process.js
++++ b/api/server/services/Files/process.js
+@@ -716,14 +716,15 @@ async function retrieveAndProcessFile({
+  * @param {number} [params.req.version]
+  * @param {Express.Multer.File} params.file - The file uploaded to the server via multer.
+  * @param {boolean} [params.image] - Whether the file expected is an image.
++ * @param {boolean} [params.isAvatar] - Whether the file expected is a user or entity avatar.
+  * @returns {void}
+  *
+  * @throws {Error} If a file exception is caught (invalid file size or type, lack of metadata).
+  */
+-function filterFile({ req, file, image }) {
++function filterFile({ req, file, image, isAvatar }) {
+   const { endpoint, file_id, width, height } = req.body;
+ 
+-  if (!file_id) {
++  if (!file_id && !isAvatar) {
+     throw new Error('No file_id provided');
+   }
+ 
+@@ -732,20 +733,25 @@ function filterFile({ req, file, image }) {
+   }
+ 
+   /* parse to validate api call, throws error on fail */
+-  isUUID.parse(file_id);
++  if (!isAvatar) {
++    isUUID.parse(file_id);
++  }
+ 
+-  if (!endpoint) {
++  if (!endpoint && !isAvatar) {
+     throw new Error('No endpoint provided');
+   }
+ 
+   const fileConfig = mergeFileConfig(req.app.locals.fileConfig);
+ 
+-  const { fileSizeLimit, supportedMimeTypes } =
++  const { fileSizeLimit: sizeLimit, supportedMimeTypes } =
+     fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
++  const fileSizeLimit = isAvatar === true ? fileConfig.avatarSizeLimit : sizeLimit;
+ 
+   if (file.size > fileSizeLimit) {
+     throw new Error(
+-      `File size limit of ${fileSizeLimit / megabyte} MB exceeded for ${endpoint} endpoint`,
++      `File size limit of ${fileSizeLimit / megabyte} MB exceeded for ${
++        isAvatar ? 'avatar upload' : `${endpoint} endpoint`
++      }`,
+     );
+   }
+ 

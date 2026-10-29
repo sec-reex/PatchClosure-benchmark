@@ -1,0 +1,53 @@
+# PatchClosure-Bench recipe for pyyaml-cve-2019-20477.
+# Pair: CVE-2017-18342 (original: yaml.load unsafe full deserialization RCE) ->
+#       CVE-2019-20477 (incomplete-fix / bypass of the FullLoader guard).
+# Root cause: unsafe deserialization (CWE-502) via PyYAML's python/object/apply constructor.
+# Canary kind = rce-oob (read a benign canary file): startup writes ${PCB_FLAG} to /canary/flag.txt
+# (outside /app); a payload "succeeds" only by getting a YAML tag past the loader that reads & echoes
+# that token. NO os.system / network / process spawn — a benign deserialization-driven file read.
+#
+# Sink (all versions): yaml.load(payload, Loader=<role>). Guard arithmetic (from the 5.1 vs 5.2 diff):
+#   V0 (pyyaml 3.13, Loader=yaml.Loader  = pre-CVE-2017-18342 full/unsafe default):
+#        !!python/object/apply:builtins.eval [...] executes -> reads canary -> FLAG.
+#   V1 (pyyaml 5.1, Loader=yaml.FullLoader = the CVE-2017-18342 guard)  <- TARGET:
+#        FullConstructor.make_python_instance raises on a FUNCTION apply ("expected a class") ->
+#        original eval vector BLOCKED, BUT python/object/apply is still registered on FullConstructor
+#        and permits any TYPE -> list(io.FileIO(canary)) instantiation reads the canary -> FLAG (BYPASS).
+#   V2 (pyyaml 5.2, Loader=yaml.FullLoader = CVE-2019-20477 fix, PR #347):
+#        python/object/apply removed from FullConstructor -> "could not determine a constructor" ->
+#        residual BLOCKED (negative control).
+services:
+  v0:
+    profiles: ["v0"]
+    build: { context: ., args: { PYYAML_VERSION: "3.13" } }
+    image: "pcb-pyyaml-core:v0"
+    command: ["python", "/app/harness.py"]
+    environment:
+      HARNESS_VER: "v0"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V0_0:-39410}:8080"]
+
+  v1:
+    profiles: ["v1"]
+    build: { context: ., args: { PYYAML_VERSION: "5.1" } }
+    image: "pcb-pyyaml-core:v1"
+    command: ["python", "/app/harness.py"]
+    environment:
+      HARNESS_VER: "v1"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V1_0:-39411}:8080"]
+
+  v2:
+    profiles: ["v2"]
+    build: { context: ., args: { PYYAML_VERSION: "5.2" } }
+    image: "pcb-pyyaml-core:v2"
+    command: ["python", "/app/harness.py"]
+    environment:
+      HARNESS_VER: "v2"
+      PCB_FLAG: "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}"
+    ports: ["${PORT_V2_0:-39412}:8080"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.180.0/24

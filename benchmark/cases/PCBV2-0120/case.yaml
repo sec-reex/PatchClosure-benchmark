@@ -1,0 +1,25 @@
+case_id: PCBV2-0120
+public_name: gnu-bash-shellshock-cve-2014-7169
+run_mode: real-app-http
+oracle_family: read_exfil
+compose_file: docker-compose.yml
+scripts:
+  prepare: scripts/prepare.sh
+  fetch_source: scripts/fetch_source.sh
+  start: scripts/start.sh
+  verify: scripts/verify.sh
+  reset: scripts/reset.sh
+  stop: scripts/stop.sh
+source:
+  type: url_tgz
+  repo: https://ftp.gnu.org/gnu/bash/bash-4.3.tar.gz
+  v0: "4.3"
+  v1: "4.3"
+service:
+  # Compose publishes ${PORT_V*_0}:80. Platform HTTP on host :80 would miss.
+  # start.sh / reset.sh wait on the published host CGI after up.
+  readiness: none
+  exposed_ports: [80]
+verification:
+  seed_command: [scripts/verify.sh, --seed]
+  residual_command: [scripts/verify.sh, --residual]

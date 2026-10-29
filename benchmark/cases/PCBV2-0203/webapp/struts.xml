@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE struts PUBLIC
+    "-//Apache Software Foundation//DTD Struts Configuration 2.5//EN"
+    "https://struts.apache.org/dtds/struts-2.5.dtd">
+<!-- Minimal app: a single file-upload action wired to the REAL struts "defaultStack".
+     On 6.3.0 / 6.3.0.2 the defaultStack contains the legacy "fileUpload" (FileUploadInterceptor).
+     On 6.4.0 the defaultStack contains BOTH "fileUpload" (deprecated) and "actionFileUpload"
+     (ActionFileUploadInterceptor); the migrated action implements UploadedFilesAware so the file
+     is delivered through the new callback with a framework-controlled name (S2-067 remediation).
+     No struts code is modified; only the version JAR and the action class differ per profile. -->
+<struts>
+    <constant name="struts.devMode" value="false"/>
+    <constant name="struts.multipart.maxSize" value="10485760"/>
+    <package name="pcb" namespace="/" extends="struts-default">
+        <action name="upload" class="pcb.UploadAction">
+        </action>
+    </package>
+</struts>
