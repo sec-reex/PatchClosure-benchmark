@@ -23,7 +23,6 @@ services:
     profiles: ["v0"]
     build: { context: ., args: { FROXLOR_REF: "2.3.4" } }
     image: "pcb-froxlor-dns:v0"
-    container_name: pcb-froxlor-dns-v0
     environment:
       DB_HOST: "mysql"
       DB_DATABASE: "froxlor_v0"
@@ -40,7 +39,6 @@ services:
     profiles: ["v1"]
     build: { context: ., args: { FROXLOR_REF: "2.3.5" } }
     image: "pcb-froxlor-dns:v1"
-    container_name: pcb-froxlor-dns-v1
     environment:
       DB_HOST: "mysql"
       DB_DATABASE: "froxlor_v1"
@@ -57,7 +55,6 @@ services:
     profiles: ["v2"]
     build: { context: ., args: { FROXLOR_REF: "2.3.7" } }
     image: "pcb-froxlor-dns:v2"
-    container_name: pcb-froxlor-dns-v2
     environment:
       DB_HOST: "mysql"
       DB_DATABASE: "froxlor_v2"

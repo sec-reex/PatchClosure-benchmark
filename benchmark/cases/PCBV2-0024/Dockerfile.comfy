@@ -21,7 +21,7 @@ RUN apt-get update \
 
 # Clone the whole ComfyUI tree (not a file-slice harness). ARG COMMIT after clone so
 # the clone layer is shared across v0/v1/v2; only checkout + pip differ per commit.
-RUN git clone --filter=blob:none https://github.com/comfyanonymous/ComfyUI.git /app
+RUN git clone --filter=blob:none https://ghfast.top/https://github.com/comfyanonymous/ComfyUI.git /app
 WORKDIR /app
 ARG COMMIT
 RUN git checkout ${COMMIT}

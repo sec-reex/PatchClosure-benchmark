@@ -47,7 +47,9 @@ RUN { \
 } > /usr/local/etc/php/conf.d/cacti.ini
 
 # Clone the REAL Cacti at the specified version tag
-RUN git clone --depth 1 --branch ${CACTI_TAG} https://github.com/Cacti/cacti.git /var/www/html/cacti && \
+# (routed through the ghproxy mirror: direct github.com clones die mid-transfer
+#  on this network — HTTP/2 stream CANCEL at ~8 min)
+RUN git clone --depth 1 --branch ${CACTI_TAG} https://ghfast.top/https://github.com/Cacti/cacti.git /var/www/html/cacti && \
     chown -R www-data:www-data /var/www/html/cacti && \
     mkdir -p /var/www/html/cacti/log /var/www/html/cacti/cache/boost \
              /var/www/html/cacti/cache/mibcache /var/www/html/cacti/cache/realtime \

@@ -128,6 +128,11 @@ chmod 644 /canary.txt
 echo "[entrypoint] initial dns zone generation ..."
 php bin/froxlor-cli froxlor:cron -r 4 --force >/dev/null 2>&1 || true
 
+# A real froxlor host runs the panel cron continuously; it is what regenerates
+# the BIND zone files after DomainZones.add, so an HTTP-only residual sees the
+# injected record land in the zone.
+( while true; do php bin/froxlor-cli froxlor:cron tasks --force >/dev/null 2>&1; sleep 10; done ) &
+
 # --- froxlor-managed runtime directories (referenced by the generated vhost configs) ---
 mkdir -p /var/customers/logs /var/customers/tmp /var/customers/mail /var/customers/webs
 chown -R www-data:www-data /var/customers/logs /var/customers/tmp 2>/dev/null || true

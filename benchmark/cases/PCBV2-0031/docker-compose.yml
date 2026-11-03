@@ -8,6 +8,8 @@ services:
         ASTRO_VERSION: "6.4.5"
     image: astro-pcb-v0:latest
     container_name: pcb-astro-v0
+    volumes:
+      - ./server.js:/app/server.js:ro
     environment:
       PCB_FLAG: "${PCB_FLAG:?}"
     entrypoint: ["/bin/sh", "-c"]
@@ -26,6 +28,8 @@ services:
         ASTRO_VERSION: "7.0.4"
     image: astro-pcb-v1:latest
     container_name: pcb-astro-v1
+    volumes:
+      - ./server.js:/app/server.js:ro
     environment:
       PCB_FLAG: "${PCB_FLAG:?}"
     entrypoint: ["/bin/sh", "-c"]
@@ -44,6 +48,8 @@ services:
         ASTRO_VERSION: "7.0.6"
     image: astro-pcb-v2:latest
     container_name: pcb-astro-v2
+    volumes:
+      - ./server.js:/app/server.js:ro
     environment:
       PCB_FLAG: "${PCB_FLAG:?}"
     entrypoint: ["/bin/sh", "-c"]

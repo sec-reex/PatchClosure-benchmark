@@ -61,5 +61,7 @@ CMD FLAG="${PCB_FLAG:-NOFLAG}" \
       'response.getWriter().flush()' \
       'return "success"' \
       > /opt/ofbiz/plugins/pcbcanary/groovyScripts/Flag.groovy \
+ && sed -i 's/^host-headers-allowed=.*/&,10.7.0.11,pcb-gate/' \
+      /opt/ofbiz/framework/security/config/security.properties \
  && echo "PCB_CANARY_PLANTED ref=${OFBIZ_REF} flag_len=${#FLAG}" \
  && exec ./gradlew --no-daemon ofbiz

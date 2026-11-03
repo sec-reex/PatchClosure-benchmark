@@ -23,14 +23,29 @@ const { addAttribute } = require('/app/node_modules/astro/dist/runtime/server/re
 const { renderHTMLElement } = require('/app/node_modules/astro/dist/runtime/server/render/dom.js');
 
 function serve(req, res) {
-  const url = new URL(req.url, 'http://x');
+  // A scanner can send any request-target (including "//..%2f..%2fflag.txt");
+  // an uncaught URL parse used to take the whole probe server down, which made
+  // the instance permanently unreachable mid-review. Treat it as a 400.
+  let url;
+  try {
+    url = new URL(req.url, 'http://x');
+  } catch (e) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'bad request target' }));
+    return;
+  }
   const respond = (code, obj) => {
     res.writeHead(code, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(obj));
   };
   if (url.pathname === '/health') return respond(200, { ok: true });
 
-  const flag = fs.readFileSync('/flag.txt', 'utf8').trim();
+  let flag;
+  try {
+    flag = fs.readFileSync('/flag.txt', 'utf8').trim();
+  } catch (e) {
+    return respond(500, { ok: false, err: 'flag not planted' });
+  }
   const key = `x" data-pcb="${flag}`;
 
   if (url.pathname === '/seed') {

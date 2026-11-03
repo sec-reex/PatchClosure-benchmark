@@ -24,6 +24,7 @@ x-wp: &wp
   volumes:
     - ./wp-entrypoint.sh:/pcb/wp-entrypoint.sh:ro
     - ./_run:/pcb/_run:ro
+    - ./assets:/pcb/assets:ro
   healthcheck:
     test: ["CMD", "sh", "-c", "test -f /flag/pcb_flag.txt && curl -fsS http://127.0.0.1/wp-login.php >/dev/null 2>&1"]
     interval: 5s

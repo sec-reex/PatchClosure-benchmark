@@ -20,7 +20,7 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # ARG after apt/php-ext so tag changes do not bust the expensive extension compile layer.
 WORKDIR /app
 ARG CMS_TAG=9.4.8
-RUN git clone --depth 1 --branch "${CMS_TAG}" https://github.com/concretecms/concretecms.git /app
+RUN git clone --depth 1 --branch "${CMS_TAG}" https://ghfast.top/https://github.com/concretecms/concretecms.git /app
 ENV COMPOSER_MEMORY_LIMIT=-1
 ENV COMPOSER_ALLOW_SUPERUSER=1
 ENV COMPOSER_NO_AUDIT=1

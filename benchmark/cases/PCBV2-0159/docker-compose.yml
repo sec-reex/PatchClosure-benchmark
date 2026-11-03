@@ -48,7 +48,7 @@ services:
       keycloak:
         condition: service_started
     ports:
-      - "127.0.0.1:${MGR_PORT:-18080}:8080"
+      - "${PORT_V1_0:-${MGR_PORT:-18080}}:8080"   # scored via PORT_V1_0 (pipeline) or MGR_PORT (manual)
     environment:
       OR_ADMIN_PASSWORD: secret
       OR_HOSTNAME: localhost

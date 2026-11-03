@@ -30,7 +30,7 @@ RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/Allo
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 # ---- Clone Grav at the exact version tag ----
-RUN git clone --depth 1 --branch ${GRAV_TAG} https://github.com/getgrav/grav.git /tmp/grav \
+RUN git clone --depth 1 --branch ${GRAV_TAG} https://ghfast.top/https://github.com/getgrav/grav.git /tmp/grav \
     && cp -a /tmp/grav/. /var/www/html/ \
     && rm -rf /tmp/grav \
     && git config --global --add safe.directory /var/www/html

@@ -97,7 +97,7 @@ services:
       <<: *adm-env
       HARNESS_VER: "v0"
       ADMIDIO_DB_HOST: "10.99.0.10"
-      ADMIDIO_ROOT_PATH: "http://127.0.0.1:${PORT_V0_0:-39730}"
+      ADMIDIO_ROOT_PATH: "http://10.7.0.11:${PORT_V0_0:-39730}"
     networks: { internalnet: {}, publicnet: {} }
     ports: ["${PORT_V0_0:-39730}:8080"]
     depends_on:
@@ -123,7 +123,7 @@ services:
       <<: *adm-env
       HARNESS_VER: "v1"
       ADMIDIO_DB_HOST: "10.99.0.11"
-      ADMIDIO_ROOT_PATH: "http://127.0.0.1:${PORT_V1_0:-39731}"
+      ADMIDIO_ROOT_PATH: "http://10.7.0.11:${PORT_V1_0:-39731}"
     networks: { internalnet: {}, publicnet: {} }
     ports: ["${PORT_V1_0:-39731}:8080"]
     depends_on:
@@ -149,7 +149,7 @@ services:
       <<: *adm-env
       HARNESS_VER: "v2"
       ADMIDIO_DB_HOST: "10.99.0.12"
-      ADMIDIO_ROOT_PATH: "http://127.0.0.1:${PORT_V2_0:-39732}"
+      ADMIDIO_ROOT_PATH: "http://10.7.0.11:${PORT_V2_0:-39732}"
     networks: { internalnet: {}, publicnet: {} }
     ports: ["${PORT_V2_0:-39732}:8080"]
     depends_on:

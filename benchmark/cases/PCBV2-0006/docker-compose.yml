@@ -27,7 +27,10 @@
 #                                     PATH only; HOST unchecked)  <- TARGET, GIVEN
 #   V2 = python:3.7.8-slim-stretch  (CVE-2019-18348 fix: adds _validate_host)  [negative]
 #
-# Clients just sleep; the oracle drives each attack via `docker compose exec`.
+# Clients run a tiny HTTP trigger bridge around UNMODIFIED urllib.request.urlopen:
+# the CLI case has no inbound app port, so the external scoring harness hands the
+# attacker URL to /fetch and the version's own stdlib guards decide acceptance.
+# The original `docker compose exec ... /client.py` gate path still works.
 services:
   sidecar:
     profiles: ["v0", "v1", "v2"]
@@ -46,27 +49,36 @@ services:
   client-v0:
     profiles: ["v0"]
     image: python:3.7.2-slim-stretch
-    command: ["sleep", "infinity"]
+    command: ["python", "/bridge.py"]
     volumes:
       - ./client.py:/client.py:ro
+      - ./bridge.py:/bridge.py:ro
+    ports:
+      - "${PORT_V0_0:-41005}:8080"
     networks: ["pcbnet"]
     depends_on: ["sidecar"]
 
   client-v1:
     profiles: ["v1"]
     image: python:3.7.4-slim-stretch
-    command: ["sleep", "infinity"]
+    command: ["python", "/bridge.py"]
     volumes:
       - ./client.py:/client.py:ro
+      - ./bridge.py:/bridge.py:ro
+    ports:
+      - "${PORT_V1_0:-41006}:8080"
     networks: ["pcbnet"]
     depends_on: ["sidecar"]
 
   client-v2:
     profiles: ["v2"]
     image: python:3.7.8-slim-stretch
-    command: ["sleep", "infinity"]
+    command: ["python", "/bridge.py"]
     volumes:
       - ./client.py:/client.py:ro
+      - ./bridge.py:/bridge.py:ro
+    ports:
+      - "${PORT_V2_0:-41007}:8080"
     networks: ["pcbnet"]
     depends_on: ["sidecar"]
 

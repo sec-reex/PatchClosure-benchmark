@@ -120,6 +120,11 @@ mysql -h "${DB_HOST:-mysql}" -u"${DB_USERNAME:-froxlor}" -p"${DB_PASSWORD:-froxl
 echo "[entrypoint] running real froxlor cron ..."
 php bin/froxlor-cli froxlor:cron --force >/dev/null 2>&1 || true
 
+# A real froxlor host runs the panel cron continuously; it is what executes
+# the ExportCron job queued by DataDump.add (the residual sink). Keep a short
+# interval so an HTTP-only residual observes the export inside its window.
+( while true; do php bin/froxlor-cli froxlor:cron export tasks --force >/dev/null 2>&1; sleep 10; done ) &
+
 # --- customer homedir + web roots + symlink escape points (attack surface, not canary) ---
 HOMEDIR=/var/customers/webs/pcbcust
 mkdir -p ${HOMEDIR}

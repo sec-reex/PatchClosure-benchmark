@@ -26,7 +26,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Pinned AWStats source (single self-contained Perl CGI + its lang/lib/plugins).
-RUN git clone --depth 1 --branch "${AWSTATS_REF}" https://github.com/eldy/awstats.git /opt/awstats \
+RUN git clone --depth 1 --branch "${AWSTATS_REF}" https://ghfast.top/https://github.com/eldy/awstats.git /opt/awstats \
  && cp -a /opt/awstats/wwwroot/cgi-bin/. /usr/lib/cgi-bin/ \
  && chmod 755 /usr/lib/cgi-bin/awstats.pl \
  && rm -rf /opt/awstats

@@ -8,7 +8,9 @@ RUN test -n "$HTTPLIB_TAG"
 WORKDIR /app
 
 # Fetch the REAL, published httplib.h bytes for the requested release tag.
-ADD https://raw.githubusercontent.com/yhirose/cpp-httplib/${HTTPLIB_TAG}/httplib.h /app/httplib.h
+# infra repair: raw.githubusercontent is unreachable from the build host;
+# ghproxy mirrors the same file (identical content, tag-pinned)
+ADD https://ghfast.top/https://raw.githubusercontent.com/yhirose/cpp-httplib/${HTTPLIB_TAG}/httplib.h /app/httplib.h
 RUN test -s /app/httplib.h && grep -q "CPPHTTPLIB_HTTPLIB_H" /app/httplib.h
 
 COPY server.cpp /app/server.cpp

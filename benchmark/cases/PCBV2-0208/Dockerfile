@@ -20,7 +20,7 @@ RUN apt-get update -qq \
  && rm -rf /var/lib/apt/lists/*
 
 RUN test -n "$T3_TAG" \
- && git clone --depth 1 --branch "$T3_TAG" https://github.com/TYPO3/typo3.git /var/www/html \
+ && git clone --depth 1 --branch "$T3_TAG" https://ghfast.top/https://github.com/TYPO3/typo3.git /var/www/html \
  && rm -rf /var/www/html/.git \
  && test -f /var/www/html/index.php \
  && test -f /var/www/html/typo3/sysext/core/Classes/Resource/ResourceStorage.php \

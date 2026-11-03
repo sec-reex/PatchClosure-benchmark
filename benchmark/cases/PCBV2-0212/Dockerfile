@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # The clone is NOT committed to the case dir (removed at teardown); only text stays.
 WORKDIR /
 RUN rm -rf /var/www/html && GIT_TERMINAL_PROMPT=0 git clone --depth 1 --branch "${WEGIA_REF}" \
-      https://github.com/LabRedesCefetRJ/WeGIA.git /var/www/html \
+      https://gh-proxy.com/https://github.com/LabRedesCefetRJ/WeGIA.git /var/www/html \
     && test -f /var/www/html/html/login.php \
     && if [ "${WEGIA_REF}" = "3.4.10" ]; then \
          test -f /var/www/html/html/socio/sistema/controller/controla_xlsx.php; \

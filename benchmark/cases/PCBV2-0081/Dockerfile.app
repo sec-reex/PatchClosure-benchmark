@@ -2,6 +2,9 @@
 # npm install the whole packages, astro build, then astro preview (workerd).
 # Default imageService is cloudflare-binding → image-binding-transform (CVE surface).
 FROM node:22-bookworm-slim
+# build-env repair: the mirror-pulled base may lack system CAs,
+# which workerd/miniflare requires for its TLS stack (idempotent).
+RUN if [ ! -f /etc/ssl/certs/ca-certificates.crt ]; then apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*; fi
 
 ARG ADAPTER_VER
 ARG ASTRO_VER

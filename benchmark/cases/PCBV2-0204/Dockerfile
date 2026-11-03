@@ -31,7 +31,7 @@ RUN mkdir -p /tmp \
     && cd /tmp \
     && rm -rf /var/www/html \
     && GIT_TERMINAL_PROMPT=0 git clone --depth 1 --branch ${SUITECRM_TAG} \
-        https://github.com/salesagility/SuiteCRM.git /var/www/html \
+        https://gh-proxy.com/https://github.com/salesagility/SuiteCRM.git /var/www/html \
     && test -f /var/www/html/suitecrm_version.php \
     && test -f /var/www/html/ModuleInstall/ModuleScanner.php \
     && grep -q "suitecrm_version" /var/www/html/suitecrm_version.php

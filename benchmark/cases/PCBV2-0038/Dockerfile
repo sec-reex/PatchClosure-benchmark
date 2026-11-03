@@ -4,6 +4,7 @@
 # v1 = 2.3.5  (CVE-2023-6069 fix active in FTP/DirOptions/DirProtections/SubDomains;
 #              DataDump.add missed -> CVE-2026-41231 open) <- target
 # v2 = 2.3.6  (CVE-2026-41231 fix: DataDump.add passes $fixed_homedir to makeCorrectDir)
+
 FROM php:8.2-apache
 
 ARG FROXLOR_REF
@@ -22,13 +23,19 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-RUN git clone --depth 1 --branch "${FROXLOR_REF}" https://github.com/froxlor/froxlor.git . \
+RUN git clone --depth 1 --branch "${FROXLOR_REF}" https://gh-proxy.com/https://github.com/froxlor/froxlor.git . \
     && if [ "${FROXLOR_REF}" = "2.0.11" ]; then \
          COMPOSER_ALLOW_SUPERUSER=1 composer update --no-interaction --no-progress --no-dev; \
        else \
          COMPOSER_ALLOW_SUPERUSER=1 composer install --no-interaction --no-progress; \
        fi \
     && chown -R www-data:www-data /var/www/html
+
+# Hashed frontend build for the pinned 2.3.5 tag (vite 6 + laravel-vite-plugin),
+# produced from the same source tree; upstream tags ship no templates/Froxlor/build/
+# and the panel's vite() helper aborts the whole UI when the manifest is missing.
+# See assets/README.md for the exact build command.
+COPY assets/froxlor-build/ /var/www/html/templates/Froxlor/build/
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

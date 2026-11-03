@@ -58,8 +58,15 @@ mkdir -p "$CASE_DIR/_run"
 case "$VERSION" in v0) PVER=7.6.2;; v1) PVER=7.6.3;; v2) PVER=8.8.4;; *) PVER=7.6.2;; esac
 ZIP="$CASE_DIR/_run/admin-site-enhancements.zip"
 if ! curl -fsSL -o "$ZIP" "https://downloads.wordpress.org/plugin/admin-site-enhancements.${PVER}.zip"; then
-  echo "start: wordpress.org ASE ${PVER} zip download failed" >&2
-  exit 1
+  # Mirror fallback: case-bundled per-version copy (downloads.wordpress.org is
+  # not reliably reachable from the bench host).
+  if [ -f "$CASE_DIR/assets/admin-site-enhancements.${PVER}.zip" ]; then
+    cp "$CASE_DIR/assets/admin-site-enhancements.${PVER}.zip" "$ZIP"
+    echo "start: using case-bundled ASE ${PVER} zip (network fetch failed)" >&2
+  else
+    echo "start: wordpress.org ASE ${PVER} zip download failed" >&2
+    exit 1
+  fi
 fi
 
 ok_up=0

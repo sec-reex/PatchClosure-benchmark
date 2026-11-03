@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 # --- clone REAL phpMyFAQ at the tag and install its real vendor dependencies ---
-RUN git clone --depth 1 --branch "${PMF_TAG}" https://github.com/thorsten/phpMyFAQ.git /opt/phpmyfaq-src
+RUN git clone --depth 1 --branch "${PMF_TAG}" https://gh-proxy.com/https://github.com/thorsten/phpMyFAQ.git /opt/phpmyfaq-src
 WORKDIR /opt/phpmyfaq-src
 RUN COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_PROCESS_TIMEOUT=0 \
     composer install --no-dev --no-interaction --prefer-dist --no-scripts --optimize-autoloader

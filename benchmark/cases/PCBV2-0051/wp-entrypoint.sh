@@ -18,8 +18,14 @@ printf '%s' "${PCB_FLAG:?set PCB_FLAG to the per-run canary token}" > /flag/pcb_
 chmod 644 /flag/pcb_flag.txt
 
 if [ ! -x /usr/local/bin/wp ]; then
-  curl -fsSL -o /usr/local/bin/wp \
-    https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+  # Bundled copy first (raw.githubusercontent.com is not reliably reachable
+  # from the bench host); network fetch as fallback.
+  if [ -f /pcb/assets/wp-cli.phar ]; then
+    cp /pcb/assets/wp-cli.phar /usr/local/bin/wp
+  else
+    curl -fsSL -o /usr/local/bin/wp \
+      https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+  fi
   chmod +x /usr/local/bin/wp
 fi
 
@@ -51,7 +57,9 @@ fi
 
 # Prefer the zip start.sh pre-fetched from downloads.wordpress.org (avoids
 # in-container wordpress.org DNS/API failures). Fall back to a host-side curl.
-if [ -f /pcb/_run/admin-site-enhancements.zip ]; then
+if [ -f "/pcb/assets/admin-site-enhancements.${ASE_VERSION}.zip" ]; then
+  wp plugin install "/pcb/assets/admin-site-enhancements.${ASE_VERSION}.zip" --allow-root --force --activate
+elif [ -f /pcb/_run/admin-site-enhancements.zip ]; then
   wp plugin install /pcb/_run/admin-site-enhancements.zip --allow-root --force --activate
 else
   curl -fsSL -o /tmp/admin-site-enhancements.zip \

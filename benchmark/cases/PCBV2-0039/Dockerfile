@@ -3,6 +3,7 @@
 # v0 = 2.3.4  (pre CVE-2026-30932: LOC/RP/SSHFP/TLSA content NOT validated)
 # v1 = 2.3.5  (CVE-2026-30932 fix: validateDnsLoc/Rp/Sshfp/Tlsa; TXT records missed) <- target
 # v2 = 2.3.7  (CVE-2026-41234 fix: preg_replace strips control chars from ALL content)
+
 FROM php:8.2.29-apache-bookworm
 
 ARG FROXLOR_REF
@@ -29,6 +30,12 @@ RUN curl -fsSL --retry 5 --retry-delay 4 --retry-all-errors \
     && test -f /var/www/html/index.php \
     && COMPOSER_ALLOW_SUPERUSER=1 composer install --no-interaction --no-progress --prefer-dist --no-dev \
     && chown -R www-data:www-data /var/www/html
+
+# Hashed frontend build for the pinned 2.3.5 tag (vite 6 + laravel-vite-plugin),
+# produced from the same source tree; upstream tags ship no templates/Froxlor/build/
+# and the panel's vite() helper aborts the whole UI when the manifest is missing.
+# See assets/README.md for the exact build command.
+COPY assets/froxlor-build/ /var/www/html/templates/Froxlor/build/
 
 # Apache must follow symlinks for the DataDump/zone paths used by the gate setup
 RUN sed -ri 's!AllowOverride None!AllowOverride All!g' /etc/apache2/apache2.conf \

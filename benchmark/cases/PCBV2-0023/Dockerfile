@@ -25,7 +25,7 @@ ENV COMPOSER_NO_AUDIT=1
 
 # --- REAL Admidio source at the exact release tag ---
 ARG ADMIDIO_VERSION=v5.0.7
-RUN git clone --depth 1 --branch "${ADMIDIO_VERSION}" https://github.com/Admidio/admidio "${APACHE_DOCUMENT_ROOT}"
+RUN git clone --depth 1 --branch "${ADMIDIO_VERSION}" https://ghfast.top/https://github.com/Admidio/admidio "${APACHE_DOCUMENT_ROOT}"
 WORKDIR ${APACHE_DOCUMENT_ROOT}
 RUN composer install --no-interaction --no-progress --no-dev \
  && printf '%s' "${ADMIDIO_VERSION}" > /opt/app-root/.admidio_version

@@ -10,7 +10,9 @@ if [[ -z "$FLAG" ]]; then
 fi
 
 blob=""
-for _ in $(seq 1 15); do
+# gitea's first-boot SQLite migration can hold the lock well past 30s when
+# the host is under load — retry with a wider window (~90s) before failing
+for _ in $(seq 1 30); do
   blob="$(docker compose -p "$COMPOSE_PROJECT_NAME" --profile "$VERSION" exec -T -u git "$VERSION" \
     gitea admin user create --username pcbadmin --password 'Admin12345!' \
     --email admin@pcb.local --admin --must-change-password=false \
@@ -19,7 +21,7 @@ for _ in $(seq 1 15); do
     echo "seed: pcbadmin seeded (${VERSION})"
     exit 0
   fi
-  sleep 2
+  sleep 3
 done
 echo "seed: gitea admin user create failed: ${blob:0:400}" >&2
 exit 1
